@@ -1,0 +1,225 @@
+"""Runtime sandboxu - uruchamiany w podprocesie ze skryptem użytkownika.
+
+Zadania:
+  * utworzyć jeden obiekt :class:`~app.sim.core.Simulation` (stan globalny),
+  * podmienić ``time.sleep`` / ``time.time`` / ``time.monotonic`` /
+    ``time.perf_counter`` na wirtualny zegar (skrypt wykonuje się błyskawicznie,
+    a czas płynie w symulacji),
+  * zapisywać strumieniowo telemetrię i zdarzenia do pliku JSONL, aby aplikacja
+    mogła je czytać na żywo (UI),
+  * przechwycić wyjątek kończący skrypt i zapisać go z numerem linii.
+
+Ten moduł nie zna żadnej biblioteki drona - adaptery podstawiają swoje mocki
+na ``sys.path`` (np. ``djitellopy``).
+"""
+
+from __future__ import annotations
+
+import inspect
+import json
+import os
+import sys
+import threading
+import time
+import traceback
+from typing import Any, Dict, Optional
+
+_STATE: Dict[str, Any] = {"sim": None, "log": None, "settings": {}, "script": ""}
+
+
+def configure(config: Dict[str, Any]) -> None:
+    """Zainstaluj hooki sandboxu (wywoływane przez runner przed skryptem)."""
+    from app.sim import core
+
+    _STATE["log_path"] = config.get("log_path")
+    _STATE["script"] = config.get("script_name", "script.py")
+    settings = core.Settings()
+    for key, value in (config.get("settings") or {}).items():
+        if hasattr(settings, key):
+            setattr(settings, key, value)
+    _STATE["settings"] = settings
+    sim = core.Simulation(settings)
+    _STATE["sim"] = sim
+    _STATE["script_name"] = config.get("script_name", "script.py")
+    _STATE["log"] = _LogWriter(_STATE.get("log_path"))
+    sim.after_command_hook = _STATE["log"].snapshot
+
+    install_virtual_clock(sim)
+
+
+def get_sim():
+    """Zwróć bieżący obiekt symulacji."""
+    return _STATE["sim"]
+
+
+def get_log() -> "_LogWriter":
+    return _STATE["log"]
+
+
+class _LogWriter:
+    """Buforowane zapisywanie JSONL (telemetria, zdarzenia)."""
+
+    def __init__(self, path: Optional[str]) -> None:
+        self.path = path
+        self._lock = threading.Lock()
+        self._fh = open(path, "w", encoding="utf-8") if path else None
+
+    def write(self, obj: Dict[str, Any]) -> None:
+        if self._fh is None:
+            return
+        with self._lock:
+            self._fh.write(json.dumps(obj, ensure_ascii=False) + "\n")
+            self._fh.flush()
+
+    def close(self) -> None:
+        if self._fh is not None:
+            with self._lock:
+                self._fh.close()
+                self._fh = None
+
+    def snapshot(self, sim) -> None:
+        """Zapisz zrzut dotychczasowego stanu symulacji (po każdej komendzie)."""
+        self.write({
+            "type": "snapshot", "now": sim.now,
+            "samples": [s.as_dict() for s in sim.recorder.samples],
+            "events": [e.as_dict() for e in sim.recorder.events],
+            "segments": [sp.motion.as_dict(sp.t0, sp.t1)
+                         for sp in sim.recorder.spans if sp.motion is not None],
+            "warnings": sim.recorder.warnings, "errors": sim.recorder.errors,
+            "stats": sim.stats(),
+        })
+
+
+class VirtualClock:
+    """Wirtualny zegar oparty na modelu symulacji (czas symulacji)."""
+
+    def __init__(self, sim) -> None:
+        self.sim = sim
+        self._offset = sim.now
+
+    def time(self) -> float:
+        return self.sim.now
+
+    def monotonic(self) -> float:
+        return self.sim.now
+
+    def perf_counter(self) -> float:
+        return self.sim.now
+
+    def sleep(self, seconds: float) -> None:
+        _sleep_with_rc(seconds)
+
+
+def install_virtual_clock(sim) -> VirtualClock:
+    """Podmień funkcje czasu/snu w module ``time`` na wirtualne.
+
+    Oprócz czasu montujemy też hook integracji RC: jeśli adapter drona wskazał
+    aktywny kontroler RC (``rc_provider``), ``time.sleep`` wykonuje ruch RC.
+    """
+    clock = VirtualClock(sim)
+    time.sleep = clock.sleep          # type: ignore[assignment]
+    time.time = clock.time            # type: ignore[assignment]
+    time.monotonic = clock.monotonic  # type: ignore[assignment]
+    time.perf_counter = clock.perf_counter  # type: ignore[assignment]
+    return clock
+
+
+#: funkcja zwracająca aktywny kontroler RC adaptera (ustawiana przy starcie)
+_rc_provider = None
+
+
+def set_rc_provider(provider) -> None:
+    """Zarejestruj kontroler RC adaptera (ruch po ``time.sleep``)."""
+    global _rc_provider
+    _rc_provider = provider
+
+
+def _rc_controller():
+    provider = _rc_provider
+    return provider() if provider is not None else None
+
+
+def _sleep_with_rc(seconds: float) -> None:
+    """``time.sleep`` w sandboxie: ruch RC (jeśli aktywny) lub bieg zegara."""
+    sim = _STATE.get("sim")
+    if sim is None:
+        return
+    seconds = float(seconds)
+    ctrl = _rc_controller()
+    if ctrl is not None and seconds > 0:
+        ctrl.rc_tick(seconds)
+        return
+    sim.advance(seconds)
+
+
+def script_location() -> Dict[str, Any]:
+    """Znajdź plik i linię w skrypcie użytkownika (pierwsza ramka poza runtime)."""
+    here = os.path.abspath(__file__)
+    frame = inspect.currentframe()
+    frame = frame.f_back if frame is not None else None
+    try:
+        while frame is not None:
+            filename = os.path.abspath(frame.f_code.co_filename)
+            if filename != here and "app" + os.sep + "adapters" not in filename \
+                    and filename != os.path.abspath(__file__):
+                return {"file": os.path.basename(filename), "line": frame.f_lineno}
+            frame = frame.f_back
+    finally:
+        del frame
+    return {"file": _STATE.get("script"), "line": None}
+
+
+def finish(status: str, exc: Optional[BaseException] = None,
+           stdout_tail: str = "", stderr_tail: str = "") -> None:
+    """Zapisz podsumowanie lotu do pliku JSONL (wołane przez runner po skrypcie)."""
+    sim = _STATE["sim"]
+    log = _STATE["log"]
+    if sim is None or log is None:
+        return
+    if exc is not None:
+        tb = traceback.format_exception(type(exc), exc, exc.__traceback__)
+        line = _exc_line(exc)
+        message = str(exc)
+        existing = None
+        for err in reversed(sim.recorder.errors):
+            err_msg = str(err.get("message") or "")
+            if err_msg == message or err_msg.endswith(": " + message):
+                existing = err
+                break
+        if existing is not None:
+            existing["traceback"] = "".join(tb)
+            existing.setdefault("line", line)
+        else:
+            sim.recorder.add_error(f"{type(exc).__name__}: {exc}", line=line,
+                                   file=_STATE.get("script_name"), type_=type(exc).__name__,
+                                   traceback="".join(tb))
+        status = status or "error"
+    data = sim.to_flight_data()
+    log.write({
+        "type": "summary",
+        "status": status,
+        "final_state": data.final_state,
+        "duration": data.duration,
+        "stats": data.stats,
+        "warnings": data.warnings,
+        "errors": data.errors,
+        "samples": data.samples,
+        "events": data.events,
+        "segments": data.segments,
+        "stdout_tail": stdout_tail,
+        "stderr_tail": stderr_tail,
+    })
+    log.close()
+
+
+def _exc_line(exc: BaseException) -> Optional[int]:
+    """Numer linii w skrypcie użytkownika, w której powstał wyjątek."""
+    tb = exc.__traceback__
+    line = None
+    while tb is not None:
+        filename = os.path.abspath(tb.tb_frame.f_code.co_filename)
+        if "app" + os.sep + "adapters" not in filename and "app" + os.sep + "sim" not in filename \
+                and "app" + os.sep + "sandbox_runtime" not in filename:
+            line = tb.tb_lineno
+        tb = tb.tb_next
+    return line
