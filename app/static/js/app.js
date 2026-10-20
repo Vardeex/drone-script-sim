@@ -402,7 +402,10 @@ function bindUi() {
     player.seek(Number(e.target.value));
     updatePlayButton();
   });
-  $('#speed-select').addEventListener('change', (e) => { player.speed = Number(e.target.value); });
+  $('#speed-select').addEventListener('change', (e) => {
+    player.speed = Number(e.target.value);
+    scene.setPlaybackRate(player.speed);
+  });
   $('#camera-select').addEventListener('change', (e) => {
     scene.setCameraMode(e.target.value);
     if (e.target.value !== 'orbit') {
@@ -415,6 +418,34 @@ function bindUi() {
     $('#camera-select').value = 'orbit';
     scene.fitView();
   });
+
+  // rozmiar modelu drona (tylko model - trasa i telemetria bez zmian)
+  const sizeSelect = $('#drone-size');
+  if (sizeSelect) {
+    scene.setDroneSize(Number(sizeSelect.value));
+    sizeSelect.addEventListener('change', (e) => {
+      scene.setDroneSize(Number(e.target.value));
+      if (scene.cameraMode === 'follow') scene.setCameraMode('follow');
+    });
+  }
+  // osłony śmigieł
+  const guardsBtn = $('#btn-guards');
+  if (guardsBtn) {
+    guardsBtn.addEventListener('click', () => {
+      const on = !guardsBtn.classList.contains('on');
+      guardsBtn.classList.toggle('on', on);
+      scene.setGuards(on);
+    });
+  }
+  // strzałka kierunku przodu na cieniu
+  const arrowBtn = $('#btn-shadow-arrow');
+  if (arrowBtn) {
+    arrowBtn.addEventListener('click', () => {
+      const on = !arrowBtn.classList.contains('on');
+      arrowBtn.classList.toggle('on', on);
+      scene.setShadowArrow(on);
+    });
+  }
 
   $('#adapter-select').addEventListener('change', (e) => setAdapter(e.target.value));
 

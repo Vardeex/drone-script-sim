@@ -138,6 +138,16 @@ wybrano rozsądne wartości):
 | `query_*` | „nieobsługiwane w symulacji” (brak pakietów telemetrii z drona) |
 | Czas komendy | brak limitu 15 s - komenda kończy się po wyliczonym czasie |
 | Telemetria | próbki co 50 ms czasu symulacji |
+| Model 3D drona | low-poly z prymitywów three.js: obrys **98 × 92,5 × 41 mm** (tolerancja ±2 mm), waga 87 g nie ma wpływu na symulację |
+| Śmigła w modelu | średnica **40 mm** i rozstaw osi 52 × 46 mm - mniejsze niż realne ~76 mm, bo obrys 98 × 92,5 mm jest nadrzędny i śmigła nie mogą się przecinać (przerwa 12 mm w X, 6 mm w Z) |
+| Osłony śmigieł | pierścienie ø 41,8 mm + pionowy łuk; włączane przełącznikiem „Osłony” (0 = bez osłon) |
+| Wysokość modelu | dno na `y = 0` (nóżki 6 mm), góra osłon 41,9 mm; środek obrotu = środek geometryczny |
+| Skala modelu | przełącznik „Rozmiar”: **Prawdziwy (×1)** / ×3 / ×5 / ×10; domyślnie ×5, bo trasy mają kilka metrów. Skalowanie dotyczy tylko modelu - trasa, telemetria i statystyki pozostają w rzeczywistej skali |
+| Kierunek przodu | kamera z przodu + subtelny akcent (kolor) na przednich osłonach; opcjonalna strzałka na cieniu drona („Cień”) |
+
+Model jest w osobnym module `app/static/js/drone_model.js` (adaptery w `DRONE_MODELS`),
+więc dodanie innego drona = nowa funkcja tworząca model, bez zmian w scenie.
+Zdjęcia referencyjne: `docs/ref/tello1.jpg`, `docs/ref/tello2.jpg`.
 
 
 ## Struktura projektu

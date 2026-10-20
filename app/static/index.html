@@ -69,6 +69,15 @@
         <option value="follow">Śledząca</option>
         <option value="top">Z góry</option>
       </select>
+      <label class="hint" for="drone-size">Rozmiar</label>
+      <select id="drone-size" title="Rozmiar modelu drona (trasa i telemetria bez zmian)">
+        <option value="1">Prawdziwy</option>
+        <option value="3">×3</option>
+        <option value="5" selected>×5</option>
+        <option value="10">×10</option>
+      </select>
+      <button id="btn-guards" class="ghost toggle on" title="Osłony śmigieł (włącz/wyłącz)">⛨ Osłony</button>
+      <button id="btn-shadow-arrow" class="ghost toggle" title="Strzałka kierunku przodu na cieniu drona">➤ Cień</button>
       <button id="btn-fit" class="ghost" title="Dopasuj widok do trasy">⤢ Dopasuj</button>
     </div>
   </section>

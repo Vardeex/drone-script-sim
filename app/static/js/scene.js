@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { colorForHeight, clamp } from './util.js';
 import { toScene } from './timeline.js';
+import { createDroneModel } from './drone_model.js';
 
 const M = 100; // 1 skala sceny = 100 cm (1 m)
 
@@ -92,6 +93,7 @@ export class DroneScene {
     fine.material.transparent = true;
     fine.position.y = 0.001;
     this.scene.add(fine);
+    this._groundGrid = fine;
   }
 
   // Etykiety HTML (ostre, niezależne od rozdzielczości) rzutowane z kamery.
@@ -151,74 +153,55 @@ export class DroneScene {
   }
 
   _buildDrone() {
-    const drone = new THREE.Group();
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x2b3648, roughness: 0.55, metalness: 0.35 });
-    const accentMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.4, metalness: 0.2,
-      emissive: 0x0b5a78, emissiveIntensity: 0.6 });
-    const darkMat = new THREE.MeshStandardMaterial({ color: 0x161c26, roughness: 0.8 });
-
-    // korpus
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.09, 0.20), bodyMat);
-    body.position.y = 0.13;
-    body.castShadow = true;
-    drone.add(body);
-    const pack = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.06, 0.14), darkMat);
-    pack.position.set(-0.06, 0.19, 0);
-    drone.add(pack);
-
-    // ramiona (X) i wirniki
-    const engines = [];
-    const armLen = 0.27;
-    const corners = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
-    for (const [sx, sz] of corners) {
-      const angle = Math.atan2(sz, sx);
-      const arm = new THREE.Mesh(new THREE.BoxGeometry(armLen, 0.035, 0.045), bodyMat);
-      arm.position.set(Math.cos(angle) * armLen / 2, 0.13, Math.sin(angle) * armLen / 2);
-      arm.rotation.y = -angle;
-      arm.castShadow = true;
-      drone.add(arm);
-
-      const motor = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.04, 0.06, 14), darkMat);
-      motor.position.set(Math.cos(angle) * armLen, 0.13, Math.sin(angle) * armLen);
-      drone.add(motor);
-
-      const rotor = new THREE.Group();
-      rotor.position.copy(motor.position).setY(0.165);
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.085, 0.004, 6, 24), accentMat);
-      ring.rotation.x = Math.PI / 2;
-      rotor.add(ring);
-      for (let k = 0; k < 2; k += 1) {
-        const blade = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.004, 0.018), accentMat);
-        blade.rotation.y = (k * Math.PI) / 2;
-        rotor.add(blade);
-      }
-      rotor.userData.dir = sx * sz > 0 ? 1 : -1;
-      drone.add(rotor);
-      engines.push(rotor);
-
-      const led = new THREE.Mesh(new THREE.SphereGeometry(0.012, 8, 8),
-        new THREE.MeshBasicMaterial({ color: 0xef4444 }));
-      led.position.set(Math.cos(angle) * armLen * 0.7, 0.075, Math.sin(angle) * armLen * 0.7);
-      drone.add(led);
-    }
-
-    // strzałka kierunku przodu
-    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.12, 12),
-      new THREE.MeshStandardMaterial({ color: 0xf97316, emissive: 0x7c2d12, emissiveIntensity: 0.5 }));
-    nose.rotation.z = -Math.PI / 2;
-    nose.position.set(0.22, 0.13, 0);
-    drone.add(nose);
-    const noseLine = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.008, 0.008),
-      new THREE.MeshBasicMaterial({ color: 0xf97316 }));
-    noseLine.position.set(0.32, 0.13, 0);
-    drone.add(noseLine);
-
-    this.drone = drone;
-    this.engines = engines;
-    this.scene.add(drone);
+    // Model drona pochodzi z osobnego modułu (adaptery: patrz drone_model.js).
+    // Model ma dno w y=0 i środek obrotu w środku geometrycznym.
+    this.droneGroup = new THREE.Group();   // przenosi pozycję/yaw (skala bez wpływu na yaw)
+    this.droneScale = new THREE.Group();   // tylko skalowanie modelu (×1, ×3, ×5, ×10)
+    this.droneGroup.add(this.droneScale);
+    this.scene.add(this.droneGroup);
+    this.droneOptions = { guards: true, accent: 0x2f86b3 };
+    this.droneModelScale = 5;
+    this._rebuildDroneModel();
 
     // etykieta kierunku przodu nad dronem (aktualizowana razem z pozycją/yaw)
-    this.frontMarker = this.addLabel('przód', '#fdba74', new THREE.Vector3(), { small: true });
+    this.frontMarker = this.addLabel('przód', '#93c5fd', new THREE.Vector3(), { small: true });
+  }
+
+  /** (Prze)buduj model drona - wywoływane przy zmianie osłon/typu modelu. */
+  _rebuildDroneModel() {
+    const previous = this.droneScale.children.slice();
+    for (const child of previous) {
+      this.droneScale.remove(child);
+      child.traverse((node) => {
+        if (node.geometry) node.geometry.dispose();
+        if (node.material) node.material.dispose();
+      });
+    }
+    const model = createDroneModel('tello', this.droneOptions);
+    this.drone = model.group;
+    this.engines = model.rotors;
+    this.droneSize = model.size;
+    this.droneScale.add(this.drone);
+    this.applyDroneScale(this.droneModelScale);
+    this._updateShadowSize();
+  }
+
+  /** Skala modelu drona (tylko model - trasa i telemetria pozostają w prawdziwej skali). */
+  applyDroneScale(factor) {
+    this.droneModelScale = factor;
+    this.droneScale.scale.setScalar(factor);
+    const size = this.droneSize || new THREE.Vector3(0.1, 0.04, 0.09);
+    const radius = Math.max(size.x, size.z) / 2;
+    if (this.shadowDisc) this.shadowDisc.scale.setScalar(radius * factor * 0.85 / 0.12);
+    if (this.shadowArrow) this.shadowArrow.scale.setScalar(0.55 + factor * 0.05);
+    if (this.frontMarker) this.frontMarker.offset = 0.3 + radius * factor * 1.1;
+  }
+
+  /** Ułóż geometrię cienia/kółka pod dronem w zależności od rozmiaru modelu. */
+  _updateShadowSize() {
+    const size = this.droneSize || new THREE.Vector3(0.1, 0.04, 0.09);
+    const radius = Math.max(size.x, size.z) / 2;
+    if (this.shadowDisc) this.shadowDisc.scale.setScalar(radius * this.droneModelScale * 0.85 / 0.12);
   }
 
   _buildOverlays() {
@@ -231,11 +214,30 @@ export class DroneScene {
     this.heightLine.computeLineDistances();
     this.scene.add(this.heightLine);
 
-    this.droneShadow = new THREE.Mesh(new THREE.CircleGeometry(0.12, 24),
-      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35 }));
-    this.droneShadow.rotation.x = -Math.PI / 2;
-    this.droneShadow.position.y = 0.003;
-    this.scene.add(this.droneShadow);
+    // cień/kółko pod dronem (rzutowane na podłoże - pozycja i wysokość)
+    this.shadowDisc = new THREE.Mesh(new THREE.CircleGeometry(0.12, 32),
+      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.38,
+        depthWrite: false }));
+    this.shadowDisc.rotation.x = -Math.PI / 2;
+    this.shadowDisc.position.y = 0.002;
+    this.scene.add(this.shadowDisc);
+
+    // opcjonalna mała strzałka kierunku przodu na cieniu (przełącznik w UI)
+    this.shadowArrow = new THREE.Group();
+    const arrowMat = new THREE.MeshBasicMaterial({ color: 0x93c5fd, transparent: true,
+      opacity: 0.85, depthWrite: false });
+    const shaft = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.018), arrowMat);
+    shaft.rotation.x = -Math.PI / 2;
+    shaft.position.x = 0.09;
+    const head = new THREE.Mesh(new THREE.CircleGeometry(0.028, 3), arrowMat);
+    head.rotation.x = -Math.PI / 2;
+    head.rotation.z = -Math.PI / 2;
+    head.position.x = 0.19;
+    this.shadowArrow.add(shaft, head);
+    this.shadowArrow.position.y = 0.004;
+    this.shadowArrow.visible = false;
+    this.scene.add(this.shadowArrow);
+    this.showShadowArrow = false;
 
     // wektor prędkości
     this.velocityArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0),
@@ -376,15 +378,16 @@ export class DroneScene {
     this._lastSample = sample;
     const p = toScene(sample);
     const position = new THREE.Vector3(p.x / M, Math.max(p.y, 0) / M, p.z / M);
-    this.drone.position.copy(position);
+    this.droneGroup.position.copy(position);
     // yaw drona: 0 = przód w +X, dodatni = obrót w lewo (CCW wokół pionu)
-    this.drone.rotation.y = THREE.MathUtils.degToRad(sample.yaw);
+    this.droneGroup.rotation.y = THREE.MathUtils.degToRad(sample.yaw);
     if (this.frontMarker) {
       const yawRad = THREE.MathUtils.degToRad(sample.yaw);
+      const offset = this.frontMarker.offset || 0.3;
       this.frontMarker.position.set(
-        position.x + Math.cos(yawRad) * 0.26,
-        position.y + 0.3,
-        position.z - Math.sin(yawRad) * 0.26,
+        position.x + Math.cos(yawRad) * offset,
+        position.y + 0.12,
+        position.z - Math.sin(yawRad) * offset,
       );
     }
 
@@ -398,8 +401,16 @@ export class DroneScene {
     this.heightLine.computeLineDistances();
     this.heightLine.visible = position.y > 0.02;
 
-    this.droneShadow.position.set(position.x, 0.003, position.z);
-    this.droneShadow.material.opacity = 0.35 * clamp(1 - position.y / 3, 0.15, 1);
+    const faint = clamp(1 - position.y / 3, 0.2, 1);
+    this.shadowDisc.position.set(position.x, 0.002, position.z);
+    this.shadowDisc.material.opacity = 0.38 * faint;
+    const yawRad = THREE.MathUtils.degToRad(sample.yaw);
+    this.shadowArrow.position.set(position.x, 0.004, position.z);
+    this.shadowArrow.rotation.y = yawRad;
+    this.shadowArrow.visible = this.showShadowArrow;
+    if (this.showShadowArrow) this.shadowArrow.children.forEach((c) => {
+      c.material.opacity = 0.85 * faint;
+    });
 
     // wektor prędkości (w układzie sceny)
     const v = [sample.vx, sample.vz, -sample.vy];
@@ -417,6 +428,38 @@ export class DroneScene {
     this._flying = flying;
   }
 
+  /** Docelowa odległość kamery śledzącej zależna od skali modelu (×1 → ~1,2 m, ×10 → ~5 m). */
+  _followDistance() {
+    return 0.95 + 0.38 * Math.max(1, this.droneModelScale);
+  }
+
+  /** Ustaw skalę modelu drona (×1, ×3, ×5, ×10) - trasa i telemetria bez zmian. */
+  setDroneSize(factor) {
+    this.applyDroneScale(Number(factor) || 1);
+    if (this.cameraMode === 'follow') this.setCameraMode('follow');
+  }
+
+  /** Włącz/wyłącz osłony śmigieł w modelu. */
+  setGuards(enabled) {
+    this.droneOptions = { ...this.droneOptions, guards: Boolean(enabled) };
+    this._rebuildDroneModel();
+  }
+
+  /** Mała strzałka kierunku przodu na cieniu drona. */
+  setShadowArrow(enabled) {
+    this.showShadowArrow = Boolean(enabled);
+    this.shadowArrow.visible = this.showShadowArrow;
+  }
+
+  /** Szybkość odtwarzania - przy 8x gęstość siatki/_labels mniejsza (płynność). */
+  setPlaybackRate(rate) {
+    const fast = rate >= 4;
+    this._lowDetail = fast;
+    if (this._groundGrid) this._groundGrid.visible = !fast;
+    if (this.velocityArrow) this.velocityArrow.visible = this.velocityArrow.visible && !fast;
+  }
+
+  /** Ustaw tryb kamery śledzącej z odległością dopasowaną do skali modelu. */
   setCameraMode(mode) {
     this.cameraMode = mode;
     if (mode === 'top') {
@@ -427,6 +470,16 @@ export class DroneScene {
       this.camera.lookAt(target);
     } else {
       this.camera.up.set(0, 1, 0);
+      if (mode === 'follow') {
+        // dopasuj odległość kamery do rozmiaru modelu (×1..×10)
+        const reach = this._followDistance();
+        const offset = this.camera.position.clone().sub(this.controls.target);
+        const desired = new THREE.Vector3(reach * 0.55, reach * 0.42, reach * 0.55);
+        if (offset.length() < reach * 0.45 || offset.length() > reach * 1.6
+            || Math.abs(offset.length() - reach) > reach * 0.7) {
+          this.camera.position.copy(this.controls.target).add(desired);
+        }
+      }
     }
   }
 
@@ -487,9 +540,11 @@ export class DroneScene {
     }
     if (this.cameraMode === 'follow' && this._lastSample) {
       const p = toScene(this._lastSample);
-      const target = new THREE.Vector3(p.x / M, p.y / M + 0.12, p.z / M);
+      // odległość kamery śledzącej rośnie z rozmiarem modelu (×1 → ~1,3 m, ×10 → ~4,7 m)
+      const reach = this._followDistance();
+      const target = new THREE.Vector3(p.x / M, p.y / M + 0.05, p.z / M);
       const offset = this.camera.position.clone().sub(this.controls.target);
-      if (offset.length() > 15) offset.setLength(15);
+      if (offset.length() > reach * 1.6) offset.setLength(reach * 1.6);
       this.controls.target.lerp(target, clamp(dt * 6, 0, 1));
       this.camera.position.copy(this.controls.target).add(offset);
     } else if (this.cameraMode === 'top' && this._lastSample) {
