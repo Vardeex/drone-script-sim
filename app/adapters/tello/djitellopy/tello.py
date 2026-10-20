@@ -131,6 +131,10 @@ class Tello:
         self._ctrl.send_rc_control(left_right_velocity, forward_backward_velocity,
                                    up_down_velocity, yaw_velocity)
 
+    def annotate(self, label: str) -> None:
+        """Etykieta manewru (tylko symulator - prawdziwe Tello jej nie ma)."""
+        self._ctrl.annotate(label)
+
     def send_rc_control_left(self, speed: int) -> None:
         self.send_rc_control(speed, 0, 0, 0)
 

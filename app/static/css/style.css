@@ -417,3 +417,19 @@ table.data tr.status-ok td:first-child { border-left: 3px solid transparent; }
 .console .err { color: #fca5a5; }
 .console .meta { color: var(--muted); }
 
+/* ===== dronemoves: wiersz manewru w tabeli komend ===== */
+/* Wiersz manewru ma w pierwszej kolumnie ◆ zamiast numeru komendy i jest
+   podświetlony kolorem (klasa .maneuver dodawana w panels.js). */
+#commands-table tbody tr td:first-child {
+  white-space: nowrap;
+}
+#commands-table tbody tr td:nth-child(3) {
+  white-space: normal;
+  word-break: break-word;
+}
+#commands-table tbody tr.maneuver td:first-child,
+#commands-table tbody tr.maneuver td:nth-child(3) {
+  color: #fbbf24;
+  font-weight: 600;
+}
+

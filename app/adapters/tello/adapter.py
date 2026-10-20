@@ -238,6 +238,11 @@ class TelloController:
             _range(value, -LIMITS.rc_range, LIMITS.rc_range, name, "", None)
         self.rc = {"lr": vals[0], "fb": vals[1], "ud": vals[2], "yaw": vals[3]}
 
+    def annotate(self, label: str) -> None:
+        """Zaznacz początek/koniec manewru (biblioteka dronemoves) - nie steruje dronem."""
+        event = self._event("annotate", [str(label)])
+        self.sim.commit(event)
+
     def rc_active(self) -> bool:
         return any(self.rc.values())
 

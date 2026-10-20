@@ -445,7 +445,41 @@ def run_script(source: str, script_name: str = "script.py",
         stderr=flight.stderr, real_seconds=round(real_seconds, 3),
         returncode=returncode, log_path=str(log_path),
     )
+    flight.planned_trail = _load_planned_trail(work_dir)
     if own_work_dir:
         # skrypt i log są już wczytane do pamięci - sprzątamy katalog roboczy
         shutil.rmtree(work_dir, ignore_errors=True)
     return result
+
+
+def _load_planned_trail(work_dir: Path) -> list:
+    """Wczytaj zaplanowaną trajektorię manewrów zapisaną przez bibliotekę dronemoves.
+
+    Biblioteka (w symulatorze) zapisuje plan do ``dronemoves_plan.json`` w katalogu
+    roboczym skryptu. Format tolerancyjny - przy błędzie zwracamy pustą listę.
+    """
+    path = work_dir / "dronemoves_plan.json"
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    points = data.get("points") if isinstance(data, dict) else data
+    if not isinstance(points, list):
+        return []
+    trail = []
+    for item in points:
+        if not isinstance(item, dict):
+            continue
+        try:
+            trail.append({
+                "x": float(item.get("x", 0.0)),
+                "y": float(item.get("y", 0.0)),
+                "z": float(item.get("z", 0.0)),
+                "t": float(item.get("t", 0.0)),
+                "label": str(item.get("label") or ""),
+            })
+        except (TypeError, ValueError):
+            continue
+    return trail

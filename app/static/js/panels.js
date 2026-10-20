@@ -1,14 +1,93 @@
 // Panele boczne: tabela komend, podgląd skryptu, konsola, problemy, statystyki.
 import { $, el, fmt, fmtTime, formatArgs, STATUS_LABEL } from './util.js';
 
+/**
+ * Wiersze tabeli komend. Komendy RC wykonane w środku manewru (biblioteka
+ * dronemoves) są zwijane w JEDEN wiersz: od ``start: X`` do ``end: X``.
+ */
+export function buildCommandRows(timeline) {
+  const rows = [];
+  let group = null;
+  for (const event of timeline.events) {
+    if (event.command === 'annotate') {
+      const text = String((event.args || [])[0] || '');
+      const isEnd = text.startsWith('end:');
+      if (!isEnd && !group) {
+        group = {
+          kind: 'maneuver',
+          label: text.replace(/^start:\s*/, ''),
+          t: event.t,
+          tEnd: event.t,
+          count: 0,
+          status: 'ok',
+          x: event.x, y: event.y, z: event.z, yaw: event.yaw, battery: event.battery,
+        };
+        continue;
+      }
+      if (isEnd && group) {
+        group.tEnd = event.t_end ?? event.t;
+        rows.push(group);
+        group = null;
+        continue;
+      }
+    }
+    if (group) {
+      group.count += 1;
+      group.tEnd = event.t_end ?? event.t;
+      if (event.status === 'error') group.status = 'error';
+      else if (event.status === 'warning' && group.status === 'ok') group.status = 'warning';
+      continue;
+    }
+    rows.push({ kind: 'event', event, t: event.t, tEnd: event.t_end ?? event.t, count: 1 });
+  }
+  if (group) rows.push(group);
+  return rows;
+}
+
+/** Indeks wiersza tabeli dla chwili ``t`` (z uwzględnieniem grup manewrów). */
+export function commandRowIndexAt(timeline, t) {
+  if (!timeline._commandRows) timeline._commandRows = buildCommandRows(timeline);
+  const rows = timeline._commandRows;
+  let index = -1;
+  for (let i = 0; i < rows.length; i += 1) {
+    if (rows[i].t <= t + 1e-9) index = i; else break;
+  }
+  return index;
+}
+
 export function renderCommands(timeline, onSeek) {
   const tbody = $('#commands-table tbody');
   const empty = $('#commands-empty');
   tbody.innerHTML = '';
   const events = timeline.events;
-  empty.hidden = events.length > 0;
+  const rows = buildCommandRows(timeline);
+  timeline._commandRows = rows;
+  empty.hidden = rows.length > 0;
   const fragment = document.createDocumentFragment();
-  events.forEach((event) => {
+  rows.forEach((row, index) => {
+    if (row.kind === 'maneuver') {
+      const duration = Math.max(row.tEnd - row.t, 0);
+      const tr = el('tr', { class: `clickable maneuver status-${row.status}` });
+      tr.dataset.t = String(row.t);
+      tr.dataset.index = `m${index}`;
+      tr.append(
+        el('td', { class: 'mono', text: '◆' }),
+        el('td', { class: 'mono', text: `${row.t.toFixed(2)}s` }),
+        el('td', { class: 'mono', text: row.label }),
+        el('td', { class: 'mono hint', text: `${row.count} komend RC · ${duration.toFixed(1)} s` }),
+        el('td', { class: 'num', text: fmt(row.x, 0) }),
+        el('td', { class: 'num', text: fmt(row.y, 0) }),
+        el('td', { class: 'num', text: fmt(row.z, 0) }),
+        el('td', { class: 'num', text: fmt(row.yaw, 0) }),
+        el('td', { class: 'num', text: fmt(row.battery, 1) }),
+        el('td', {}, [el('span', { class: `tag ${row.status}`, text: 'manewr' })]),
+      );
+      tr.title = `Manewr dronemoves: ${row.label} (${row.count} komend RC, ${duration.toFixed(2)} s)`;
+      tr.addEventListener('click', () => onSeek(row.t));
+      fragment.append(tr);
+      return;
+    }
+    const event = row.event;
     const tr = el('tr', { class: `clickable status-${event.status}` });
     tr.dataset.t = String(event.t);
     tr.dataset.index = String(event.index);

@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dronemoves"
+version = "0.1.0"
+description = "Płynne manewry (forward, turn, arc, circle, slalom, spirala...) dla dronów sterowanych z Pythona"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "dronemoves contributors" }]
+keywords = ["drone", "tello", "djitellopy", "uav", "flight", "maneuvers", "robotics"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = []
+
+[project.optional-dependencies]
+# backend dla DJI Tello (prawdziwy dron); symulator podstawia własny mock
+tello = ["djitellopy>=2.4"]
+dev = ["pytest>=7"]
+
+[project.urls]
+Homepage = "https://github.com/example/dronemoves"
+Documentation = "https://github.com/example/dronemoves#readme"
+Changelog = "https://github.com/example/dronemoves/blob/main/CHANGELOG.md"
+
+[tool.setuptools]
+packages = ["dronemoves", "dronemoves.backends"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

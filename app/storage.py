@@ -57,6 +57,7 @@ def flight_to_dict(flight: FlightData, flight_id: str, created_at: Optional[str]
         "script_source": flight.script_source,
         "samples": flight.samples,
         "events": flight.events,
+        "planned_trail": flight.planned_trail,
         "segments": flight.segments,
         "warnings": flight.warnings,
         "errors": flight.errors,

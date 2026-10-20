@@ -69,13 +69,16 @@ function onFrame(t) {
   const event = index >= 0 ? timeline.events[index] : null;
   const hud = $('#hud-command');
   if (hud) {
+    const maneuver = event && event.maneuver ? `◆ ${event.maneuver} · ` : '';
     hud.textContent = event
-      ? `#${event.index} ${event.command}(${(event.args || []).map(String).join(', ')})`
+      ? `${maneuver}#${event.index} ${event.command}(${(event.args || []).map(String).join(', ')})`
       : '—';
   }
-  if (marks.row !== index) {
-    panels.highlightCommandRow(index);
-    marks.row = index;
+  // w tabeli komend manewry są zwinięte w jeden wiersz - szukamy wiersza dla chwili t
+  const rowIndex = panels.commandRowIndexAt(timeline, t);
+  if (marks.row !== rowIndex) {
+    panels.highlightCommandRow(rowIndex);
+    marks.row = rowIndex;
   }
   const line = event ? event.line : null;
   if (marks.line !== line) {

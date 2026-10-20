@@ -242,6 +242,8 @@ class FlightData:
     status: str = "ok"  # ok | error | timeout
     final_state: str = STATE_IDLE
     real_seconds: float = 0.0
+    #: zaplanowana trajektoria manewrów (biblioteka dronemoves): [{x, y, z, t, label}]
+    planned_trail: List[Dict[str, Any]] = field(default_factory=list)
 
 
 class Simulation:
@@ -624,15 +626,40 @@ class Simulation:
         self.check_ceiling(move.end[2], event)
         self._execute_motion(event, move, yaw1=self.yaw + dyaw)
 
+    @staticmethod
+    def _maneuver_label(command: str, args: Sequence[Any]) -> Optional[str]:
+        """Czy zdarzenie jest etykietą manewru (start/koniec) - zwróć jego nazwę."""
+        if command != "annotate" or not args:
+            return None
+        label = str(args[0])
+        for prefix in ("start: ", "end: "):
+            if label.startswith(prefix):
+                return label[len(prefix):]
+        return label
+
     # ---------------------------------------------------------------- eksport
     def to_flight_data(self) -> FlightData:
         """Zserializuj lot (telemetria, zdarzenia, ostrzeżenia, ślady ruchu)."""
+        events = [e.as_dict() for e in self.recorder.events]
         segments = [span.motion.as_dict(span.t0, span.t1)
                     for span in self.recorder.spans if span.motion is not None]
+        # grupuj manewry: zdarzenia między "start: X" i "end: X" dostają maneuver=X
+        active: List[str] = []
+        for event in events:
+            label = self._maneuver_label(event["command"], event["args"])
+            if label is not None:
+                if str(event["args"][0]).startswith("end:"):
+                    if active and active[-1] == label:
+                        active.pop()
+                else:
+                    active.append(label)
+                event["maneuver_role"] = "end" if str(event["args"][0]).startswith("end:") else "start"
+            if active:
+                event["maneuver"] = active[-1]
         return FlightData(
             duration=round(self.now, 4),
             samples=[s.as_dict() for s in self.recorder.samples],
-            events=[e.as_dict() for e in self.recorder.events],
+            events=events,
             warnings=list(self.recorder.warnings),
             errors=list(self.recorder.errors),
             segments=segments,
