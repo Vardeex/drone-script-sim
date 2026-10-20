@@ -26,7 +26,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -36,6 +36,17 @@ from .adapters.base import detect_adapter, get_adapter, list_adapters
 
 app = FastAPI(title="Drone Script Simulator", version="1.0.0")
 app.mount("/static", StaticFiles(directory=str(paths.STATIC_DIR)), name="static")
+
+
+@app.middleware("http")
+async def no_cache_static(request: Request, call_next):
+    """Aplikacja lokalna: statyki bez cache, żeby zmiany w JS/CSS były natychmiast widoczne."""
+    response = await call_next(request)
+    if request.url.path.startswith("/static/") or request.url.path == "/":
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
 
 #: aktywne uruchomienia (log na żywo): id -> informacje
 RUNS: Dict[str, Dict[str, Any]] = {}

@@ -1,0 +1,30 @@
+"""Przykład 2: wznoszenie, obroty i ruch `go_xyz_speed` (przód/lewo/góra).
+
+Pokazuje ruch w układzie drona po obrocie oraz komendy z prędkością.
+"""
+
+from djitellopy import Tello
+
+tello = Tello()
+tello.connect()
+tello.takeoff()
+
+# wznoszenie na 1,5 m (takeoff daje ok. 80 cm)
+tello.move_up(70)
+print("Wysokość:", tello.get_height(), "cm")
+
+# obrót w lewo o 90 stopni, potem trójkąt ruchem xyz
+tello.rotate_counter_clockwise(90)
+tello.go_xyz_speed(100, 0, 0, 40)
+tello.rotate_counter_clockwise(120)
+tello.go_xyz_speed(100, 0, 0, 40)
+tello.rotate_counter_clockwise(120)
+tello.go_xyz_speed(100, 0, 0, 40)
+
+# pełny obrót i opadanie
+tello.rotate_clockwise(360)
+tello.move_down(50)
+print("Yaw:", tello.get_yaw(), "stopnie")
+
+tello.land()
+tello.end()
