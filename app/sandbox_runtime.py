@@ -218,12 +218,15 @@ def script_location() -> Dict[str, Any]:
 def _sanitize_traceback(text: str, script_name: str) -> str:
     """Usuń prywatne ścieżki: skrypt -> nazwa, projekt -> ścieżka względna, reszta -> <python>."""
     from app import paths
+    from app.runner import _PATH_OUTSIDE
 
     project = str(paths.PROJECT_ROOT)
     work_dir = _STATE.get("work_dir")
     if work_dir:
         text = text.replace(str(work_dir) + os.sep, "").replace(str(work_dir), "")
     text = text.replace(project + os.sep, "").replace(project, ".")
+    # ścieżki spoza projektu (katalogi tymczasowe systemu) -> sama nazwa pliku
+    text = _PATH_OUTSIDE.sub(lambda m: m.group("name"), text)
     lines = []
     for line in text.splitlines():
         if 'File "<string>"' in line:

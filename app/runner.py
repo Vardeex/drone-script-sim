@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -34,6 +35,12 @@ from typing import Any, Dict, List, Optional
 from . import paths
 from .adapters.base import DroneAdapter, get_adapter, detect_adapter
 from .sim.core import FlightData
+
+#: ścieżki plików spoza projektu (Windows/POSIX) - do zastąpienia samą nazwą pliku.
+#: Chroni zapisy lotów przed wyciekiem nazwy użytkownika systemu z katalogów tymczasowych.
+_PATH_OUTSIDE = re.compile(
+    r"(?:[A-Za-z]:[\\/]|/)(?:[^\s\"'<>|*?]*[\\/])(?P<name>[^\\/\s\"'<>|*?]+\.\w+)"
+)
 
 DEFAULT_TIMEOUT = 60.0
 
@@ -252,6 +259,9 @@ def _sanitize_output(text: str, work_dir: Path) -> str:
     project = str(paths.PROJECT_ROOT)
     text = text.replace(str(work_dir) + os.sep, "").replace(str(work_dir), "")
     text = text.replace(project + os.sep, "").replace(project, ".")
+    # dowolna ścieżka spoza projektu (katalogi tymczasowe systemu) nie może
+    # trafić do zapisu lotu - zostawiamy tylko nazwę pliku
+    text = _PATH_OUTSIDE.sub(lambda m: m.group("name"), text)
     # ramka wewnętrznego bootstrapu runnera nie jest częścią skryptu użytkownika
     skipped = []
     lines = text.splitlines()
