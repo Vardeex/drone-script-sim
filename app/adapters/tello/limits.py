@@ -7,7 +7,7 @@ prędkość RC -100..100.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from typing import Dict, Tuple
 
 

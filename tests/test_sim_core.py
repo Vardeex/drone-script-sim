@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import math
-
 import pytest
 
 from app.sim import core, physics
@@ -18,7 +16,7 @@ def _square_script_events(sim: core.Simulation) -> None:
         sim.require_airborne("move_forward")
         sim.move_relative("move_forward", [100], 100, 0, 0, 50, ev)
         ev, _, _ = sim.begin("rotate_clockwise", [90])
-        sim.rotate("rotate_clockwise", [90], -90, ev)
+        sim.rotation("rotate_clockwise", [90], -90, ev)
     ev, _, _ = sim.begin("land", [])
     sim.land(ev)
 
@@ -39,8 +37,8 @@ def test_square_distance_and_yaw_progression():
     _square_script_events(sim)
     moved = sum(e.duration for e in sim.recorder.events if e.command == "move_forward")
     assert moved == pytest.approx(4 * 100 / 50, rel=1e-6)  # 8 s
-    # dystans = kwadrat 400 cm + wznoszenie 80 cm + lądowanie 80 cm
-    assert sim.distance == pytest.approx(560.0, rel=1e-6)
+    # dystans = droga pozioma kwadratu (wznoszenie i lądowanie nie są liczone)
+    assert sim.distance == pytest.approx(400.0, rel=1e-6)
     assert sim.max_height == pytest.approx(80.0, abs=1e-6)
 
 
@@ -128,6 +126,23 @@ def test_curve_end_position():
     # łuk musi odchylić się od prostej (punkt kontrolny po lewej)
     xs = [p[1] for p in sim.recorder.spans[-1].motion.move.polyline]
     assert max(xs) > 20.0
+
+
+def test_rotation_duration_and_yaw():
+    """Obrót: 90°/s + minimum 100 ms (krótkie obroty widoczne na osi czasu)."""
+    sim = core.Simulation()
+    ev, _, _ = sim.begin("takeoff", [])
+    sim.takeoff(ev)
+    before = sim.now
+    ev, _, _ = sim.begin("rotate_counter_clockwise", [90])
+    sim.rotation("rotate_counter_clockwise", [90], 90, ev)
+    assert sim.now - before == pytest.approx(1.0, abs=1e-9)
+    assert sim.yaw == pytest.approx(90.0)
+    before = sim.now
+    ev, _, _ = sim.begin("rotate_clockwise", [1])
+    sim.rotation("rotate_clockwise", [1], -1, ev)
+    assert sim.now - before == pytest.approx(0.1, abs=1e-9)
+    assert sim.yaw % 360 == pytest.approx(89.0)
 
 
 def test_move_before_takeoff_raises():

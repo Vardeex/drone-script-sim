@@ -71,7 +71,7 @@ def test_run_script_saves_flight_and_history(client):
     flight = result["flight"]
     assert flight["script_name"] == "kwadrat.py"
     assert flight["status"] == "ok"
-    assert flight["stats"]["distance_cm"] > 400
+    assert flight["stats"]["distance_cm"] == pytest.approx(400.0, abs=1.0)
     assert flight["samples"] and flight["events"]
 
     history = client.get("/api/flights").json()

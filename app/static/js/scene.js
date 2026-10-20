@@ -309,7 +309,7 @@ export class DroneScene {
       const color = event.status === 'error' ? 0xef4444
         : event.status === 'warning' ? 0xf59e0b : 0x38bdf8;
       const marker = new THREE.Mesh(
-        new THREE.SphereGeometry(0.034, 12, 12),
+        new THREE.SphereGeometry(0.024, 10, 10),
         new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.35 }),
       );
       marker.position.set(p.x / M, p.y / M + 0.03, p.z / M);
@@ -331,10 +331,12 @@ export class DroneScene {
         this.markerGroup.add(line);
       }
 
+      // numer komendy wprost na znaczniku (bez osobnej "plakietki" zasłaniającej dron)
       const label = this._numberLabel(event.index, color);
-      label.position.set(p.x / M, p.y / M + 0.09, p.z / M);
+      label.position.set(p.x / M, p.y / M + 0.03, p.z / M);
       label.userData.event = event;
       label.userData.kind = 'label';
+      label.scale.set(0.1, 0.0417, 1);
       this.markerGroup.add(label);
       this.pickables.push(label);
     }
@@ -342,27 +344,28 @@ export class DroneScene {
 
   _numberLabel(index, color) {
     const canvas = document.createElement('canvas');
-    canvas.width = 96;
-    canvas.height = 52;
+    canvas.width = 128;
+    canvas.height = 68;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = 'rgba(10,14,20,0.85)';
     ctx.beginPath();
-    ctx.roundRect(2, 2, 92, 48, 14);
+    ctx.arc(64, 34, 30, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(10,14,20,0.92)';
     ctx.fill();
+    ctx.lineWidth = 5;
     ctx.strokeStyle = `#${color.toString(16).padStart(6, '0')}`;
-    ctx.lineWidth = 4;
     ctx.stroke();
-    ctx.fillStyle = 'rgba(235,242,250,0.95)';
-    ctx.font = '600 30px "Segoe UI", sans-serif';
+    ctx.fillStyle = '#e8f0fa';
+    const text = String(index);
+    ctx.font = `700 ${text.length > 2 ? 26 : 32}px "Segoe UI", sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(String(index), 48, 27);
+    ctx.fillText(text, 64, 35);
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
       map: texture, transparent: true, depthTest: false, depthWrite: false,
     }));
-    sprite.scale.set(0.12, 0.065, 1);
+    sprite.scale.set(0.12, 0.0637, 1);
     sprite.renderOrder = 100;
     return sprite;
   }

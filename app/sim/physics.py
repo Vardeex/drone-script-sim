@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Iterable, List, Sequence, Tuple
+from typing import Iterable, List, Optional, Sequence, Tuple
 
 Vec3 = Tuple[float, float, float]
 
@@ -70,6 +70,8 @@ class LinearMove:
     accel_value: float = DEFAULT_ACCEL  # cm/s^2
     #: Punkty pośrednie (dla ``curve``) - próbkowane z krzywej Beziera.
     polyline: List[Vec3] = field(default_factory=list)
+    #: Wymuszony czas trwania (np. obrót w miejscu); None = liczony z prędkości.
+    duration_override: Optional[float] = None
 
     def __post_init__(self) -> None:
         if not self.polyline:
@@ -88,6 +90,8 @@ class LinearMove:
         return v / self.accel_value
 
     def duration(self) -> float:
+        if self.duration_override is not None:
+            return max(self.duration_override, 0.0)
         if self.length <= 0.0:
             return 0.0
         if not self.accel:

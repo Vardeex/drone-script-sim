@@ -20,6 +20,9 @@ const scene = new DroneScene($('#viewport'));
 const player = new Player(timeline, (t) => onFrame(t));
 const marks = { row: -2, line: -1 };
 
+//: limit czasu wykonania skryptu w UI (sekundy czasu rzeczywistego)
+const RUN_TIMEOUT_S = 60;
+
 function setStatus(text, kind = '', extra = '') {
   const bar = $('#status-bar');
   bar.className = kind;
@@ -143,12 +146,13 @@ async function runSimulation() {
       script_name: currentScriptName(),
       accel: $('#opt-accel').checked,
       save: true,
+      timeout: RUN_TIMEOUT_S,
     });
     state.runId = started.id;
     const startedAt = Date.now();
     const result = await waitForRun(started.id, (update) => {
       if (update.status === 'running' && update.live) renderLive(update.live, startedAt);
-    });
+    }, { maxMs: (RUN_TIMEOUT_S + 30) * 1000 });
     if (result.status === 'failed') throw new Error(result.error || 'Błąd serwera.');
     if (!result.flight) throw new Error('Brak wyniku lotu.');
     loadFlight(result.flight, {

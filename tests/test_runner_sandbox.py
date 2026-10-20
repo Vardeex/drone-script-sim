@@ -64,7 +64,7 @@ def test_square_script_returns_to_start():
     assert pos[0] == pytest.approx(0.0, abs=1.0)
     assert pos[1] == pytest.approx(0.0, abs=1.0)
     assert round(pos[2]) == 0
-    assert result.flight.stats["distance_cm"] > 400
+    assert result.flight.stats["distance_cm"] == pytest.approx(400.0, abs=1.0)
     assert result.flight.samples[0]["t"] == 0.0
 
 
@@ -173,3 +173,32 @@ def test_mock_djitellopy_used_not_real_library():
     path = result.flight.stdout[0]["text"].replace("\\", "/")
     assert path.endswith("app/adapters/tello/djitellopy/__init__.py")
     assert result.flight.stdout[1]["text"].endswith("-sim")
+
+
+def test_syntax_error_line_number():
+    """SyntaxError powinien wskazywać linię skryptu, nie wewnętrznego bootstrapu."""
+    source = "print('ok')\ndef broken(:\n    pass\n"
+    result = runner.run_script(source, "syntax.py")
+    assert result.status == "error"
+    assert result.flight.errors[0]["type"] == "SyntaxError"
+    assert result.flight.errors[0]["line"] == 2
+
+
+def test_ceiling_warning_keeps_script_running():
+    """Przekroczenie 500 cm = ostrzeżenie (skrypt trwa), z linią komendy."""
+    source = (
+        "from djitellopy import Tello\n"
+        "t = Tello()\n"
+        "t.connect()\n"
+        "t.takeoff()\n"
+        "for _ in range(10):\n"
+        "    t.move_up(50)\n"
+        "t.land()\n"
+    )
+    result = runner.run_script(source, "ceiling.py")
+    assert result.status == "ok"
+    assert result.flight.warnings
+    assert all(w["line"] == 6 for w in result.flight.warnings)
+    assert result.flight.stats["max_height_cm"] > 500
+    assert result.flight.final_state == "landed"
+

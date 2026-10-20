@@ -11,7 +11,6 @@ import json
 import secrets
 import threading
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from . import paths

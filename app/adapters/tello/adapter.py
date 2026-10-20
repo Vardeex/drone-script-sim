@@ -168,7 +168,7 @@ class TelloController:
             self._fail(event, exc, self.sim)
             raise core.SimulationError(str(exc)) from None
         delta = degrees if direction == "ccw" else -degrees
-        self.sim.rotate(command, [degrees], delta, event)
+        self.sim.rotation(command, [degrees], delta, event)
 
     def go_xyz_speed(self, x: Any, y: Any, z: Any, speed: Any) -> None:
         command = "go_xyz_speed"

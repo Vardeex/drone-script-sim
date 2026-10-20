@@ -16,6 +16,8 @@
 
 * { box-sizing: border-box; }
 
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   height: 100%;
@@ -201,6 +203,7 @@ select { padding: 5px 8px; }
   background: var(--error);
   color: #fff;
 }
+#tabs .count[hidden] { display: none; }
 #tabs .count.warn { background: var(--warn); color: #111; }
 
 .tab-content {

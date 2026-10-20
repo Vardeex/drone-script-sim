@@ -26,7 +26,7 @@ import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional
 
 from . import paths
 from .adapters.base import DroneAdapter, get_adapter, detect_adapter
@@ -54,6 +54,8 @@ MESSAGE = ("Blokada sieci w symulatorze dronów: próba połączenia z %r "
 
 def _blocked(*args, **kwargs):
     target = args[0] if args else "?"
+    if hasattr(target, "name"):  # np. AddressFamily.AF_INET przekazany jako socket()
+        target = "socket"
     raise NetworkDisabled(MESSAGE % (target,))
 
 

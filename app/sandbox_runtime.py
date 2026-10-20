@@ -18,7 +18,6 @@ from __future__ import annotations
 import inspect
 import json
 import os
-import sys
 import threading
 import time
 import traceback
@@ -213,13 +212,22 @@ def finish(status: str, exc: Optional[BaseException] = None,
 
 
 def _exc_line(exc: BaseException) -> Optional[int]:
-    """Numer linii w skrypcie użytkownika, w której powstał wyjątek."""
+    """Numer linii w skrypcie użytkownika, w której powstał wyjątek.
+
+    Dla ``SyntaxError`` / ``IndentationError`` bierzemy ``exc.lineno`` (dotyczy
+    skryptu użytkownika); dla wyjątków w czasie wykonania - ostatnią ramkę
+    spoza runtimeu i mocków adapterów.
+    """
+    if isinstance(exc, SyntaxError) and exc.lineno:
+        return int(exc.lineno)
     tb = exc.__traceback__
     line = None
     while tb is not None:
         filename = os.path.abspath(tb.tb_frame.f_code.co_filename)
-        if "app" + os.sep + "adapters" not in filename and "app" + os.sep + "sim" not in filename \
-                and "app" + os.sep + "sandbox_runtime" not in filename:
+        if "app" + os.sep + "adapters" not in filename \
+                and "app" + os.sep + "sim" not in filename \
+                and "app" + os.sep + "sandbox_runtime" not in filename \
+                and "app" + os.sep + "runner" not in filename:
             line = tb.tb_lineno
         tb = tb.tb_next
     return line

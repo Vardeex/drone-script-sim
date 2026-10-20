@@ -40,8 +40,8 @@ export async function waitForRun(id, onUpdate, { interval = 250, maxMs = 180000 
   let last = null;
   while (Date.now() < deadline) {
     last = await api.live(id);
-    onUpdate?.(last);
     if (last.status !== 'running') return last;
+    onUpdate?.(last);
     await new Promise((resolve) => setTimeout(resolve, interval));
   }
   throw new Error('Przekroczono czas oczekiwania na zakończenie symulacji.');

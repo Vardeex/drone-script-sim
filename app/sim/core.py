@@ -371,7 +371,13 @@ class Simulation:
         return new_level
 
     def _add_distance(self, points: Sequence[Vec3]) -> None:
-        self.distance += physics.path_length(points)
+        """Sumuj długość przelotu (drogę poziomą) i aktualizuj maks. wysokość.
+
+        Droga pionowa (takeoff/land/up/down) nie jest liczona do "dystansu" -
+        w statystykach lotu dystans oznacza przelot nad ziemią.
+        """
+        for a, b in zip(points, points[1:]):
+            self.distance += math.hypot(b[0] - a[0], b[1] - a[1])
         for p in points:
             if p[2] > self.max_height:
                 self.max_height = p[2]
@@ -467,12 +473,23 @@ class Simulation:
             )
 
     def check_ceiling(self, z: float, event: Optional[Event] = None) -> bool:
-        """Ostrzeż, jeśli wysokość przekracza maksymalną wysokość Tello."""
-        # limit pobierany z ustawień silnika (adapter ustawia wartość w Settings)
+        """Ostrzeż, jeśli wysokość przekracza maksymalną wysokość drona.
+
+        Ostrzeżenie trafia do zdarzenia komendy (z linią skryptu), więc skrypt
+        nie zostaje przerwany, ale lot jest oznaczony jako ostrzeżenie.
+        """
         limit = float(self.settings.max_height_cm)
         if z > limit:
-            self.warn(f"Wysokość {z:.0f} cm przekracza maksymalną wysokość drona "
-                      f"({limit:.0f} cm).", event=event)
+            message = (f"Wysokość {z:.0f} cm przekracza maksymalną wysokość drona "
+                       f"({limit:.0f} cm).")
+            if event is not None:
+                self.recorder.add_warning(message, line=event.line, file=event.file,
+                                          t=self.now, command=event.command)
+                if event.status == "ok":
+                    event.status = "warning"
+                event.warning = message if not event.warning else f"{event.warning} | {message}"
+            else:
+                self.recorder.add_warning(message, t=self.now)
             return False
         return True
 
@@ -489,8 +506,6 @@ class Simulation:
         self.yaw = yaw_end
         self.velocity = (0.0, 0.0, 0.0)
         self._add_distance(move.polyline)
-        self._record_sample(self.now, self.position, self.velocity, self.yaw,
-                            self.state, self.battery)
         self.commit(event)
 
     def move_relative(self, command: str, args: Sequence[Any], dx: float, dy: float,
@@ -509,13 +524,15 @@ class Simulation:
         self.check_ceiling(end[2], event)
         self._execute_motion(event, move)
 
-    def rotate(self, command: str, args: Sequence[Any], delta_deg: float,
-               event: Event) -> None:
-        """Obrót w miejscu z prędkością obrotową (założenie: 90 deg/s)."""
+    def rotation(self, command: str, args: Sequence[Any], delta_deg: float,
+                 event: Event) -> None:
+        """Obrót w miejscu z prędkością obrotową (założenie: 90 deg/s).
+
+        Dodajemy 100 ms "czasu reakcji", aby krótkie obroty były widoczne na osi czasu.
+        """
         speed_deg_s = 90.0
-        duration = abs(delta_deg) / speed_deg_s
         move = physics.LinearMove(start=tuple(self.position), end=tuple(self.position),
-                                  speed=1.0)
+                                  speed=1.0, duration_override=max(abs(delta_deg) / speed_deg_s, 0.1))
         self._execute_motion(event, move, yaw1=self.yaw + delta_deg)
 
     def takeoff(self, event: Event, height: Optional[float] = None) -> None:
@@ -523,7 +540,6 @@ class Simulation:
         if self.state in (STATE_AIRBORNE, STATE_EMERGENCY):
             raise SimulationError("Dron już jest w powietrzu - takeoff nie jest możliwy.")
         target = self.settings.takeoff_height if height is None else height
-        dx, dy = 0.0, 0.0
         move = physics.LinearMove(
             start=tuple(self.position),
             end=(self.position[0], self.position[1], target),
