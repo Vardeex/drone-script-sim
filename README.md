@@ -1,5 +1,9 @@
 # Drone Script Simulator
 
+> **Status: prototyp / wersja rozwojowa.** Model 3D drona jest w trakcie dopracowania,
+> biblioteka `dronemoves` była testowana tylko w symulacji, a parametry sterowania RC
+> to założenia, nie pomiary z prawdziwego drona.
+
 Lokalna aplikacja do **testowania skryptów sterujących dronem bez drona**.
 Wgrywasz skrypt Pythona (na razie dla DJI Tello przez `djitellopy`), aplikacja
 uruchamia go w sandboxie (symulacja, bez łączenia z siecią) i pokazuje w 3D

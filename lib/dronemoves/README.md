@@ -5,6 +5,12 @@ Działa z [DJI Tello](https://www.ryzerobotics.com/tello) (`djitellopy`), a ten 
 skrypt uruchomisz w symulatorze — biblioteka używa **wyłącznie publicznego API**
 drona, więc nie zna ani symulatora, ani żadnego konkretnego SDK.
 
+Instalacja prosto z GitHuba:
+
+```
+pip install "dronemoves[tello] @ git+https://github.com/Vardeex/drone-script-sim.git#subdirectory=lib/dronemoves"
+```
+
 ```python
 from djitellopy import Tello
 from dronemoves import Pilot
