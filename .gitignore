@@ -25,5 +25,4 @@ __pycache__/
 *.swp
 Thumbs.db
 desktop.ini
-*.log
-screenshot*.png
+.log

@@ -22,6 +22,11 @@ from typing import Any, Dict, List, Optional, Sequence, Type
 from ..paths import ADAPTERS_DIR
 from ..sim.core import FlightData, Simulation
 
+__all__ = [
+    "ADAPTERS_DIR", "AdapterInfo", "DroneAdapter", "detect_adapter", "get_adapter",
+    "list_adapters", "register_adapter",
+]
+
 
 @dataclass
 class AdapterInfo:
