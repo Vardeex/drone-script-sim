@@ -65,6 +65,11 @@ start.bat
 Skrypt uruchamia serwer `uvicorn` na `http://127.0.0.1:8765` (tylko pętla
 lokalna) i otwiera przeglądarkę. Zamknięcie okna konsoli zatrzymuje serwer.
 
+Jeśli port 8765 jest już zajęty (`app/port_busy.py`), `start.bat` **nie
+uruchamia drugiego serwera** - tylko otwiera przeglądarkę. Dwa procesy
+`uvicorn` na tym samym porcie potrafią serwować różne wersje plików statycznych,
+co daje mylące wyniki przy pracy nad modelem 3D.
+
 Ręcznie, z katalogu projektu:
 
 ```bat
@@ -138,10 +143,12 @@ wybrano rozsądne wartości):
 | `query_*` | „nieobsługiwane w symulacji” (brak pakietów telemetrii z drona) |
 | Czas komendy | brak limitu 15 s - komenda kończy się po wyliczonym czasie |
 | Telemetria | próbki co 50 ms czasu symulacji |
-| Model 3D drona | low-poly z prymitywów three.js: obrys **98 × 92,5 × 41 mm** (tolerancja ±2 mm), waga 87 g nie ma wpływu na symulację |
-| Śmigła w modelu | średnica **40 mm** i rozstaw osi 52 × 46 mm - mniejsze niż realne ~76 mm, bo obrys 98 × 92,5 mm jest nadrzędny i śmigła nie mogą się przecinać (przerwa 12 mm w X, 6 mm w Z) |
-| Osłony śmigieł | pierścienie ø 41,8 mm + pionowy łuk; włączane przełącznikiem „Osłony” (0 = bez osłon) |
-| Wysokość modelu | dno na `y = 0` (nóżki 6 mm), góra osłon 41,9 mm; środek obrotu = środek geometryczny |
+| Model 3D drona | low-poly z prymitywów three.js: obrys **98,5 × 92,5 × 39 mm** (cel 98 × 92,5 × 41 mm, tolerancja ±3 mm), waga 87 g nie ma wpływu na symulację |
+| Korpus modelu | zaokrąglony prostopadłościan **45 × 26 × 20 mm** (r 5 mm), od 8 do 28 mm nad ziemią; kamera ø6 × 2 mm zlicowana z przodem |
+| Silniki i ramiona | osie silników w **(±27, ±24) mm**, silnik ø8 mm (6–26 mm) + srebrny pierścień ø8,6 mm, nóżka ø3 mm (0–6 mm); ramiona ø4 mm od korpusu (±16, ±11) do osi |
+| Śmigła w modelu | średnica **38 mm**, płaszczyzna 37–38,5 mm na wałku ø2,5 mm - śmigła zachodzą w rzucie nad narożniki korpusu, ale są 9 mm wyżej, więc się nie stykają (przerwa między śmigłami 16 mm w X, 10 mm w Y) |
+| Osłony śmigieł | poziomy łuk torusa **R 21 mm**, rurka ø2,5 mm, na wysokości 34 mm, łuk **280°** (przerwa 80° skierowana do środka drona) + 2 szprychy ø2 mm pod płaszczyzną śmigła; włączane przełącznikiem „Osłony” |
+| Wysokość modelu | dno na `y = 0` (nóżki 6 mm), góra śmigieł 38,5 mm nad ziemią; środek obrotu = środek geometryczny |
 | Skala modelu | przełącznik „Rozmiar”: **Prawdziwy (×1)** / ×3 / ×5 / ×10; domyślnie ×5, bo trasy mają kilka metrów. Skalowanie dotyczy tylko modelu - trasa, telemetria i statystyki pozostają w rzeczywistej skali |
 | Kierunek przodu | kamera z przodu + subtelny akcent (kolor) na przednich osłonach; opcjonalna strzałka na cieniu drona („Cień”) |
 
