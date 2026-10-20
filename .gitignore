@@ -1,0 +1,29 @@
+# Środowisko lokalne
+.venv/
+tools/
+cache/
+tmp/
+
+# Wyniki lotów (dane runtime, w tym wgrane skrypty)
+flights/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+
+# Konfiguracja lokalna / sekrety
+.env
+.env.*
+
+# Edytory / system
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+*.log
+screenshot*.png
