@@ -71,10 +71,10 @@ Ręcznie, z katalogu projektu:
 .venv\Scripts\python.exe -m uvicorn app.server:app --host 127.0.0.1 --port 8765
 ```
 
-`start.bat` w tym repozytorium zawiera ścieżki mojej instalacji na dysku `D:`
-(`D:\DroneSim`, Python w `D:\DroneSim\tools\Python311`, `cache`/`tmp` na `D:`) -
-na innym komputerze działa tak samo, jeśli projekt jest w `D:\DroneSim`;
-w przeciwnym razie użyj polecenia powyżej.
+`start.bat` działa z katalogu, w którym leży (dowolna lokalizacja), i używa
+tylko lokalnego `.venv`. Katalogi `cache`/`tmp` można ustawić zmiennymi
+środowiska bieżącej sesji (`PIP_CACHE_DIR`, `TEMP`, `TMP`) - aplikacja niczego
+nie zapisuje w konfiguracji systemu.
 
 ## Jak używać
 
@@ -82,6 +82,8 @@ w przeciwnym razie użyj polecenia powyżej.
 2. Wgraj plik `.py` („Wgraj skrypt”), wybierz przykład z listy lub edytuj kod.
 3. „▶ Uruchom symulację” (Ctrl+Enter). Skrypt wykonuje się w sandboxie -
    wynik pojawia się po zakończeniu (zwykle ułamki sekund).
+   Przycisk „■ Stop” przerwa: proces skryptu jest zabijany, a częściowy lot
+   (telemetria do momentu przerwania) zapisuje się ze statusem „przerwany”.
 4. Odtwarzanie: spacja (play/pauza), ←/→ (poprzednia/następna komenda),
    suwak czasu, prędkość 0.25x–8x, tryb kamery.
 5. Klik w wiersz tabeli komend lub w znacznik w 3D przeskakuje do chwili.
@@ -106,7 +108,9 @@ w przeciwnym razie użyj polecenia powyżej.
   „nieobsługiwane w symulacji” (ostrzeżenie, skrypt nie przestaje działać).
 * Skrypt nie ma dostępu do sieci (blokada `socket`) - nie może sterować
   prawdziwym dronem.
-* Limit 60 s czasu rzeczywistego na skrypt (pętla nieskończona = `timeout`).
+* Limit 60 s czasu rzeczywistego na skrypt (pętla nieskończona = `timeout`);
+  skrypt można też przerwać ręcznie („Stop” → status „przerwany”).
+* Limit 3600 s czasu symulacji (ochrona przed nieskończoną pętlą `sleep`).
 * Tylko jeden adapter (DJI Tello); inne drony wymagają nowego adaptera.
 
 
@@ -215,6 +219,10 @@ API biblioteki na operacje silnika.
   `NetworkDisabled` - skrypt nie może wysłać komend do drona.
 * Limit 512 KB na skrypt, 60 s czasu wykonania, walidacja identyfikatorów
   lotów (ochrona przed path traversal).
+* „Stop” oraz zamknięcie serwera zabijają proces skryptu wraz z potomnymi
+  (`taskkill /T`). Każdy skrypt ma też watchdog: gdy proces serwera zniknie
+  (np. zabity z Menedżera zadań), skrypt kończy się sam - bez osieroconych
+  procesów `python.exe`.
 
 ## Licencja
 

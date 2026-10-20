@@ -20,6 +20,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -49,6 +50,8 @@ async def no_cache_static(request: Request, call_next):
 
 #: aktywne uruchomienia (log na żywo): id -> informacje
 RUNS: Dict[str, Dict[str, Any]] = {}
+#: wątki uruchomień (do sprzątania przy zamykaniu serwera)
+RUN_THREADS: Dict[str, "threading.Thread"] = {}
 MAX_SCRIPT_BYTES = 512 * 1024
 
 
@@ -117,6 +120,7 @@ def _start_run(source: str, script_name: str, adapter: Optional[str], timeout: f
             result = runner.run_script(
                 source, script_name=script_name, adapter_id=adapter_obj.id,
                 timeout=timeout, log_path=log_path, extra_settings={"accel": accel},
+                run_id=run_id,
             )
             info["stdout"] = result.flight.stdout
             info["stderr"] = result.flight.stderr
@@ -135,11 +139,34 @@ def _start_run(source: str, script_name: str, adapter: Optional[str], timeout: f
             except OSError:
                 pass
 
-    import threading
-
     thread = threading.Thread(target=_task, name=f"run-{run_id}", daemon=True)
+    RUN_THREADS[run_id] = thread
     thread.start()
     return {"id": run_id, "status": "running", "adapter": adapter_obj.id}
+
+
+@app.post("/api/run/stop/{run_id}")
+def api_run_stop(run_id: str) -> Dict[str, Any]:
+    """Przerwij uruchomienie: zabija proces skryptu, lot zapisuje się jako 'stopped'."""
+    info = RUNS.get(run_id)
+    if info is None:
+        raise HTTPException(404, "Nie znaleziono uruchomienia.")
+    if info["status"] != "running":
+        return {"id": run_id, "status": info["status"], "stopped": False}
+    stopped = runner.stop_run(run_id)
+    return {"id": run_id, "status": "running" if stopped else info["status"],
+            "stopped": stopped}
+
+
+@app.on_event("shutdown")
+def _shutdown_children() -> None:
+    """Zamknięcie serwera: zabij procesy skryptów, aby nie zostawały osierocone."""
+    killed = runner.stop_all()
+    for thread in list(RUN_THREADS.values()):
+        thread.join(timeout=5)
+    RUN_THREADS.clear()
+    if killed:
+        print(f"[dronesim] zatrzymano {killed} proces(ów) skryptów przy zamykaniu serwera")
 
 
 @app.post("/api/run")

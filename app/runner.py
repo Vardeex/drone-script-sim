@@ -20,10 +20,13 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -124,7 +127,7 @@ class RunResult:
     """Wynik uruchomienia skryptu."""
 
     flight: FlightData
-    status: str  # ok | error | timeout
+    status: str  # ok | error | timeout | stopped
     stdout: List[Dict[str, Any]] = field(default_factory=list)
     stderr: List[Dict[str, Any]] = field(default_factory=list)
     real_seconds: float = 0.0
@@ -138,6 +141,126 @@ def venv_python() -> str:
     if candidate.exists():
         return str(candidate)
     return sys.executable
+
+
+# --------------------------------------------------- rejestr procesów sandboxu
+#: aktywne sesje skryptów: run_id -> RunSession (chronione blokadą)
+_SESSIONS: Dict[str, "RunSession"] = {}
+_SESSION_LOCK = threading.RLock()
+
+
+class RunSession:
+    """Uruchomienie skryptu: proces + informacja, czy zażądano przerwania."""
+
+    def __init__(self, run_id: str, proc: Optional[subprocess.Popen] = None) -> None:
+        self.run_id = run_id
+        self.proc = proc
+        self.stop_requested = False
+
+
+def register_process(run_id: str, proc: subprocess.Popen) -> None:
+    """Zarejestruj proces skryptu pod identyfikatorem uruchomienia."""
+    with _SESSION_LOCK:
+        session = _SESSIONS.get(run_id)
+        if session is None:
+            session = RunSession(run_id)
+            _SESSIONS[run_id] = session
+        session.proc = proc
+
+
+def begin_session(run_id: str) -> "RunSession":
+    """Utwórz sesję PRZED startem procesu (umożliwia wczesne przerwanie)."""
+    session = RunSession(run_id)
+    with _SESSION_LOCK:
+        _SESSIONS[run_id] = session
+    return session
+
+
+def unregister_process(run_id: str) -> None:
+    """Usuń proces z rejestru (po zakończeniu)."""
+    with _SESSION_LOCK:
+        _SESSIONS.pop(run_id, None)
+
+
+def active_processes() -> Dict[str, subprocess.Popen]:
+    """Kopia rejestru procesów (diagnostyka/testy)."""
+    with _SESSION_LOCK:
+        return {rid: s.proc for rid, s in _SESSIONS.items() if s.proc is not None}
+
+
+def _kill_tree(proc: subprocess.Popen) -> None:
+    """Zabij proces skryptu wraz z potomnymi (Windows: taskkill /T, POSIX: grupa).
+
+    Uwaga: na Windows ``venv\\Scripts\\python.exe`` to launcher, który uruchamia
+    właściwy interpreter jako proces potomny - ``taskkill /T`` zabija oba.
+    """
+    if proc.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                       capture_output=True, check=False)
+    else:  # pragma: no cover - na Windows nieosiągalne
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            proc.kill()
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        try:
+            proc.kill()
+        except OSError:
+            pass
+
+
+def stop_run(run_id: str) -> bool:
+    """Przerwij uruchomienie o danym id. Zwraca True, jeśli proces był aktywny."""
+    with _SESSION_LOCK:
+        session = _SESSIONS.get(run_id)
+        if session is None or session.proc is None or session.proc.poll() is not None:
+            return False
+        session.stop_requested = True
+        proc = session.proc
+    _kill_tree(proc)
+    return True
+
+
+def stop_all() -> int:
+    """Zabij wszystkie aktywne procesy skryptów (wywoływane przy zamknięciu serwera)."""
+    with _SESSION_LOCK:
+        sessions = list(_SESSIONS.values())
+        _SESSIONS.clear()
+    killed = 0
+    for session in sessions:
+        proc = session.proc
+        if proc is not None and proc.poll() is None:
+            session.stop_requested = True
+            _kill_tree(proc)
+            killed += 1
+    return killed
+
+
+def running_script_pids() -> set:
+    """PID-y żywych procesów skryptów (diagnostyka/testy)."""
+    with _SESSION_LOCK:
+        return {p.pid for p in (s.proc for s in _SESSIONS.values())
+                if p is not None and p.poll() is None}
+
+
+def _sanitize_output(text: str, work_dir: Path) -> str:
+    """Usuń prywatne ścieżki ze strumieni skryptu (katalog Temp, katalog projektu)."""
+    project = str(paths.PROJECT_ROOT)
+    text = text.replace(str(work_dir) + os.sep, "").replace(str(work_dir), "")
+    text = text.replace(project + os.sep, "").replace(project, ".")
+    # ramka wewnętrznego bootstrapu runnera nie jest częścią skryptu użytkownika
+    skipped = []
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if 'File "<string>"' in line:
+            # pomiń tę ramkę i linię kodu, która po niej następuje
+            skipped.append(index)
+            skipped.append(index + 1)
+    return "\n".join(line for i, line in enumerate(lines) if i not in skipped)
 
 
 def _read_lines(text: str, limit: int = 2000) -> List[Dict[str, Any]]:
@@ -185,7 +308,8 @@ def run_script(source: str, script_name: str = "script.py",
                adapter_id: Optional[str] = None, timeout: float = DEFAULT_TIMEOUT,
                log_path: Optional[Path] = None,
                extra_settings: Optional[Dict[str, Any]] = None,
-               work_dir: Optional[Path] = None) -> RunResult:
+               work_dir: Optional[Path] = None,
+               run_id: Optional[str] = None) -> RunResult:
     """Uruchom skrypt w sandboxie i zwróć wynik lotu.
 
     :param source: treść skryptu
@@ -193,9 +317,12 @@ def run_script(source: str, script_name: str = "script.py",
     :param timeout: limit czasu rzeczywistego w sekundach
     :param log_path: ścieżka pliku JSONL (jeśli podana, aplikacja czyta go na żywo)
     :param work_dir: katalog roboczy (domyślnie tymczasowy, usuwany po locie)
+    :param run_id: identyfikator do rejestru procesów (pozwala przerwać przez
+        :func:`stop_run`); None -> identyfikator wewnętrzny
     """
     adapter: DroneAdapter = get_adapter(adapter_id) if adapter_id else detect_adapter(source)
     paths.ensure_dirs()
+    run_id = run_id or f"local-{uuid.uuid4().hex[:8]}"
 
     temp_dir: Optional[tempfile.TemporaryDirectory] = None
     if work_dir is None:
@@ -219,10 +346,12 @@ def run_script(source: str, script_name: str = "script.py",
         "sandbox_paths": sandbox["sandbox_paths"],
         "runtime_modules": sandbox["runtime_modules"],
         "project_root": str(paths.PROJECT_ROOT),
+        "work_dir": str(work_dir.resolve()),
         "log_path": str(log_path.resolve()),
         "settings": _build_settings(adapter, extra_settings),
         "rc_provider": getattr(adapter, "rc_provider", None),
         "adapter": adapter.id,
+        "parent_pid": os.getpid(),
     }
 
     env = dict(os.environ)
@@ -238,19 +367,31 @@ def run_script(source: str, script_name: str = "script.py",
     returncode: Optional[int] = None
     stdout_text = ""
     stderr_text = ""
+    popen_kwargs: Dict[str, Any] = {}
+    if os.name == "nt":
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:  # pragma: no cover
+        popen_kwargs["start_new_session"] = True
+    session = begin_session(run_id)
+    proc = subprocess.Popen(
+        [venv_python(), "-c", BOOTSTRAP],
+        cwd=str(work_dir), env=env,
+        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        encoding="utf-8", errors="replace", **popen_kwargs,
+    )
+    session.proc = proc
     try:
-        proc = subprocess.run(
-            [venv_python(), "-c", BOOTSTRAP],
-            cwd=str(work_dir), env=env, capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=timeout,
-        )
+        try:
+            stdout_text, stderr_text = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            status = "timeout"
+            _kill_tree(proc)
+            stdout_text, stderr_text = proc.communicate()
         returncode = proc.returncode
-        stdout_text = proc.stdout or ""
-        stderr_text = proc.stderr or ""
-    except subprocess.TimeoutExpired as exc:
-        status = "timeout"
-        stdout_text = exc.stdout if isinstance(exc.stdout, str) else ""
-        stderr_text = exc.stderr if isinstance(exc.stderr, str) else ""
+        if session.stop_requested:
+            status = "stopped"
+    finally:
+        unregister_process(run_id)
     real_seconds = time.perf_counter() - started
 
     state = read_live_log(log_path)
@@ -271,11 +412,17 @@ def run_script(source: str, script_name: str = "script.py",
         limits=adapter.limits(),
         stats=data.get("stats") or {},
         final_state=data.get("final_state", "unknown"),
-        stdout=_read_lines(stdout_text),
-        stderr=_read_lines(stderr_text),
+        stdout=_read_lines(_sanitize_output(stdout_text, work_dir)),
+        stderr=_read_lines(_sanitize_output(stderr_text, work_dir)),
     )
     if summary is not None:
         flight.status = summary.get("status", "ok")
+    if status == "stopped":
+        flight.status = "stopped"
+        flight.errors.append({
+            "message": "Skrypt przerwany ręcznie (przycisk Stop).",
+            "line": None, "file": script_path.name, "type": "StoppedError",
+        })
     if status == "timeout":
         flight.status = "timeout"
         flight.errors.append({

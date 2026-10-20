@@ -331,13 +331,32 @@ class Simulation:
 
     def _run_span(self, t0: float, t1: float,
                   motion: Optional["MotionSpan"]) -> "SampleSpan":
-        """Zapisz przedział [t0, t1] i wygeneruj próbki na siatce 50 ms."""
+        """Zapisz przedział [t0, t1] i wygeneruj próbki na siatce 50 ms.
+
+        Dla bardzo długich bezczynnych odcinków (np. ``sleep(600)`` w pętli)
+        próbki są przerzedzane, aby nie generować setek tysięcy wpisów.
+        """
         self._check_sim_time(t1)
         span = SampleSpan(
             t0=t0, t1=t1, motion=motion,
             state=self.state, position=self.position, velocity=self.velocity, yaw=self.yaw,
         )
         self.recorder.spans.append(span)
+
+        duration = max(t1 - t0, 0.0)
+        if motion is None and duration > 1.0:
+            # długie oczekiwanie (np. sleep w pętli): nie potrzebujemy próbek co 50 ms
+            step = min(1.0, max(TELEMETRY_DT, duration / 600.0))
+            t = t0 + step
+            while t < t1 - 1e-9:
+                self._record_sample(t, self.position, (0.0, 0.0, 0.0), self.yaw,
+                                    span.state, self.battery)
+                t = round(t + step, 6)
+            self._record_sample(t1, self.position, (0.0, 0.0, 0.0), self.yaw,
+                                span.state, self.battery)
+            self._next_sample_t = t1
+            self.now = t1
+            return span
 
         t = self._next_sample_t
         while t < t1 - 1e-9:

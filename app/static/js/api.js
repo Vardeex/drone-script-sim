@@ -28,6 +28,7 @@ export const api = {
   flights: (limit = 20) => request(`/api/flights?limit=${limit}`),
   flight: (id) => request(`/api/flights/${encodeURIComponent(id)}`),
   deleteFlight: (id) => request(`/api/flights/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  stopRun: (id) => request(`/api/run/stop/${encodeURIComponent(id)}`, { method: 'POST' }),
   importFlight: (file) => {
     const form = new FormData();
     form.append('file', file);

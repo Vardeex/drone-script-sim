@@ -1,5 +1,5 @@
 // Drone Script Simulator - logika interfejsu (spina scenę, panele i API).
-import { $, $$, el, fmt, fmtTime, debounce, legendGradient, STATUS_LABEL } from './util.js';
+import { $, $$, el, fmt, fmtTime, debounce, legendGradient, plural, STATUS_LABEL } from './util.js';
 import { FlightTimeline, Player } from './timeline.js';
 import { DroneScene } from './scene.js';
 import { api, waitForRun } from './api.js';
@@ -13,6 +13,7 @@ const state = {
   running: false,
   autoPlay: true,
   editorDirty: false,
+  scriptName: 'skrypt.py',
 };
 
 const timeline = new FlightTimeline();
@@ -41,7 +42,13 @@ function updatePlayButton() {
 }
 
 function currentScriptName() {
-  return $('#editor-name').textContent || 'skrypt.py';
+  // nazwa skryptu wpisywana w edytorze/wgranego pliku (nie zmieniana przez wczytane loty)
+  return state.scriptName || 'skrypt.py';
+}
+
+function setScriptName(name) {
+  state.scriptName = name || 'skrypt.py';
+  $('#editor-name').textContent = state.scriptName;
 }
 
 function switchTab(id) {
@@ -106,7 +113,7 @@ function loadFlight(data, meta = {}) {
   });
   panels.renderConsole(timeline);
   panels.renderStats(timeline);
-  $('#editor-name').textContent = timeline.scriptName;
+  setScriptName(timeline.scriptName);
 
   const maxHeight = timeline.maxHeight();
   scene.setFlight(timeline.samples, timeline.events, maxHeight);
@@ -161,9 +168,14 @@ async function runSimulation() {
     const errors = result.flight.errors.length;
     const warnings = result.flight.warnings.length;
     const label = STATUS_LABEL[result.flight.status] || result.flight.status;
-    setStatus(`Gotowe (${label}) - symulacja ${fmtTime(result.flight.duration)}, `
-      + `obliczenia ${fmt(result.real_seconds, 2)} s`,
-    errors ? 'error' : 'ok', `${errors} błędów · ${warnings} ostrzeżeń`);
+    const stopped = result.flight.status === 'stopped';
+    setStatus(stopped
+      ? `Przerwano - symulacja ${fmtTime(result.flight.duration)} (telemetria do momentu Stop)`
+      : `Gotowe (${label}) - symulacja ${fmtTime(result.flight.duration)}, `
+        + `obliczenia ${fmt(result.real_seconds, 2)} s`,
+    stopped ? '' : (errors ? 'error' : 'ok'),
+    `${errors} ${plural(errors, 'błąd', 'błędy', 'błędów')} · `
+    + `${warnings} ${plural(warnings, 'ostrzeżenie', 'ostrzeżenia', 'ostrzeżeń')}`);
     switchTab(errors ? 'tab-issues' : 'tab-stats');
     if (state.autoPlay && timeline.duration > 0) {
       player.setTime(0);
@@ -225,7 +237,7 @@ async function loadExamples() {
 async function loadExample(name) {
   const data = await api.example(name);
   $('#editor-area').value = data.source;
-  $('#editor-name').textContent = data.name;
+  setScriptName(data.name);
   state.editorDirty = false;
   panels.renderCodeView(data.source);
 }
@@ -345,7 +357,7 @@ async function loadUploadedFile(file) {
   if (!file) return;
   const text = await file.text();
   $('#editor-area').value = text;
-  $('#editor-name').textContent = file.name;
+  setScriptName(file.name);
   state.editorDirty = true;
   panels.renderCodeView(text);
   setStatus(`Wczytano ${file.name} - kliknij "Uruchom symulację".`, '');
@@ -367,8 +379,17 @@ function bindUi() {
   $$('#tabs button').forEach((btn) => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
 
   $('#btn-run').addEventListener('click', runSimulation);
-  $('#btn-stop').addEventListener('click', () => setStatus(
-    'Skrypt wykonuje się w osobnym procesie z limitem 60 s - długie pętle są przerywane.', ''));
+  $('#btn-stop').addEventListener('click', async () => {
+    if (!state.runId || !state.running) return;
+    $('#btn-stop').disabled = true;
+    setStatus('Przerywanie symulacji...', 'running');
+    try {
+      const result = await api.stopRun(state.runId);
+      if (!result.stopped) setStatus('Symulacja już się zakończyła.', '');
+    } catch (err) {
+      setStatus(`Nie udało się przerwać: ${err.message}`, 'error');
+    }
+  });
 
   $('#btn-play').addEventListener('click', () => { player.toggle(); updatePlayButton(); });
   $('#btn-prev').addEventListener('click', seekPrev);
@@ -401,7 +422,7 @@ function bindUi() {
   });
   $('#btn-clear').addEventListener('click', () => {
     $('#editor-area').value = '';
-    $('#editor-name').textContent = 'skrypt.py';
+    setScriptName('skrypt.py');
     state.editorDirty = true;
     panels.renderCodeView('');
   });

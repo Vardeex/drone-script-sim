@@ -151,6 +151,31 @@ def test_move_before_takeoff_raises():
         sim.require_airborne("move_forward")
 
 
+def test_long_sleep_does_not_explode_telemetry():
+    """Długie ``sleep`` w pętli nie może generować setek tysięcy próbek."""
+    sim = core.Simulation()
+    ev, _, _ = sim.begin("takeoff", [])
+    sim.takeoff(ev)
+    start = sim.now
+    before = len(sim.recorder.samples)
+    sim.advance(600.0)  # 10 min bezczynności (symulacja liczy od końca takeoffu)
+    assert sim.now == pytest.approx(start + 600.0)
+    added = len(sim.recorder.samples) - before
+    # przy 50 ms byłoby 12 000 próbek; dla bezczynności wystarczy ~600
+    assert added <= 602
+    # ostatnia próbka odpowiada końcowi przedziału
+    assert sim.recorder.samples[-1].t == pytest.approx(start + 600.0)
+
+
+def test_max_sim_time_guard():
+    """Pętla ``sleep`` ponad limit czasu symulacji jest przerywana błędem."""
+    sim = core.Simulation()
+    sim.settings.max_sim_time = 120.0
+    with pytest.raises(core.SimulationError):
+        sim.advance(500.0)
+    assert sim.time_exceeded is True
+
+
 def test_export_flight_data_structure():
     sim = core.Simulation()
     _square_script_events(sim)

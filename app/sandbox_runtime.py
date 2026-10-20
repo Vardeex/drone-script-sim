@@ -32,6 +32,7 @@ def configure(config: Dict[str, Any]) -> None:
 
     _STATE["log_path"] = config.get("log_path")
     _STATE["script"] = config.get("script_name", "script.py")
+    _STATE["work_dir"] = config.get("work_dir")
     settings = core.Settings()
     for key, value in (config.get("settings") or {}).items():
         if hasattr(settings, key):
@@ -44,6 +45,7 @@ def configure(config: Dict[str, Any]) -> None:
     sim.after_command_hook = _STATE["log"].snapshot
 
     install_virtual_clock(sim)
+    _start_watchdog(config.get("parent_pid"))
 
 
 def get_sim():
@@ -53,6 +55,50 @@ def get_sim():
 
 def get_log() -> "_LogWriter":
     return _STATE["log"]
+
+
+def _pid_alive(pid: int) -> bool:
+    """Czy proces o danym PID żyje (Windows: OpenProcess; POSIX: os.kill)."""
+    if os.name == "nt":
+        import ctypes
+
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        STILL_ACTIVE = 259
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return False
+        try:
+            code = ctypes.c_ulong()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return False
+            return code.value == STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
+    try:  # pragma: no cover - POSIX
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def _start_watchdog(parent_pid: Optional[int]) -> None:
+    """Zabij skrypt, jeśli proces rodzica (serwer) zniknie - ochrona przed sierotami.
+
+    Używamy ORYGINALNEGO ``time.sleep`` (zapisanego przed podmianą na zegar
+    wirtualny), bo wirtualny czas stoi, gdy skrypt nic nie robi.
+    """
+    if not parent_pid:
+        return
+    real_sleep = _STATE.get("real_sleep") or time.sleep
+
+    def _watch() -> None:
+        while True:
+            real_sleep(1.0)
+            if not _pid_alive(parent_pid):
+                os._exit(1)  # serwer zniknął - kończymy bez zostawiania procesu
+
+    threading.Thread(target=_watch, name="dronesim-watchdog", daemon=True).start()
 
 
 class _LogWriter:
@@ -115,6 +161,7 @@ def install_virtual_clock(sim) -> VirtualClock:
     Oprócz czasu montujemy też hook integracji RC: jeśli adapter drona wskazał
     aktywny kontroler RC (``rc_provider``), ``time.sleep`` wykonuje ruch RC.
     """
+    _STATE.setdefault("real_sleep", time.sleep)
     clock = VirtualClock(sim)
     time.sleep = clock.sleep          # type: ignore[assignment]
     time.time = clock.time            # type: ignore[assignment]
@@ -168,6 +215,25 @@ def script_location() -> Dict[str, Any]:
     return {"file": _STATE.get("script"), "line": None}
 
 
+def _sanitize_traceback(text: str, script_name: str) -> str:
+    """Usuń prywatne ścieżki: skrypt -> nazwa, projekt -> ścieżka względna, reszta -> <python>."""
+    from app import paths
+
+    project = str(paths.PROJECT_ROOT)
+    work_dir = _STATE.get("work_dir")
+    if work_dir:
+        text = text.replace(str(work_dir) + os.sep, "").replace(str(work_dir), "")
+    text = text.replace(project + os.sep, "").replace(project, ".")
+    lines = []
+    for line in text.splitlines():
+        if 'File "<string>"' in line:
+            continue
+        if line.lstrip().startswith(("exec(code", "code = compile")):
+            continue
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def finish(status: str, exc: Optional[BaseException] = None,
            stdout_tail: str = "", stderr_tail: str = "") -> None:
     """Zapisz podsumowanie lotu do pliku JSONL (wołane przez runner po skrypcie)."""
@@ -176,9 +242,13 @@ def finish(status: str, exc: Optional[BaseException] = None,
     if sim is None or log is None:
         return
     if exc is not None:
-        tb = traceback.format_exception(type(exc), exc, exc.__traceback__)
+        script_name = _STATE.get("script_name") or "script.py"
+        tb_text = _sanitize_traceback(
+            "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)), script_name)
         line = _exc_line(exc)
         message = str(exc)
+        if _STATE.get("work_dir"):
+            message = message.replace(str(_STATE["work_dir"]), "")
         existing = None
         for err in reversed(sim.recorder.errors):
             err_msg = str(err.get("message") or "")
@@ -186,12 +256,12 @@ def finish(status: str, exc: Optional[BaseException] = None,
                 existing = err
                 break
         if existing is not None:
-            existing["traceback"] = "".join(tb)
+            existing["traceback"] = tb_text
             existing.setdefault("line", line)
         else:
             sim.recorder.add_error(f"{type(exc).__name__}: {exc}", line=line,
-                                   file=_STATE.get("script_name"), type_=type(exc).__name__,
-                                   traceback="".join(tb))
+                                   file=script_name, type_=type(exc).__name__,
+                                   traceback=tb_text)
         status = status or "error"
     data = sim.to_flight_data()
     log.write({

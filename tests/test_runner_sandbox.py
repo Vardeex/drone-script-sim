@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import threading
 import time
+from pathlib import Path
 
 import pytest
 
@@ -175,6 +183,68 @@ def test_mock_djitellopy_used_not_real_library():
     assert result.flight.stdout[1]["text"].endswith("-sim")
 
 
+def test_watchdog_kills_script_when_parent_dies():
+    """Watchdog w sandboxie: gdy proces uruchamiający skrypt zginie, skrypt też ginie."""
+    helper = (
+        "import json, os, sys, time\n"
+        "from app import runner\n"
+        "runner.run_script('while True:\\n    pass\\n', 'w.py', run_id='watch', timeout=60)\n"
+    )
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(Path(__file__).resolve().parent.parent)
+    parent = subprocess.Popen([sys.executable, "-c", helper], env=env,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        deadline = time.time() + 15
+        script_pid = None
+        while time.time() < deadline and script_pid is None:
+            procs = subprocess.run(
+                ["powershell", "-NoProfile", "-Command",
+                 "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
+                 "Select-Object ProcessId,ParentProcessId | ConvertTo-Json -Compress"],
+                capture_output=True, text=True).stdout.strip()
+            items = json.loads(procs) if procs else []
+            items = items if isinstance(items, list) else [items]
+            for item in items:
+                if item["ParentProcessId"] == parent.pid:
+                    script_pid = item["ProcessId"]
+                    break
+            time.sleep(0.2)
+        assert script_pid, "proces skryptu nie wystartował"
+        # zabij proces uruchamiający skrypt (twardo, bez sprzątania)
+        parent.kill()
+        parent.wait(timeout=10)
+        # watchdog powinien zakończyć skrypt w ciągu ~2 s
+        deadline = time.time() + 10
+        alive = True
+        while time.time() < deadline:
+            out = subprocess.run(["tasklist", "/FI", f"PID eq {script_pid}"],
+                                 capture_output=True, text=True).stdout
+            alive = str(script_pid) in out
+            if not alive:
+                break
+            time.sleep(0.3)
+        assert not alive, f"skrypt {script_pid} przeżył śmierć rodzica (brak watchdoga)"
+    finally:
+        if parent.poll() is None:
+            parent.kill()
+
+
+def test_no_private_temp_paths_in_output():
+    """Ścieżki z %TEMP% użytkownika nie mogą wyciekać do stdout/stderr/tracebacku."""
+    source = (
+        "import tempfile\n"
+        "print('tmp:', tempfile.gettempdir())\n"
+        "raise ValueError('blad testowy')\n"
+    )
+    result = runner.run_script(source, "leak.py")
+    text = " ".join(row["text"] for row in result.flight.stdout + result.flight.stderr)
+    text += " ".join((e.get("traceback") or "") + e.get("message", "")
+                     for e in result.flight.errors)
+    assert "dronesim_" not in text
+    assert "\\Temp\\" not in text and "/Temp/" not in text
+
+
 def test_syntax_error_line_number():
     """SyntaxError powinien wskazywać linię skryptu, nie wewnętrznego bootstrapu."""
     source = "print('ok')\ndef broken(:\n    pass\n"
@@ -184,7 +254,84 @@ def test_syntax_error_line_number():
     assert result.flight.errors[0]["line"] == 2
 
 
-def test_ceiling_warning_keeps_script_running():
+def test_stop_run_kills_process_and_keeps_partial_data():
+    """``runner.stop_run`` zabija proces; wynik ma status 'stopped' i dane do przerwania."""
+    source = (
+        "from djitellopy import Tello\n"
+        "import time\n"
+        "t = Tello()\n"
+        "t.connect()\n"
+        "t.takeoff()\n"
+        "t.move_forward(100)\n"
+        "print('gotowe do petli')\n"
+        "while True:\n"
+        "    time.sleep(1)\n"
+    )
+    work_dir = Path(tempfile.mkdtemp(prefix="dronesim_stop_"))
+    log_path = work_dir / "live.jsonl"
+    box: dict = {}
+
+    def _worker() -> None:
+        box["result"] = runner.run_script(
+            source, "stop.py", run_id="test-stop", timeout=60,
+            log_path=log_path, work_dir=work_dir,
+        )
+
+    thread = threading.Thread(target=_worker)
+    thread.start()
+    try:
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            state = runner.read_live_log(log_path)
+            events = (state.get("snapshot") or {}).get("events") or []
+            if "test-stop" in runner.active_processes() and len(events) >= 3:
+                break
+            time.sleep(0.05)
+        assert runner.active_processes().get("test-stop") is not None
+        assert runner.stop_run("test-stop") is True
+        thread.join(timeout=15)
+    finally:
+        runner.stop_run("test-stop")
+        shutil.rmtree(work_dir, ignore_errors=True)
+    assert not thread.is_alive()
+    result = box["result"]
+    assert result.status == "stopped"
+    assert any(e["type"] == "StoppedError" for e in result.flight.errors)
+    assert result.flight.samples
+    assert len(result.flight.events) >= 3
+    assert "test-stop" not in runner.active_processes()
+    # powtórne przerwanie zakończonego procesu => False
+    assert runner.stop_run("test-stop") is False
+
+
+def test_stop_all_leaves_no_orphans():
+    """Po ``stop_all`` nie zostają procesy potomne (brak osieroconych pythonów)."""
+    source = "import time\nwhile True:\n    time.sleep(1)\n"
+    box: dict = {}
+
+    def _worker() -> None:
+        box["result"] = runner.run_script(source, "orphan.py", run_id="test-orphan", timeout=60)
+
+    thread = threading.Thread(target=_worker)
+    thread.start()
+    deadline = time.time() + 10
+    proc = None
+    while time.time() < deadline:
+        proc = runner.active_processes().get("test-orphan")
+        if proc is not None and proc.poll() is None:
+            break
+        time.sleep(0.05)
+    assert proc is not None, "proces skryptu nie wystartował"
+    pid = proc.pid
+    assert runner.stop_all() >= 1
+    thread.join(timeout=15)
+    assert not thread.is_alive()
+    assert not runner.active_processes()
+    # proces potomny nie żyje (na Windows sprawdzamy przez tasklist)
+    if os.name == "nt":
+        output = subprocess.run(["tasklist", "/FI", f"PID eq {pid}"],
+                                capture_output=True, text=True).stdout
+        assert str(pid) not in output
     """Przekroczenie 500 cm = ostrzeżenie (skrypt trwa), z linią komendy."""
     source = (
         "from djitellopy import Tello\n"

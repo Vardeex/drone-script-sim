@@ -81,8 +81,19 @@ export function formatArgs(command, args) {
   return args.map((a) => (typeof a === 'string' ? `"${a}"` : String(a))).join(', ');
 }
 
+//: "1 błąd" / "2 błędy" / "5 błędów" - polska odmiana liczebnika
+export function plural(n, one, few, many) {
+  const count = Math.abs(Number(n) || 0);
+  if (count === 1) return one;
+  const last = count % 10;
+  const lastTwo = count % 100;
+  if (last >= 2 && last <= 4 && !(lastTwo >= 12 && lastTwo <= 14)) return few;
+  return many;
+}
+
 export const STATUS_LABEL = {
   ok: 'OK', warning: 'ostrzeżenie', error: 'błąd',
   airborne: 'w locie', idle: 'na ziemi', landed: 'wylądował',
   emergency: 'awaryjne', running: 'uruchamianie', done: 'gotowe', timeout: 'timeout',
+  stopped: 'przerwany', failed: 'błąd serwera',
 };

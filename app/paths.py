@@ -1,7 +1,7 @@
 """Ścieżki projektu - wszystkie liczone względem katalogu repozytorium.
 
-Nie używamy ścieżek bezwzględnych (np. ``D:\\DroneSim``), aby projekt można
-było sklonować w dowolne miejsce.
+Nie używamy ścieżek bezwzględnych, aby projekt można było sklonować w dowolne
+miejsce (na Windows, macOS i Linux).
 """
 
 from __future__ import annotations
