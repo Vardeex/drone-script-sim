@@ -147,7 +147,8 @@ wybrano rozsądne wartości):
 
 Model jest w osobnym module `app/static/js/drone_model.js` (adaptery w `DRONE_MODELS`),
 więc dodanie innego drona = nowa funkcja tworząca model, bez zmian w scenie.
-Zdjęcia referencyjne: `docs/ref/tello1.jpg`, `docs/ref/tello2.jpg`.
+Zdjęcia referencyjne (tylko lokalnie, w `docs/ref/` - katalog jest w `.gitignore`,
+bo materiały pochodzą z internetu i nie są publikowane): `tello1.jpg`, `tello2.jpg`.
 
 
 ## Struktura projektu
