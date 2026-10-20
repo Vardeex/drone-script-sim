@@ -19,6 +19,9 @@ __pycache__/
 .env
 .env.*
 
+# Zdjęcia referencyjne (materiały z internetu - nie publikujemy ze względu na prawa autorskie)
+docs/ref/
+
 # Edytory / system
 .vscode/
 .idea/
