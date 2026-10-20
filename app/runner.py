@@ -20,10 +20,10 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 import uuid
@@ -316,7 +316,8 @@ def run_script(source: str, script_name: str = "script.py",
     :param adapter_id: wybrany adapter (None -> wykryj po importach)
     :param timeout: limit czasu rzeczywistego w sekundach
     :param log_path: ścieżka pliku JSONL (jeśli podana, aplikacja czyta go na żywo)
-    :param work_dir: katalog roboczy (domyślnie tymczasowy, usuwany po locie)
+    :param work_dir: katalog roboczy (domyślnie ``flights/_work/<run_id>``
+        w projekcie - nic nie trafia do katalogu tymczasowego systemu)
     :param run_id: identyfikator do rejestru procesów (pozwala przerwać przez
         :func:`stop_run`); None -> identyfikator wewnętrzny
     """
@@ -324,10 +325,10 @@ def run_script(source: str, script_name: str = "script.py",
     paths.ensure_dirs()
     run_id = run_id or f"local-{uuid.uuid4().hex[:8]}"
 
-    temp_dir: Optional[tempfile.TemporaryDirectory] = None
-    if work_dir is None:
-        temp_dir = tempfile.TemporaryDirectory(prefix="dronesim_")
-        work_dir = Path(temp_dir.name)
+    # katalog roboczy w projekcie (nadpisuje TEMP podprocesu) - brak śladów na C:
+    own_work_dir = work_dir is None
+    if own_work_dir:
+        work_dir = paths.UPLOADS_DIR / run_id
     work_dir.mkdir(parents=True, exist_ok=True)
     script_path = work_dir / (script_name or "script.py")
     script_path.write_text(source, encoding="utf-8")
@@ -444,7 +445,7 @@ def run_script(source: str, script_name: str = "script.py",
         stderr=flight.stderr, real_seconds=round(real_seconds, 3),
         returncode=returncode, log_path=str(log_path),
     )
-    if temp_dir is not None:
-        # skrypt i log są już wczytane do pamięci - sprzątamy katalog tymczasowy
-        temp_dir.cleanup()
+    if own_work_dir:
+        # skrypt i log są już wczytane do pamięci - sprzątamy katalog roboczy
+        shutil.rmtree(work_dir, ignore_errors=True)
     return result

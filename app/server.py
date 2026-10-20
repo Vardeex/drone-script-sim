@@ -158,6 +158,13 @@ def api_run_stop(run_id: str) -> Dict[str, Any]:
             "stopped": stopped}
 
 
+@app.on_event("startup")
+def _startup_cleanup() -> None:
+    """Przy starcie usuń osierocone katalogi robocze starsze niż godzina."""
+    paths.ensure_dirs()
+    paths.cleanup_work_dirs()
+
+
 @app.on_event("shutdown")
 def _shutdown_children() -> None:
     """Zamknięcie serwera: zabij procesy skryptów, aby nie zostawały osierocone."""

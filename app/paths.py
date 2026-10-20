@@ -33,6 +33,32 @@ def ensure_dirs() -> None:
         path.mkdir(parents=True, exist_ok=True)
 
 
+def cleanup_work_dirs(max_age_seconds: float = 3600.0) -> int:
+    """Usuń stare katalogi robocze uruchomień (np. po zabitym procesie).
+
+    Zwraca liczbę usuniętych katalogów. Młodsze niż ``max_age_seconds``
+    zostają - mogą należeć do trwających uruchomień.
+    """
+    import shutil
+    import time
+
+    if not UPLOADS_DIR.exists():
+        return 0
+    removed = 0
+    now = time.time()
+    for child in UPLOADS_DIR.iterdir():
+        if not child.is_dir():
+            continue
+        try:
+            age = now - child.stat().st_mtime
+        except OSError:
+            continue
+        if age > max_age_seconds:
+            shutil.rmtree(child, ignore_errors=True)
+            removed += 1
+    return removed
+
+
 def is_within(child: Path, parent: Path) -> bool:
     """Czy ``child`` leży w ``parent`` (po rozwiązywaniu ścieżek)."""
     try:

@@ -183,6 +183,27 @@ def test_mock_djitellopy_used_not_real_library():
     assert result.flight.stdout[1]["text"].endswith("-sim")
 
 
+def test_cleanup_work_dirs_removes_old_only(tmp_path, monkeypatch):
+    """Sprzątanie usuwa stare katalogi robocze, a zostawia świeże."""
+    from app import paths
+
+    uploads = tmp_path / "_uploads"
+    old = uploads / "stary"
+    fresh = uploads / "swiezy"
+    old.mkdir(parents=True)
+    fresh.mkdir(parents=True)
+    (old / "script.py").write_text("print(1)", encoding="utf-8")
+    monkeypatch.setattr(paths, "UPLOADS_DIR", uploads)
+    # postarz katalog "stary" o 2 godziny
+    import os
+
+    os.utime(old, (0, 0))
+    removed = paths.cleanup_work_dirs(max_age_seconds=3600)
+    assert removed == 1
+    assert not old.exists()
+    assert fresh.exists()
+
+
 def test_watchdog_kills_script_when_parent_dies():
     """Watchdog w sandboxie: gdy proces uruchamiający skrypt zginie, skrypt też ginie."""
     helper = (

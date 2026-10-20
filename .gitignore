@@ -4,7 +4,7 @@ tools/
 cache/
 tmp/
 
-# Wyniki lotów (dane runtime, w tym wgrane skrypty)
+# Wyniki lotów (dane runtime, w tym wgrane skrypty i katalogi robocze _work)
 flights/
 
 # Python
