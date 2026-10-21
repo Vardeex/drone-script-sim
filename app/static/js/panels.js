@@ -2,6 +2,17 @@
 import { $, el, fmt, fmtTime, formatArgs, STATUS_LABEL } from './util.js';
 
 /**
+ * Panele dostarczone przez funkcje (wtyczki): id -> API panelu.
+ * Punkt rozszerzeń nr 4 - rdzeń czyta stąd wyłącznie przez `featurePanels[id]`.
+ */
+export const featurePanels = {};
+
+/** Zarejestruj panel funkcji (wywołuje `boot.js` po wczytaniu modułu). */
+export function registerFeaturePanel(id, api) {
+  featurePanels[id] = api;
+}
+
+/**
  * Wiersze tabeli komend. Komendy RC wykonane w środku manewru (biblioteka
  * dronemoves) są zwijane w JEDEN wiersz: od ``start: X`` do ``end: X``.
  */

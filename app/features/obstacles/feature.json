@@ -1,0 +1,15 @@
+{
+  "id": "obstacles",
+  "name": "Przeszkody 3D",
+  "description": "Edytor przeszkód, sceny, wykrywanie kolizji i przelotów przez bramki",
+  "enabled": true,
+  "api_prefix": "/api/obstacles",
+  "static": "static/js/features/obstacles",
+  "ui": {
+    "panel": "static/js/features/obstacles/panel.js",
+    "scene_layer": "static/js/features/obstacles/scene_layer.js",
+    "styles": ["static/css/features/obstacles.css"],
+    "tab": "tab-obstacles",
+    "tab_button": "tab-btn-obstacles"
+  }
+}

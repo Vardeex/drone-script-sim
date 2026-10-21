@@ -1,0 +1,76 @@
+{
+  "format": "dronesim-scene",
+  "version": 1,
+  "name": "Tor przeszkód",
+  "description": "Tor przeszkód 6 x 4 m: ściany z przejściem po prawej, niska poprzeczka do przelotu górą, dwa słupy do omijania, stół do przelotu dołem i bramka finałowa. Przejazd po osi X (y = 0) wymaga zmiany wysokości i omijania.",
+  "room": [600, 400, 250],
+  "obstacles": [
+    {
+      "id": "wall-a",
+      "kind": "box",
+      "name": "Ściana A (przejście po prawej)",
+      "position": [120, 90, 90],
+      "size": [10, 220, 180],
+      "yaw_deg": 0
+    },
+    {
+      "id": "wall-b",
+      "kind": "box",
+      "name": "Ściana B (przejście po lewej)",
+      "position": [260, -90, 90],
+      "size": [10, 220, 180],
+      "yaw_deg": 0
+    },
+    {
+      "id": "post-1",
+      "kind": "cylinder",
+      "name": "Słup 1",
+      "position": [350, 110, 100],
+      "size": [40, 40, 200],
+      "yaw_deg": 0
+    },
+    {
+      "id": "post-2",
+      "kind": "cylinder",
+      "name": "Słup 2",
+      "position": [350, -110, 100],
+      "size": [40, 40, 200],
+      "yaw_deg": 0
+    },
+    {
+      "id": "bar-low",
+      "kind": "box",
+      "name": "Poprzeczka (przelot dołem)",
+      "position": [420, 0, 200],
+      "size": [10, 300, 20],
+      "yaw_deg": 0
+    },
+    {
+      "id": "table",
+      "kind": "box",
+      "name": "Stół (blat)",
+      "position": [520, 60, 72],
+      "size": [120, 80, 6],
+      "yaw_deg": 0
+    },
+    {
+      "id": "gate-final",
+      "kind": "gate",
+      "name": "Bramka finałowa",
+      "position": [560, -100, 70],
+      "size": [110, 5, 110],
+      "opening": [70, 70],
+      "thickness": 5,
+      "yaw_deg": 0
+    },
+    {
+      "id": "ceiling",
+      "kind": "plane",
+      "name": "Sufit",
+      "position": [0, 0, 250],
+      "size": [600, 400, 5],
+      "thickness": 5,
+      "yaw_deg": 0
+    }
+  ]
+}

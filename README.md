@@ -28,7 +28,123 @@ lot, trasę, telemetrię, komendy, błędy i ostrzeżenia.
   statystyki lotu (czas, dystans, maks. wysokość, zużycie baterii),
 * podgląd skryptu z podświetleniem aktualnie wykonywanej linii,
 * zapis/wczytanie lotu (JSON), eksport telemetrii do CSV, historia lotów,
-* interfejs w języku polskim, działa offline (three.js jest lokalnie).
+* interfejs w języku polskim, działa offline (three.js jest lokalnie),
+* **przeszkody 3D** (funkcja dodatkowa, wyłączalna): edytor scen, kolizje
+  i zbliżenia liczone na całej telemetrii, przeloty przez bramki - patrz
+  „Przeszkody 3D” niżej.
+
+## Przeszkody 3D
+
+Funkcja pokazuje, czy skrypt **rozbiłby drona**: rysuje przeszkody w scenie,
+sprawdza cały lot i oznacza kolizje, zbliżenia poniżej marginesu oraz
+zaliczone przeloty przez bramki. Przeszkody **nie zmieniają przebiegu
+symulacji** - dron się nie odbija i nie zatrzymuje; symulator ma pokazać, że
+skrypt by się rozbił, a nie poprawiać lot.
+
+![Przeszkody w symulatorze](docs/obstacles.png)
+
+### Jak używać edytora
+
+Zakładka **Przeszkody** w panelu po prawej (jest tylko wtedy, gdy funkcja jest
+włączona):
+
+1. Wybierz scenę z listy (przykładowe z `scenes/` albo własne z `scenes/user/`),
+   albo „✚ Nowa” (pusta scena 4 × 4 × 2,5 m).
+2. Dodaj przeszkody: **▭ Ściana** (prostopadłościan), **◍ Słup** (walec),
+   **⌸ Bramka** (rama do przelotu), **▬ Sufit** (płaszczyzna - tylko widok).
+3. Zaznacz przeszkodę na liście lub kliknij ją w scenie 3D i ustaw nazwę,
+   pozycję X/Y/Z, wymiary, obrót (wokół osi pionowej) oraz - dla bramki -
+   otwór. Obok pól widać wymiary i **odległość od punktu startu**.
+4. Tryb **edycja (przeciąganie)** pozwala przesuwać przeszkody myszą po
+   podłożu; „⧉ Duplikuj” / „🗑 Usuń” działają na zaznaczonej przeszkodzie.
+5. Widok przeszkód: **półprzezroczyste / pełne / ukryte** + etykiety nazw.
+6. **Margines** (domyślnie 20 cm) i „zatrzymaj odtwarzanie przy kolizji”
+   są zapamiętywane w przeglądarce.
+7. „💾 Zapisz” zapisuje scenę do `scenes/user/<nazwa>.json` (katalog poza
+   repozytorium); „💾 Zapisz jako” tworzy nową scenę.
+
+Wybrana scena jest **zapisywana razem z lotem**, więc po wczytaniu lotu
+z historii wracają te same przeszkody, znaczniki i lista problemów.
+
+### Wykrywanie kolizji
+
+* dron to prostopadłościan **10 × 10 × 5 cm** obracany kursem,
+* do każdej przeszkody dodawany jest **margines bezpieczeństwa** (domyślnie 20 cm),
+* sprawdzana jest cała telemetria; między próbkami trasa jest próbkowana
+  co 1 cm, żeby szybki przelot nie „przeskoczył” cienkiej ściany,
+* **kolizja** - dron dotyka przeszkody: czerwony znacznik na trasie i wpis
+  na liście problemów (czas, przeszkoda, komenda i linia skryptu),
+* **zbliżenie** - odstęp mniejszy niż margines: żółty znacznik i wpis,
+* **bramka** - zaliczona, gdy dron przeleciał przez płaszczyznę ramy w całości
+  w otworze (z 2 cm zapasu od ramy); zahaczenie o ramę to kolizja,
+* statystyki lotu: liczba kolizji, ostrzeżeń, zaliczonych bramek i minimalny
+  odstęp od przeszkody.
+
+### Format JSON sceny (`scenes/*.json`)
+
+```json
+{
+  "format": "dronesim-scene",
+  "version": 1,
+  "name": "Slalom z bramkami",
+  "description": "Trzy bramki 90 x 90 cm",
+  "room": [600, 400, 250],
+  "obstacles": [
+    {
+      "id": "gate-1",
+      "kind": "gate",
+      "name": "Bramka 1 (środek)",
+      "position": [150, 0, 80],
+      "size": [120, 5, 120],
+      "opening": [90, 90],
+      "thickness": 5,
+      "yaw_deg": 0
+    }
+  ]
+}
+```
+
+| Pole | Znaczenie |
+|---|---|
+| `kind` | `box` (prostopadłościan), `cylinder` (walec), `gate` (bramka), `plane` (płaszczyzna - tylko widok) |
+| `position` | środek bryły `[x, y, z]` w cm (dla bramki płaszczyzna ramy jest w `x, y`) |
+| `size` | wymiary `[x, y, z]` w cm; dla walca `size[0]` = średnica, `size[2]` = wysokość |
+| `opening` | otwór bramki `[szerokość, wysokość]` w cm |
+| `thickness` | grubość ramy bramki / płaszczyzny w cm |
+| `yaw_deg` | obrót wokół osi pionowej, **dodatni = w prawo** (konwencja Tello) |
+| `room` | opcjonalne wymiary pomieszczenia `[x, y, z]` w cm (informacyjnie) |
+
+Przykładowe sceny w repozytorium: `room_with_furniture` (pokój 4 × 4 × 2,5 m
+z meblami), `gate_slalom` (slalom z bramkami), `obstacle_course` (tor przeszkód).
+
+### Przykłady
+
+| Plik | Co pokazuje | Wynik |
+|---|---|---|
+| `examples/obstacles_demo.py` | slalom przez 3 bramki (scena `gate_slalom`) | 3/3 bramki, 0 kolizji |
+| `examples/obstacles_crash.py` | za mały zjazd w bok przed bramką 2 | kolizja z ramą bramki 2 |
+
+## Punkty rozszerzeń
+
+Funkcje dodatkowe (wtyczki) nie są wkompilowane w rdzeń - rdzeń łączy się
+z nimi **tylko w tych punktach**:
+
+| # | Punkt | Miejsce w kodzie |
+|---|---|---|
+| 1 | **Rejestr funkcji**: manifest `app/features/<id>/feature.json` + `router.py` (APIRouter) i `hooks.py`; rdzeń odkrywa funkcje, montuje router pod `api_prefix`, statyki pod `/static/features/<id>` i rejestruje hook | `app/features/registry.py`, wywołanie `_install_features()` w `app/server.py` |
+| 2 | **„Po symulacji przeanalizuj lot”**: jeden hook `register_post_save_hook(fn)`; rdzeń woła go po zapisaniu lotu, dostając zapis lotu i opcje uruchomienia | `app/features/<id>/hooks.py` → `app/storage.py` |
+| 3 | **Opcje uruchomienia**: pole `options` w `POST /api/run` (i formularz `options` w `/api/upload`) trafia do `storage.save(..., options=...)` i do hooków | `app/server.py` |
+| 4 | **UI**: `GET /api/features` zwraca manifesty włączonych funkcji; `boot.js` doładowuje panel (`ui.panel`, rejestracja przez `panels.registerFeaturePanel`), warstwę sceny 3D (`ui.scene_layer`, `scene.addOverlayLayer`) i style (`ui.styles`) | `app/static/js/boot.js`, `app/static/js/panels.js`, `app/static/js/scene.js` |
+
+Rdzeń nie importuje niczego z `app/features/*` poza rejestrem. Funkcję można
+**wyłączyć jednym ustawieniem** w `config.json`:
+
+```json
+{ "features": { "obstacles": { "enabled": false } } }
+```
+
+Wtedy znikają jej endpointy (`/api/obstacles/*` → 404), pliki UI nie są
+serwowane, a aplikacja działa normalnie (test: `tests/test_obstacles_feature_off.py`).
 
 ## Wymagania
 
@@ -108,6 +224,8 @@ nie zapisuje w konfiguracji systemu.
 | `rc_control.py` | `send_rc_control` + `time.sleep` | OK (ruch RC) |
 | `error_out_of_range.py` | `move_forward(600)` | błąd zakresu (linia 15) |
 | `no_takeoff.py` | ruch bez `takeoff()` | błąd stanu (linia 13) |
+| `obstacles_demo.py` | slalom przez 3 bramki (scena `gate_slalom`) | 3/3 bramki |
+| `obstacles_crash.py` | zbyt mały zjazd w bok przed bramką | kolizja z ramą bramki |
 
 ## Ograniczenia symulacji
 
@@ -222,8 +340,14 @@ DroneSim/
         limits.py         # limity Tello
         djitellopy/       # MOCK pakietu djitellopy (podstawiany w sandboxie)
     static/               # index.html, css, js, three.js lokalnie (vendor/)
+  features/               # funkcje dodatkowe (wtyczki): registry.py + <id>/
+    obstacles/            # model, sceny, kolizje, endpointy, hooks, feature.json
+  scenes/                 # przykładowe sceny przeszkód (JSON)
+  scenes/user/            # sceny użytkownika (poza repo)
   examples/               # przykładowe skrypty
-  tests/                  # pytest (silnik, adapter, sandbox, API)
+  tests/                  # pytest (silnik, adapter, sandbox, API, przeszkody)
+  docs/                   # zrzuty ekranu
+  config.json             # opcjonalna konfiguracja (włączanie/wyłączanie funkcji)
   flights/                # zapisane loty (JSON; poza repo)
   setup.bat               # tworzenie .venv + requirements.txt
   start.bat               # uruchomienie serwera + przeglądarka

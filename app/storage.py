@@ -11,7 +11,7 @@ import json
 import secrets
 import threading
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from . import paths
 from .sim.core import FlightData
@@ -66,12 +66,37 @@ def flight_to_dict(flight: FlightData, flight_id: str, created_at: Optional[str]
     }
 
 
+#: hook „po zapisaniu lotu” (punkt rozszerzeń nr 2): ``fn(payload, options) -> payload``.
+#: Rejestruje go funkcja (wtyczka) w swoim ``hooks.py``; rdzeń nie zna jej nazwy.
+POST_SAVE_HOOKS: List[Callable[[Dict[str, Any], Dict[str, Any]], Dict[str, Any]]] = []
+
+
+def register_post_save_hook(
+        fn: Callable[[Dict[str, Any], Dict[str, Any]], Dict[str, Any]]) -> None:
+    """Zarejestruj funkcję wzbogacającą zapis lotu (idempotentnie)."""
+    if fn not in POST_SAVE_HOOKS:
+        POST_SAVE_HOOKS.append(fn)
+
+
 def save(flight: FlightData, flight_id: Optional[str] = None,
-         real_seconds: float = 0.0) -> Dict[str, Any]:
-    """Zapisz lot i dopisz wpis do indeksu; zwróć zapisany słownik."""
+         real_seconds: float = 0.0,
+         options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Zapisz lot i dopisz wpis do indeksu; zwróć zapisany słownik.
+
+    :param options: ustawienia uruchomienia przekazywane hookom po zapisie
+        (np. wybrana scena przeszkód ``{"obstacles": {...}}``)
+    """
     paths.ensure_dirs()
     flight_id = _safe_id(flight_id or new_id())
     payload = flight_to_dict(flight, flight_id, real_seconds=real_seconds)
+    options = options or {}
+    for hook in list(POST_SAVE_HOOKS):
+        try:
+            result = hook(payload, options)
+            if isinstance(result, dict):
+                payload = result
+        except Exception as exc:  # pragma: no cover - dodatek nie psuje zapisu
+            print(f"[storage] hook po zapisie: {type(exc).__name__}: {exc}")
     target = paths.FLIGHTS_DIR / f"{flight_id}.json"
     with _LOCK:
         target.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")

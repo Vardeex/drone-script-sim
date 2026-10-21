@@ -1,0 +1,48 @@
+{
+  "format": "dronesim-scene",
+  "version": 1,
+  "name": "Slalom z bramkami",
+  "description": "Trzy bramki (rama 120 x 120 cm, otwór 90 x 90 cm) co 150 cm, naprzemiennie przesunięte o ±45 cm. Start w (0,0,0); dron leci po osi X, przelatując przez otwory.",
+  "room": [600, 400, 250],
+  "obstacles": [
+    {
+      "id": "gate-1",
+      "kind": "gate",
+      "name": "Bramka 1 (środek)",
+      "position": [150, 0, 80],
+      "size": [120, 5, 120],
+      "opening": [90, 90],
+      "thickness": 5,
+      "yaw_deg": 0
+    },
+    {
+      "id": "gate-2",
+      "kind": "gate",
+      "name": "Bramka 2 (po lewej)",
+      "position": [300, 45, 80],
+      "size": [120, 5, 120],
+      "opening": [90, 90],
+      "thickness": 5,
+      "yaw_deg": 0
+    },
+    {
+      "id": "gate-3",
+      "kind": "gate",
+      "name": "Bramka 3 (po prawej)",
+      "position": [450, -45, 80],
+      "size": [120, 5, 120],
+      "opening": [90, 90],
+      "thickness": 5,
+      "yaw_deg": 0
+    },
+    {
+      "id": "floor-mark",
+      "kind": "plane",
+      "name": "Podłoga (znacznik)",
+      "position": [0, 0, 1],
+      "size": [600, 400, 2],
+      "thickness": 2,
+      "yaw_deg": 0
+    }
+  ]
+}

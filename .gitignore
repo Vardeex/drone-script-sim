@@ -7,6 +7,9 @@ tmp/
 # Wyniki lotów (dane runtime, w tym wgrane skrypty i katalogi robocze _work)
 flights/
 
+# Sceny użytkownika (przykładowe sceny w scenes/*.json są w repo)
+scenes/user/
+
 # Python
 __pycache__/
 *.pyc

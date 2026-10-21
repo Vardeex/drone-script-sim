@@ -1,0 +1,90 @@
+{
+  "format": "dronesim-scene",
+  "version": 1,
+  "name": "Pokój 4 x 4 x 2,5 m z meblami",
+  "description": "Pokój 4 x 4 m (wysokość 2,5 m) z biurkiem, szafą, sofą, lampą i parapetem. Start drona w środku pokoju (0,0,0), x = przód, y = lewo.",
+  "room": [400, 400, 250],
+  "obstacles": [
+    {
+      "id": "wall-front",
+      "kind": "box",
+      "name": "Ściana przednia",
+      "position": [200, 0, 125],
+      "size": [10, 400, 250],
+      "yaw_deg": 0
+    },
+    {
+      "id": "wall-left",
+      "kind": "box",
+      "name": "Ściana lewa",
+      "position": [0, 200, 125],
+      "size": [400, 10, 250],
+      "yaw_deg": 0
+    },
+    {
+      "id": "wall-right",
+      "kind": "box",
+      "name": "Ściana prawa",
+      "position": [0, -200, 125],
+      "size": [400, 10, 250],
+      "yaw_deg": 0
+    },
+    {
+      "id": "wall-back",
+      "kind": "box",
+      "name": "Ściana tylna",
+      "position": [-200, 0, 125],
+      "size": [10, 400, 250],
+      "yaw_deg": 0
+    },
+    {
+      "id": "ceiling",
+      "kind": "plane",
+      "name": "Sufit",
+      "position": [0, 0, 250],
+      "size": [400, 400, 5],
+      "thickness": 5,
+      "yaw_deg": 0
+    },
+    {
+      "id": "desk",
+      "kind": "box",
+      "name": "Biurko",
+      "position": [120, 120, 37],
+      "size": [60, 120, 74],
+      "yaw_deg": 0
+    },
+    {
+      "id": "wardrobe",
+      "kind": "box",
+      "name": "Szafa",
+      "position": [170, -110, 100],
+      "size": [60, 120, 200],
+      "yaw_deg": 0
+    },
+    {
+      "id": "sofa",
+      "kind": "box",
+      "name": "Sofa",
+      "position": [-100, 150, 42],
+      "size": [80, 180, 84],
+      "yaw_deg": 90
+    },
+    {
+      "id": "lamp",
+      "kind": "cylinder",
+      "name": "Lampa stojąca",
+      "position": [-150, -150, 80],
+      "size": [30, 30, 160],
+      "yaw_deg": 0
+    },
+    {
+      "id": "shelf",
+      "kind": "box",
+      "name": "Półka na ścianie",
+      "position": [-180, 60, 160],
+      "size": [25, 100, 10],
+      "yaw_deg": 0
+    }
+  ]
+}

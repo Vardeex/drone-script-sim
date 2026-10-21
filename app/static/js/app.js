@@ -5,6 +5,10 @@ import { DroneScene } from './scene.js';
 import { api, waitForRun } from './api.js';
 import { showTooltip, hideTooltip } from './tooltip.js';
 import * as panels from './panels.js';
+import { registerFeatures, attachSceneLayers } from './boot.js';
+
+//: wersja modułów funkcji (cache-busting lokalnego serwera statyków)
+export const ASSET_VERSION = 'v25';
 
 const state = {
   adapter: 'tello',
@@ -20,6 +24,68 @@ const timeline = new FlightTimeline();
 const scene = new DroneScene($('#viewport'));
 const player = new Player(timeline, (t) => onFrame(t));
 const marks = { row: -2, line: -1 };
+
+//: stan funkcji (wtyczek): aktywna warstwa sceny + zatrzymanie przy kolizji
+export const featureState = {
+  statuses: [],
+  layers: {},
+  stopOnCollision: false,
+  findings: [],
+  stopped: false,
+};
+
+/** Warstwa sceny zarejestrowana przez funkcję (rdzeń nie zna jej wnętrza). */
+function layerFor(id) {
+  return featureState.layers[id] || null;
+}
+
+/** Punkty rozszerzeń dla funkcji (patrz README, „Punkty rozszerzeń”). */
+function featureContext() {
+  return {
+    scene,
+    player,
+    timeline,
+    getLayer: layerFor,
+    seek: (t) => {
+      player.pause();
+      player.seek(Math.max(0, Number(t) || 0));
+      updatePlayButton();
+    },
+    getActiveScene: () => activeScene(),
+    setActiveScene: () => {},
+    setStopOnCollision: (enabled) => {
+      featureState.stopOnCollision = Boolean(enabled);
+      featureState.stopped = false;
+    },
+  };
+}
+
+/** Scena zapisana w aktualnie wczytanym locie (do `options.obstacles`). */
+function activeScene() {
+  const panel = Object.values(panels.featurePanels)[0];
+  return panel && typeof panel.getScene === 'function' ? panel.getScene() : null;
+}
+
+/** Opcje uruchomienia od funkcji (łączy `getRunOptions` wszystkich paneli). */
+function runOptions() {
+  let options = {};
+  for (const panel of Object.values(panels.featurePanels)) {
+    if (typeof panel.getRunOptions === 'function') {
+      options = { ...options, ...panel.getRunOptions() };
+    }
+  }
+  return options;
+}
+
+/** Pierwsza kolizja z raportu funkcji do chwili t (lub null). */
+function currentCollision(t) {
+  for (const panel of Object.values(panels.featurePanels)) {
+    const findings = typeof panel.getFindings === 'function' ? panel.getFindings() : [];
+    const hit = findings.find((f) => f.level === 'collision' && f.t <= t + 1e-6);
+    if (hit) return hit;
+  }
+  return null;
+}
 
 //: limit czasu wykonania skryptu w UI (sekundy czasu rzeczywistego)
 const RUN_TIMEOUT_S = 60;
@@ -60,6 +126,19 @@ function onFrame(t) {
   const sample = timeline.sampleAt(t);
   scene.update(sample);
   updateHud(sample, t);
+  // punkt rozszerzeń nr 4: warstwy funkcji dostają czas odtwarzania
+  for (const status of Object.values(featureState.layers)) {
+    status.instance.setMarkersTime?.(t);
+  }
+  // opcjonalne zatrzymanie odtwarzania przy kolizji (ustawienie funkcji)
+  if (featureState.stopOnCollision && !featureState.stopped) {
+    const hit = currentCollision(t);
+    if (hit) {
+      featureState.stopped = true;
+      player.pause();
+      setStatus(`Kolizja: ${hit.message}`, 'error');
+    }
+  }
   const scrub = $('#scrub');
   if (scrub) scrub.value = String(t);
   const label = $('#time-label');
@@ -118,6 +197,19 @@ function loadFlight(data, meta = {}) {
   panels.renderStats(timeline);
   setScriptName(timeline.scriptName);
 
+  // punkt rozszerzeń nr 4: funkcje dostają wczytany lot (np. własną scenę + raport)
+  for (const status of Object.values(featureState.layers)) {
+    const api = panels.featurePanels[status.id];
+    if (api && typeof api.onFlightLoaded === 'function') {
+      try {
+        api.onFlightLoaded(data);
+      } catch (err) {
+        console.error(`Funkcja ${status.id}: błąd wczytywania lotu`, err);
+      }
+    }
+  }
+  featureState.stopped = false;
+
   const maxHeight = timeline.maxHeight();
   scene.setFlight(timeline.samples, timeline.events, maxHeight);
   $('#legend-min').textContent = '0 m';
@@ -157,6 +249,7 @@ async function runSimulation() {
       accel: $('#opt-accel').checked,
       save: true,
       timeout: RUN_TIMEOUT_S,
+      options: runOptions(),
     });
     state.runId = started.id;
     const startedAt = Date.now();
@@ -570,6 +663,17 @@ async function init() {
     bindUi();
     bindCanvasPicking();
     bindKeyboard();
+    // punkt rozszerzeń nr 4: funkcje (wtyczki) - panel UI + warstwa sceny 3D
+    const context = featureContext();
+    const features = await registerFeatures({ ...context, version: ASSET_VERSION });
+    featureState.layers = Object.fromEntries(
+      attachSceneLayers(scene, { ...context, player, timeline })
+        .map((item) => [item.id, item]));
+    for (const feature of features) {
+      const tab = feature.ui?.tab || `tab-${feature.id}`;
+      const button = document.getElementById(feature.ui?.tab_button || `tab-btn-${feature.id}`);
+      if (button) button.hidden = !document.getElementById(tab);
+    }
     await loadAdapters();
     await loadExamples();
     await loadHistory();

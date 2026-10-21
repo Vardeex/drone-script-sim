@@ -90,7 +90,66 @@
       <button data-tab="tab-console">Konsola</button>
       <button data-tab="tab-issues">Problemy <span class="count" id="badge-issues" hidden>0</span></button>
       <button data-tab="tab-history">Historia</button>
+      <button data-tab="tab-obstacles" id="tab-btn-obstacles" hidden>Przeszkody</button>
     </nav>
+
+    <!-- Punkt rozszerzeń nr 4: treść panelu dostarcza funkcja (manifest.ui.panel) -->
+    <section class="tab-content" id="tab-obstacles" hidden>
+      <div class="section">
+        <div class="row between" style="margin-bottom:6px">
+          <h2 style="margin:0">Scena przeszkód: <span id="obs-title">—</span></h2>
+          <span class="tag warning" id="obs-dirty" hidden>niezapisana</span>
+        </div>
+        <div class="row">
+          <button id="obs-new" class="ghost" title="Nowa pusta scena">✚ Nowa</button>
+          <button id="obs-save" title="Zapisz scenę w scenes/user">💾 Zapisz</button>
+          <button id="obs-save-as" class="ghost" title="Zapisz pod inną nazwą">💾 Zapisz jako</button>
+          <button id="obs-reload" class="ghost" title="Odśwież listę scen">↻</button>
+        </div>
+        <div class="hint" id="obs-path" style="margin-top:4px"></div>
+        <div class="obs-scenes" id="obs-scene-list"></div>
+      </div>
+
+      <div class="section">
+        <h2>Przeszkody</h2>
+        <div class="row">
+          <button id="obs-add-box" class="ghost" title="Dodaj prostopadłościan">▭ Ściana</button>
+          <button id="obs-add-cylinder" class="ghost" title="Dodaj walec">◍ Słup</button>
+          <button id="obs-add-gate" class="ghost" title="Dodaj bramkę">⌸ Bramka</button>
+          <button id="obs-add-plane" class="ghost" title="Dodaj płaszczyznę (sufit)">▬ Sufit</button>
+        </div>
+        <div class="obs-list" id="obs-list"></div>
+        <div id="obs-editor" class="obs-editor"></div>
+      </div>
+
+      <div class="section">
+        <h2>Widok i margines</h2>
+        <div class="row">
+          <label class="hint" for="obs-view">Przeszkody</label>
+          <select id="obs-view" title="Sposób rysowania przeszkód">
+            <option value="ghost">półprzezroczyste</option>
+            <option value="solid">pełne</option>
+            <option value="hidden">ukryte</option>
+          </select>
+          <label class="hint"><input type="checkbox" id="obs-labels"> etykiety</label>
+          <label class="hint"><input type="checkbox" id="obs-edit"> edycja (przeciąganie)</label>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <label class="hint" for="obs-margin">Margines</label>
+          <input type="number" id="obs-margin" min="0" max="200" step="1" style="width:72px">
+          <span class="hint">cm</span>
+          <label class="hint"><input type="checkbox" id="obs-stop-collision">
+            zatrzymaj odtwarzanie przy kolizji</label>
+        </div>
+        <div class="hint" id="obs-status"></div>
+      </div>
+
+      <div class="section">
+        <h2>Kolizje i bramki</h2>
+        <div class="row" id="obs-summary" style="margin-bottom:6px"></div>
+        <div id="obs-findings"></div>
+      </div>
+    </section>
 
     <section class="tab-content" id="tab-script">
       <div class="section">
@@ -182,7 +241,13 @@
     <div id="status-bar"><span id="status-text">Gotowy.</span><span id="status-extra"></span></div>
   </aside>
 </div>
-<script type="module" src="/static/js/app.js"></script>
+<script>
+  // Diagnostyka: błędy modułów lądują w konsoli z czytelnym prefiksem.
+  window.addEventListener('error', (event) => {
+    console.error('[dronesim] błąd UI:', event.message, event.filename, event.lineno);
+  });
+</script>
+<script type="module" src="/static/js/app.js?v=25"></script>
 </body>
 </html>
 

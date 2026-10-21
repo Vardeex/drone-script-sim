@@ -13,6 +13,13 @@ Endpointy:
   GET  /api/flights/{id}/csv   - eksport telemetrii do CSV
   POST /api/flights/import     - import lotu z pliku JSON
   DELETE /api/flights/{id}     - usuń lot
+  GET  /api/features           - opcjonalne funkcje (wtyczki) dostępne w UI
+
+Punkty rozszerzeń (README, sekcja „Punkty rozszerzeń”):
+  1. rejestr funkcji - ``features/registry.py`` (manifest + APIRouter),
+  2. hook po zapisie lotu - ``storage.register_post_save_hook``,
+  3. ``options`` uruchomienia - ``RunRequest.options`` -> ``storage.save``,
+  4. ``/api/features`` + UI funkcji z manifestu (``feature.json`` -> ``ui``).
 """
 
 from __future__ import annotations
@@ -33,8 +40,42 @@ from pydantic import BaseModel, Field
 
 from . import paths, runner, storage
 from .adapters.base import detect_adapter, get_adapter, list_adapters
+from .features import registry
 
 app = FastAPI(title="Drone Script Simulator", version="1.0.0")
+
+
+# ------------------------------------------- punkt rozszerzeń nr 1: funkcje (wtyczki)
+def _install_features() -> List[Dict[str, Any]]:
+    """Zamontuj włączone funkcje: router API + statyki + hook po zapisie lotu.
+
+    Statyki funkcji montujemy **przed** ``/static`` - inaczej główny mount
+    ``StaticFiles`` przechwyciłby ``/static/features/...``.
+    """
+    installed: List[Dict[str, Any]] = []
+    for manifest in registry.enabled_features():
+        try:
+            static_dir = manifest.get("static")
+            if static_dir:
+                folder = paths.APP_DIR / static_dir
+                if folder.exists():
+                    app.mount(f"/static/features/{manifest['id']}",
+                              StaticFiles(directory=str(folder)), name=f"feature-{manifest['id']}")
+            app.include_router(registry.load_router(manifest),
+                               prefix=manifest.get("api_prefix") or f"/api/{manifest['id']}")
+            hooks = __import__(f"{manifest['package']}.hooks", fromlist=["register"])
+            hooks.register(storage)
+        except Exception as exc:   # pragma: no cover - uszkodzona funkcja nie blokuje aplikacji
+            print(f"[features] nie udało się włączyć '{manifest['id']}': "
+                  f"{type(exc).__name__}: {exc}")
+            continue
+        installed.append(manifest)
+    return installed
+
+
+FEATURES: List[Dict[str, Any]] = _install_features()
+
+# statyki aplikacji (montowane po statykach funkcji)
 app.mount("/static", StaticFiles(directory=str(paths.STATIC_DIR)), name="static")
 
 
@@ -64,6 +105,20 @@ class RunRequest(BaseModel):
     timeout: float = Field(runner.DEFAULT_TIMEOUT, ge=1, le=300)
     accel: bool = Field(False, description="Model ruchu z rampą przyspieszenia")
     save: bool = Field(True, description="Zapisz lot w historii")
+    options: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Ustawienia dodatkowych funkcji (np. obstacles.scene) - przekazywane "
+                    "hookom po zapisie lotu (punkt rozszerzeń nr 3)")
+
+
+@app.get("/api/features")
+def api_features() -> List[Dict[str, Any]]:
+    """Włączone funkcje (wtyczki) i ich pliki UI (punkt rozszerzeń nr 4).
+
+    Funkcja wyłączona w ``config.json`` nie pojawia się tutaj, a jej router i
+    statyki nie istnieją - aplikacja działa normalnie bez niej.
+    """
+    return [registry.public_descriptor(manifest) for manifest in FEATURES]
 
 
 @app.get("/", include_in_schema=False)
@@ -99,7 +154,8 @@ def api_example(name: str) -> Dict[str, Any]:
 
 # ----------------------------------------------------------------- uruchamianie
 def _start_run(source: str, script_name: str, adapter: Optional[str], timeout: float,
-               accel: bool, save: bool) -> Dict[str, Any]:
+               accel: bool, save: bool,
+               options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Uruchom skrypt w tle i zwróć identyfikator uruchomienia."""
     if len(source.encode("utf-8")) > MAX_SCRIPT_BYTES:
         raise HTTPException(413, "Skrypt jest za duży (limit 512 KB).")
@@ -107,6 +163,7 @@ def _start_run(source: str, script_name: str, adapter: Optional[str], timeout: f
     run_id = f"{time.strftime('%H%M%S')}-{uuid.uuid4().hex[:6]}"
     log_path = paths.UPLOADS_DIR / f"{run_id}.jsonl"
     adapter_obj = get_adapter(adapter) if adapter else detect_adapter(source)
+    options = options or {}
     info: Dict[str, Any] = {
         "id": run_id, "status": "running", "started": time.time(),
         "adapter": adapter_obj.id, "script_name": script_name,
@@ -126,7 +183,8 @@ def _start_run(source: str, script_name: str, adapter: Optional[str], timeout: f
             info["stderr"] = result.flight.stderr
             info["real_seconds"] = result.real_seconds
             if save:
-                payload = storage.save(result.flight, real_seconds=result.real_seconds)
+                payload = storage.save(result.flight, real_seconds=result.real_seconds,
+                                       options=options)
                 info["flight_id"] = payload["id"]
             info["status"] = "done"
         except Exception as exc:  # błąd serwera - zgłoś w odpowiedzi live
@@ -184,15 +242,28 @@ async def api_run(request: RunRequest) -> Dict[str, Any]:
     if request.adapter and request.adapter not in [a.id for a in list_adapters()]:
         raise HTTPException(400, f"Nieznany adapter: {request.adapter}")
     return _start_run(request.source, request.script_name or "script.py",
-                      request.adapter, request.timeout, request.accel, request.save)
+                      request.adapter, request.timeout, request.accel, request.save,
+                      options=request.options)
 
 
 @app.post("/api/upload")
 async def api_upload(file: UploadFile = File(...),
                      adapter: Optional[str] = Form(None),
                      timeout: float = Form(runner.DEFAULT_TIMEOUT),
-                     accel: bool = Form(False)) -> Dict[str, Any]:
-    """Wgraj plik .py i uruchom go w symulacji."""
+                     accel: bool = Form(False),
+                     options: Optional[str] = Form(None)) -> Dict[str, Any]:
+    """Wgraj plik .py i uruchom go w symulacji.
+
+    :param options: opcjonalny JSON z ustawieniami funkcji (jak ``RunRequest.options``)
+    """
+    parsed: Dict[str, Any] = {}
+    if options:
+        try:
+            parsed = json.loads(options)
+        except json.JSONDecodeError:
+            raise HTTPException(400, "Pole 'options' nie jest poprawnym JSON.")
+        if not isinstance(parsed, dict):
+            raise HTTPException(400, "Pole 'options' musi być obiektem JSON.")
     if not (file.filename or "").lower().endswith(".py"):
         raise HTTPException(400, "Dozwolone są tylko pliki .py.")
     raw = await file.read()
@@ -203,7 +274,8 @@ async def api_upload(file: UploadFile = File(...),
     except UnicodeDecodeError:
         raise HTTPException(400, "Plik musi być w kodowaniu UTF-8.")
     name = Path(file.filename or "script.py").name
-    return _start_run(source, name, adapter, timeout or runner.DEFAULT_TIMEOUT, accel, True)
+    return _start_run(source, name, adapter, timeout or runner.DEFAULT_TIMEOUT, accel, True,
+                      options=parsed)
 
 
 @app.get("/api/run/live/{run_id}")
@@ -250,7 +322,11 @@ def api_flights(limit: int = 20) -> List[Dict[str, Any]]:
 
 @app.get("/api/flights/{flight_id}")
 def api_flight(flight_id: str) -> Dict[str, Any]:
-    """Pełne dane lotu (format do odtwarzania i zapisu)."""
+    """Pełne dane lotu (format do odtwarzania i zapisu).
+
+    Lot zawiera zapisaną scenę (``scene``) i raport funkcji ``obstacles`` -
+    po wczytaniu z historii UI odtwarza te same przeszkody.
+    """
     payload = storage.load(flight_id)
     if payload is None:
         raise HTTPException(404, "Nie znaleziono lotu.")

@@ -44,6 +44,8 @@ export class DroneScene {
     this.trailGroup = new THREE.Group();
     this.markerGroup = new THREE.Group();
     this.scene.add(this.trailGroup, this.markerGroup);
+    //: warstwy dodane przez funkcje (wtyczki) - patrz README, „Punkty rozszerzeń”
+    this.overlayLayers = [];
 
     this._spinner = 0;
     this._clock = new THREE.Clock();
@@ -428,6 +430,12 @@ export class DroneScene {
     this._flying = flying;
   }
 
+  /** Dodaj warstwę dostarczoną przez funkcję (punkt rozszerzeń nr 4). */
+  addOverlayLayer(instance) {
+    if (!instance) return;
+    this.overlayLayers.push(instance);
+  }
+
   /** Docelowa odległość kamery śledzącej zależna od skali modelu (×1 → ~1,2 m, ×10 → ~5 m). */
   _followDistance() {
     return 0.95 + 0.38 * Math.max(1, this.droneModelScale);
@@ -530,6 +538,8 @@ export class DroneScene {
   _animate = () => {
     requestAnimationFrame(this._animate);
     const dt = this._clock.getDelta();
+    // warstwy funkcji (wtyczek) - własna animacja / porządki
+    for (const layer of this.overlayLayers) layer.tick?.(dt);
     // wirniki: szybki obrót w locie, zatrzymane na ziemi
     const spin = this._flying ? 28 * dt : 0;
     this._spinner += spin;
