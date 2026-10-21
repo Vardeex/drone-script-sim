@@ -336,6 +336,12 @@ class TelloController:
         return self._read("get_speed_z", int(round(self.sim.velocity[2])))
 
     def get_yaw(self) -> int:
+        """Kurs jak ``djitellopy.get_yaw()``: ``rotate_counter_clockwise`` go zwiększa.
+
+        Silnik trzyma ``sim.yaw`` w tej samej konwencji (obrót w lewo = dodatni),
+        więc odczyt jest bezpośredni; RC (``yaw`` w djitellopy) ma odwrotny znak
+        i jest negowane w :meth:`~app.sim.core.Simulation.rc_motion`.
+        """
         yaw = self.sim.yaw % 360.0
         return self._read("get_yaw", int(round(yaw - 360 if yaw > 180 else yaw)))
 

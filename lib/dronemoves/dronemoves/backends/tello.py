@@ -57,20 +57,21 @@ class TelloBackend(BackendAdapter):
 
     # ------------------------------------------------------------------- RC
     def rc(self, vx: float, vy: float, vz: float, yaw_rate: float) -> None:
-        """Wyślij wychylenia RC.
+        """Wyślij wychylenia RC (wartości już w konwencji **djitellopy**).
 
-        Konwencja **biblioteki**: ``vx`` przód, ``vy`` w lewo, ``vz`` w górę,
-        ``yaw_rate`` w lewo (dodatnia wartość = obrót w lewo, CCW) - wartości RC.
+        ``Executor`` przygotowuje je w konwencji docelowej:
+        ``vx`` = ``left_right`` (dodatnie = **w prawo**),
+        ``vy`` = ``forward_backward`` (dodatnie = przód),
+        ``vz`` = ``up_down`` (dodatnie = góra),
+        ``yaw_rate`` = ``yaw`` (dodatnie = obrót **w prawo**, zgodnie z zegarem).
 
-        Konwencja **djitellopy** (``rc a b c d``, potwierdzona w oficjalnym
-        przykładzie ``manual-control-pygame.py``): ``a`` dodatnie = **w prawo**,
-        ``d`` dodatnie = obrót **w prawo** (zgodnie z zegarem). Dlatego obie
-        osie „boczne” trzeba odwrócić.
+        Nazwy argumentów (``vx``/``vy``) pochodzą z interfejsu ``MotionBackend``,
+        ale znaczenie jest tu „kanałowe”, bo taka jest kolejność ``rc a b c d``.
         """
-        lr = _clamp_rc(-vy)          # lewo(+) -> prawo(+)
-        fb = _clamp_rc(vx)
+        lr = _clamp_rc(vx)
+        fb = _clamp_rc(vy)
         ud = _clamp_rc(vz)
-        yaw = _clamp_rc(-yaw_rate)   # CCW(+) -> CW(+)
+        yaw = _clamp_rc(yaw_rate)
         try:
             self.drone.send_rc_control(lr, fb, ud, yaw)
         except Exception as exc:  # wyjątki drona przekazujemy dalej z kontekstem

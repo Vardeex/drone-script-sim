@@ -83,7 +83,7 @@ finally:
 ```python
 Pilot(drone=None, *, backend=None, speed=40, profile=TELLO_PROFILE,
       max_height_cm=300, max_radius_cm=500, min_battery=20,
-      land_on_exit=True)
+      land_on_exit=True, sim_exact=False)
 ```
 
 | Metoda | Opis |
@@ -104,6 +104,22 @@ Pilot(drone=None, *, backend=None, speed=40, profile=TELLO_PROFILE,
 
 Każdy manewr przyjmuje `mode="rc"` (domyślnie) lub `mode="native"`.
 Manewr `sequence` działa na liście obiektów `Maneuver` (np. z `p._line_planner`).
+
+## Symulator: ścieżka jak na prawdziwym dronie
+
+Domyślnie biblioteka steruje **wyłącznie przez `send_rc_control`** — również
+w symulatorze. Symulator przelicza wychylenia RC na prędkości **tym samym
+profilem kalibracji** (`CalibrationProfile`), którego używa planer, więc test
+w symulatorze sprawdza dokładnie tę drogę, którą pójdzie prawdziwe Tello
+(z wychyleniami zaokrąglonymi do liczb całkowitych).
+
+Dla diagnostyki (porównanie z idealną trajektorią, bez kwantyzacji RC) można
+włączyć kanał dokładnych prędkości — działa tylko z mockiem symulatora
+(`send_dronemoves_profile`); prawdziwe `djitellopy` go nie ma:
+
+```python
+pilot = Pilot(tello, speed=35, sim_exact=True)   # tylko diagnostyka!
+```
 
 ## Tryb `rc` vs `native`
 

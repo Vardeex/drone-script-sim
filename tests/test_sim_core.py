@@ -220,11 +220,11 @@ def test_rc_negative_left_right_moves_left():
 
 
 def test_rc_positive_yaw_turns_clockwise():
-    """``send_rc_control(0, 0, 0, +30)`` zwiększa yaw w prawo (zgodnie z zegarem)."""
+    """``send_rc_control(0, 0, 0, +30)`` zwiększa ``get_yaw()`` (skręt w prawo)."""
     sim = _airborne()
     ev, _, _ = sim.begin("send_rc_control", [0, 0, 0, 30, 1.0])
     sim.rc_motion(ev, 0, 0, 0, 30, 1.0)
-    # yaw rośnie w prawo, jak get_yaw() w Tello (30% drążka * 90 deg/s = 27 deg)
+    # ``sim.yaw`` jest w konwencji get_yaw(): skręt w prawo daje +27
     assert sim.yaw == pytest.approx(27.0, abs=1.0), f"yaw={sim.yaw}"
 
 

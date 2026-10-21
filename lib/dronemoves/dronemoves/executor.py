@@ -5,16 +5,22 @@ Wysyła wychylenia RC z częstotliwością 20 Hz według planu, ale mierzy
 w trajektorii do właściwej chwili zamiast zwalniać. Dzięki temu manewr trwa
 tyle, ile zaplanowano, nawet gdy wywołania drona są wolniejsze.
 
-Executor nie zna drona: dostaje backend (``MotionBackend``).
+Sterowanie zawsze idzie przez ``send_rc_control`` - dokładnie tak, jak na
+prawdziwym Tello. Opcjonalny kanał ``send_profile`` (tylko mock symulatora)
+jest wyłączony domyślnie; włącza się go w ``Pilot(..., sim_exact=True)``.
+
+Executyor nie zna drona: dostaje backend (``MotionBackend``).
 """
 
 from __future__ import annotations
 
+import math
 import threading
 import time
 from typing import Callable, Optional
 
 from .backends.base import MotionBackend
+from .calibration import CalibrationProfile
 from .trajectory import Trajectory
 
 __all__ = ["Executor", "ExecuteResult"]
@@ -43,11 +49,17 @@ class Executor:
 
     def __init__(self, backend: MotionBackend, frequency_hz: float = CONTROL_HZ,
                  time_fn: Optional[Callable[[], float]] = None,
-                 sleep_fn: Optional[Callable[[float], None]] = None) -> None:
+                 sleep_fn: Optional[Callable[[float], None]] = None,
+                 profile: Optional[CalibrationProfile] = None,
+                 sim_exact: bool = False) -> None:
         if frequency_hz <= 0:
             raise ValueError("frequency_hz musi być dodatnie")
         self.backend = backend
         self.period = 1.0 / frequency_hz
+        #: profil kalibracji - ten sam, którym planer liczy wychylenia RC
+        self.profile = profile or CalibrationProfile()
+        #: diagnostyczny kanał dokładnych prędkości (mock symulatora); domyślnie OFF
+        self.sim_exact = bool(sim_exact)
         # Zegar i sen bierzemy z modułu ``time`` w chwili wywołania, nie z domyślnych
         # argumentów: w symulatorze ``time.sleep``/``time.monotonic`` są podmieniane
         # na zegar wirtualny już po imporcie biblioteki. Dzięki temu pętla RC
@@ -80,12 +92,12 @@ class Executor:
                     break
                 # korekta czasu: próbka dla faktycznie minionej chwili
                 sample = trajectory.at(elapsed)
-                fb, lr, ud, yaw = sample.rc
-                # Symulator: dokładne prędkości z planu (cm/s, °/s). Prawdziwy dron:
-                # wychylenia RC w konwencji djitellopy (left_right, forward_backward,
-                # up_down, yaw) - backend tłumaczy znaki.
                 if not self._send_profile(sample):
-                    self.backend.rc(vx=fb, vy=lr, vz=ud, yaw_rate=yaw)
+                    # Ścieżka prawdziwego drona: prędkości próbki są w układzie
+                    # GLOBALNYM (planer liczy je jako różnice pozycji), więc przed
+                    # wysłaniem RC obracamy je do układu drona według jego kursu.
+                    lr, fb, ud, yaw = self._rc_for_sample(sample)
+                    self.backend.rc(vx=lr, vy=fb, vz=ud, yaw_rate=yaw)
                 sent += 1
                 if self._stop.is_set():
                     stopped = True
@@ -102,16 +114,47 @@ class Executor:
         return ExecuteResult(duration=duration, samples_sent=sent,
                              real_seconds=self._time() - started, stopped=stopped)
 
-    def _send_profile(self, sample) -> bool:
-        """Przekaż prędkości próbki (cm/s, °/s) do backendu, jeśli to potrafi.
+    def _rc_for_sample(self, sample) -> tuple:
+        """Zamień prędkości próbki (globalne) na wychylenia RC dla djitellopy.
 
-        ``sample = None`` zeruje profil (koniec manewru). Zwraca ``True``, gdy
-        backend przyjął profil - wtedy nie wysyłamy już wychyleń RC.
+        ``sample.vx``/``sample.vy`` są w układzie lotu (globalnym), a ``sample.yaw``
+        to kurs nosa. Rzutujemy prędkość na osie drona (przód / prawo) i przeliczamy
+        ją na RC **tym samym profilem kalibracji, którym planer liczył plan** - dzięki
+        temu wychodzą dokładnie te wartości, które zaplanowano (bez drugiego,
+        innego przelicznika).
 
-        ``vx``/``vy`` trajektorii są już w układzie **globalnym** (planer liczy je
-        jako różnice pozycji: ``planner.TrajectoryBuilder.add``), a ``yaw`` to tylko
-        orientacja nosa. Przekazujemy je bez obracania.
+        Zwraca ``(lr, fb, ud, yaw)`` w kolejności ``rc a b c d`` djitellopy:
+        ``lr`` > 0 = **w prawo**, ``yaw`` > 0 = obrót **w prawo** (zgodnie z zegarem,
+        tak rośnie ``get_yaw()``).
+
+        Kierunki: ``sample.yaw`` rośnie w lewo (CCW, jak w planie), a ``+Y`` to lewo,
+        więc oś „prawo” drona to ``(sin(yaw), -cos(yaw))``.
         """
+        rad = math.radians(sample.yaw)
+        cos_a = math.cos(rad)
+        sin_a = math.sin(rad)
+        # rzut prędkości globalnej na osie drona
+        forward = sample.vx * cos_a + sample.vy * sin_a        # przód
+        right = sample.vx * sin_a - sample.vy * cos_a          # prawo
+        return (
+            self.profile.speed_to_rc(right),
+            self.profile.speed_to_rc(forward),
+            self.profile.speed_to_rc(sample.vz),
+            self.profile.yaw_rate_to_rc(sample.yaw_rate),
+        )
+
+    def _send_profile(self, sample) -> bool:
+        """Diagnostyczny kanał: przekaż prędkości próbki wprost do backendu.
+
+        Działa tylko przy ``sim_exact=True`` i tylko z backendem, który to
+        obsługuje (mock symulatora). Domyślnie wyłączony - symulator testuje
+        wtedy wyłącznie ścieżkę ``send_rc_control``, tak jak prawdziwy dron.
+
+        ``vx``/``vy`` trajektorii są w układzie **globalnym**, a ``yaw`` to kurs
+        nosa - przekazujemy je bez obracania (``world=True``).
+        """
+        if not self.sim_exact:
+            return False
         if sample is None:
             return self.backend.send_profile(0.0, 0.0, 0.0, 0.0, world=True)
         return self.backend.send_profile(sample.vx, sample.vy, sample.vz, sample.yaw_rate,

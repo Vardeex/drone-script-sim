@@ -55,11 +55,15 @@ class CommandError(SimulationError):
 
 @dataclass(frozen=True)
 class RcProfile:
-    """Przelicznik wychyleń RC na prędkości - odpowiednik profilu kalibracji.
+    """Przelicznik wychyleń RC na prędkości - **profil kalibracji biblioteki**.
 
-    Wzory są **identyczne** jak w ``dronemoves.calibration.CalibrationProfile``
-    (``rc / 100 * max``, opcjonalna martwa strefa i wykładnik nieliniowości),
-    dzięki czemu symulator wykonuje dokładnie to, co zaplanowała biblioteka.
+    Symulator nie ma własnych wzorów: bierze ``dronemoves.calibration.
+    CalibrationProfile`` (to samo źródło prawdy, którego używa planer manewrów).
+    Import jest jednokierunkowy (``app`` -> ``dronemoves``); biblioteka nie wie
+    nic o symulatorze.
+
+    Gdy biblioteka nie jest zainstalowana (np. symulator bez ``lib/dronemoves``),
+    używany jest zgodny wzór liniowy z wartościami domyślnymi Tello.
 
     :param max_speed_cm_s: prędkość przy ``rc = 100`` (cm/s)
     :param max_yaw_rate_dps: obrót przy ``rc = 100`` (°/s)
@@ -94,9 +98,23 @@ class RcProfile:
         return self._shape(rc) * self.max_vertical_cm_s
 
 
+def dronemoves_profile() -> "RcProfile":
+    """Profil kalibracji z biblioteki ``dronemoves`` (albo domyślny Tello).
+
+    Zwraca obiekt biblioteki, więc ``rc_to_speed``/``rc_to_yaw_rate`` liczą
+    dokładnie tak, jak planer manewrów. Interfejs jest zgodny z :class:`RcProfile`
+    (te same trzy metody i pola).
+    """
+    try:
+        from dronemoves.calibration import TELLO_PROFILE
+    except Exception:  # pragma: no cover - brak biblioteki w instalacji
+        return RcProfile()
+    return TELLO_PROFILE  # type: ignore[return-value]
+
+
 #: Profil domyślny: DJI Tello (100% drążka = 50 cm/s poziomo, 90 °/s obrotu).
-def default_rc_profile() -> RcProfile:
-    return RcProfile()
+def default_rc_profile() -> "RcProfile":
+    return dronemoves_profile()
 
 
 @dataclass
@@ -413,11 +431,17 @@ class Simulation:
             self.now = t1
             return span
 
+        # przedział zerowy (np. dwie próbki planu o tym samym czasie): sam wpis
+        if duration <= 1e-9:
+            self.now = t1
+            return span
+
         t = self._next_sample_t
         while t < t1 - 1e-9:
             pos, vel, yaw = span.state_at(t)
             self._record_sample(t, pos, vel, yaw, span.state, self.battery)
-            t = round(t + TELEMETRY_DT, 6)
+            nxt = round(t + TELEMETRY_DT, 6)
+            t = nxt if nxt > t else t1   # zabezpieczenie przed brakiem postępu
         self._next_sample_t = max(self._next_sample_t, t)
         self.now = t1
         return span
@@ -682,10 +706,11 @@ class Simulation:
         v_forward = prof.rc_to_speed(fb)          # cm/s
         v_right = prof.rc_to_speed(lr)            # cm/s (dodatnie = prawo)
         v_up = prof.rc_to_vertical(ud)            # cm/s
-        # yaw: w symulatorze yaw rośnie w prawo (jak get_yaw()), więc +rc = +yaw.
-        # ``integrate_rc`` oczekuje yaw_rate dodatniego = w prawo, więc przekazujemy
-        # wartość z profilu bez zmiany znaku.
-        yaw_rate = prof.rc_to_yaw_rate(yaw_rate)  # deg/s (dodatnie = w prawo)
+        # ``sim.yaw`` jest w konwencji Tello: ``rotate_counter_clockwise`` zwiększa
+        # yaw, a wychylenie ``yaw`` w RC (dodatnie = obrót w prawo) też je zwiększa.
+        # Znaki "prawo/lewo" różnią się między tymi interfejsami, ale oba opisują
+        # ten sam kierunek - dlatego tu nie ma zmiany znaku.
+        yaw_rate = prof.rc_to_yaw_rate(yaw_rate)  # deg/s (dodatnie = zgodnie z zegarem)
         if not any((v_forward, v_right, v_up, yaw_rate)):
             self.advance(seconds)
             self.commit(event)
@@ -705,14 +730,17 @@ class Simulation:
         od długości ``seconds`` (symulator i biblioteka dają ten sam wynik
         przy RC co 50 ms i przy większych porcjach czasu).
         """
-        remaining = float(seconds)
+        pozostaje = float(seconds)
+        # zabezpieczenie: brak postępu przy wartościach niecałkowitych
+        if not math.isfinite(pozostaje) or pozostaje < 0:
+            pozostaje = 0.0
         points: List[Vec3] = [tuple(self.position)]  # type: ignore[list-item]
         x, y, z = self.position
         yaw = self.yaw
-        while remaining > 1e-9:
-            dt = min(RC_STEP, remaining)
-            remaining -= dt
-            mid = yaw + yaw_rate * dt / 2.0        # kąt nosa w połowie kroku
+        while pozostaje > 1e-9:
+            dt = min(RC_STEP, pozostaje)
+            pozostaje -= dt
+            mid = yaw + yaw_rate * dt / 2.0
             # kierunek nosa: (cos, sin); prawo = nos obrócony o -90 deg
             x += (v_forward * math.cos(math.radians(mid))
                   + v_right * math.cos(math.radians(mid - 90.0))) * dt
@@ -722,8 +750,12 @@ class Simulation:
             yaw += yaw_rate * dt
             points.append((x, y, z))
         speed = max(abs(v_forward), abs(v_right), abs(v_up), 0.01)
+        # Czas trwania MUSI odpowiadać ``seconds``: model ruchu liczy czas z
+        # ``długość / speed``, więc przy małych prędkościach (Kwantyzacja RC)
+        # symulacja rozjeżdżałaby się z zegarem i pętla Executora nigdy nie
+        # osiągnęłaby końca manewru. Dlatego wymuszamy ``duration_override``.
         move = physics.LinearMove(start=tuple(self.position), end=(x, y, z), speed=speed,
-                                  polyline=points)
+                                  polyline=points, duration_override=max(float(seconds), 0.0))
         self.check_ceiling(z, event)
         self._execute_motion(event, move, yaw1=yaw)
 
@@ -749,7 +781,8 @@ class Simulation:
             points.append((x, y, z))
         speed = max(math.hypot(vx, vy), abs(v_up), 0.01)
         move = physics.LinearMove(start=tuple(self.position), end=(x, y, z), speed=speed,
-                                  polyline=points)
+                                  polyline=points,
+                                  duration_override=max(float(seconds), 0.0))
         self.check_ceiling(z, event)
         self._execute_motion(event, move, yaw1=yaw)
 

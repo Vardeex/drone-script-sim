@@ -90,10 +90,16 @@ class TrajectoryBuilder:
         steps = max(2, int(math.ceil(duration / self.limits.dt)))
         dt = duration / steps
         prev = curve(0.0)
+        # Gdy odcinek startuje po poprzednim (np. po rotate() w orbit), stan wyjściowy
+        # jest już zapisany w próbkach - pierwsza próbka musi wypaść o ``dt`` później,
+        # żeby w osi czasu nie było dwóch próbek z tym samym ``t``.
+        first_offset = dt if self.samples else 0.0
         for i in range(steps + 1):
             frac = i / steps
             if i > 0:
                 self.t += dt
+            elif first_offset:
+                self.t += first_offset
             if kind == "smooth":
                 s = smoothstep(frac)
             else:
@@ -117,6 +123,32 @@ class TrajectoryBuilder:
         self.state = prev
         if smooth_yaw:
             Trajectory(samples=self.samples).smooth_yaw(window=yaw_window)
+
+    def rotate(self, angle_deg: float, *, yaw_rate_dps: Optional[float] = None) -> None:
+        """Obrót **w miejscu** o ``angle_deg`` (dodatni = w lewo/CCW).
+
+        Manewry zmieniające kurs przed startem (np. ``orbit``) muszą to zrobić
+        osobnym odcinkiem: pierwsza próbka planu nie może „przeskoczyć” yaw,
+        bo dron nie miałby jak się obrócić.
+        """
+        if abs(angle_deg) < 1e-9:
+            return
+        limit = min(self.limits.max_yaw_rate_dps, self.profile.max_yaw_rate_dps)
+        rate = min(abs(yaw_rate_dps), limit) if yaw_rate_dps else min(90.0, limit)
+        duration = abs(angle_deg) / max(rate, 1e-6)
+        steps = max(1, int(math.ceil(duration / self.limits.dt)))
+        d_yaw = angle_deg / steps
+        dt = duration / steps
+        base = self.state[3]
+        for i in range(1, steps + 1):
+            self.t += dt
+            yaw = base + d_yaw * i
+            self.samples.append(Sample(
+                t=self.t, x=self.state[0], y=self.state[1], z=self.state[2],
+                yaw=yaw % 360, vx=0.0, vy=0.0, vz=0.0, yaw_rate=d_yaw / dt,
+            ))
+        # kurs po odcinku: dokładnie na docelowym kącie (bez dryfu numerycznego)
+        self.state = (self.state[0], self.state[1], self.state[2], base + angle_deg)
 
     def finish(self, label: str, mode: str = "rc", meta: Optional[dict] = None) -> Trajectory:
         """Zamknij trajektorię: dodaj próbki RC z profilu i zwróć ``Trajectory``."""
@@ -268,6 +300,11 @@ def plan_orbit(radius_cm: float, turns: float = 1.0, *, direction: str = "right"
     total_angle = 360.0 * turns
     builder = TrajectoryBuilder(limits, profile)
     cx, cy = 0.0, sign * r  # środek okręgu po stronie skrętu
+    # Kurs wyjściowy to „nos w środek okręgu” (dla right: -90°, dla left: +90°).
+    # Dron startuje z kursem 0, więc najpierw obraca się w miejscu - inaczej
+    # pierwsza próbka planu zmieniałaby yaw skokiem, a dron poleciałby w złą stronę.
+    start_yaw = math.degrees(math.atan2(cy - 0.0, cx - 0.0))
+    builder.rotate(((start_yaw + 180.0) % 360.0) - 180.0)
 
     def curve(s: float) -> Tuple[float, float, float, float]:
         theta = math.radians(total_angle) * s

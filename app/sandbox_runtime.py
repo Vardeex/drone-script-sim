@@ -25,6 +25,9 @@ from typing import Any, Dict, Optional
 
 _STATE: Dict[str, Any] = {"sim": None, "log": None, "settings": {}, "script": ""}
 
+#: Minimalny odstęp zrzutów stanu do JSONL (s czasu symulacji). UI czyta ostatni zrzut.
+SNAPSHOT_EVERY_S = 0.5
+
 
 def configure(config: Dict[str, Any]) -> None:
     """Zainstaluj hooki sandboxu (wywoływane przez runner przed skryptem)."""
@@ -108,6 +111,8 @@ class _LogWriter:
         self.path = path
         self._lock = threading.Lock()
         self._fh = open(path, "w", encoding="utf-8") if path else None
+        #: czas symulacji ostatniego zrzutu (zrzuty ograniczone czasem - patrz ``snapshot``)
+        self._last_snapshot_t = -1e9
 
     def write(self, obj: Dict[str, Any]) -> None:
         if self._fh is None:
@@ -123,13 +128,25 @@ class _LogWriter:
                 self._fh = None
 
     def snapshot(self, sim) -> None:
-        """Zapisz zrzut dotychczasowego stanu symulacji (po każdej komendzie)."""
+        """Zapisz zrzut dotychczasowego stanu symulacji (na żywo w UI).
+
+        Zrzut zawiera **całą** dotychczasową telemetrię, więc zapis przy każdej
+        komendzie dawał narzut O(n^2): manewr ``orbit`` (252 komendy RC) pisał
+        setki megabajtów JSON zamiast skończyć w ułamku sekundy. Dlatego zrzuty
+        są ograniczone **czasem symulacji** (:data:`SNAPSHOT_EVERY_S`) - UI i tak
+        czyta tylko ostatni zrzut, a wynik lotu zapisuje ``runner`` na końcu.
+
+        Ślad ruchu w UI bierze się z próbek telemetrii (są w zrzucie); pełne
+        segmenty ruchu trafiają tylko do zrzutu końcowego.
+        """
+        if sim.now - self._last_snapshot_t < SNAPSHOT_EVERY_S:
+            return
+        self._last_snapshot_t = sim.now
         self.write({
             "type": "snapshot", "now": sim.now,
             "samples": [s.as_dict() for s in sim.recorder.samples],
             "events": [e.as_dict() for e in sim.recorder.events],
-            "segments": [sp.motion.as_dict(sp.t0, sp.t1)
-                         for sp in sim.recorder.spans if sp.motion is not None],
+            "segments": [],
             "warnings": sim.recorder.warnings, "errors": sim.recorder.errors,
             "stats": sim.stats(),
         })

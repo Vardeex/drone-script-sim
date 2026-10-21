@@ -3,6 +3,70 @@
 Forma zgodna z [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/),
 wersjonowanie zgodne z [SemVer](https://semver.org/lang/pl/).
 
+## [0.1.2] - 2026-10-21
+
+Symulator testuje teraz **dokładnie tę ścieżkę sterowania, co prawdziwy dron**.
+
+### Zmienione
+
+- **Domyślnie tylko `send_rc_control`.** `Executor` wysyła wychylenia RC zawsze;
+  diagnostyczny kanał dokładnych prędkości (`send_dronemoves_profile`, dostępny
+  tylko w mocku symulatora) jest **wyłączony domyślnie** i włącza się go
+  świadomie przez `Pilot(..., sim_exact=True)`. Wcześniej symulator omijał
+  `send_rc_control`, więc ścieżka używana na prawdziwym Tello nie była testowana.
+- **Profil kalibracji importowany z biblioteki.** Symulator nie ma już własnej
+  kopii wzorów - silnik (`app/sim/core.py`) bierze `dronemoves.calibration.
+  CalibrationProfile` (jedno źródło prawdy, import jednokierunkowy `app` ->
+  `dronemoves`; biblioteka nie wie nic o symulatorze).
+
+### Naprawione
+
+- **Obrót prędkości do układu drona.** Prędkości w trajektorii są globalne
+  (`vx`, `vy` liczone jako różnice pozycji), więc `Executor` rzutuje je na osie
+  drona bieżącym kursem (`przód = vx·cos + vy·sin`, `prawo = vx·sin − vy·cos`)
+  i dopiero potem zamienia na RC. Wcześniej do `send_rc_control` trafiały
+  **wychylenia RC** zamiast prędkości, bez obrotu - manewry łukowe wypadały
+  poza trasę (np. `turn(90)` kończył 120 cm od celu).
+- **Znaki zgodne z djitellopy.** `lr > 0` = w prawo, `yaw > 0` = obrót w prawo
+  (zgodnie z zegarem); `rotate_counter_clockwise` zwiększa `get_yaw()`.
+- **Czas kroku RC wymuszony.** `integrate_rc` ustawia `duration_override =
+  seconds`; wcześniej czas liczono z `długość / prędkość`, więc przy małych
+  prędkościach (kwantyzacja RC) symulacja rozjeżdżała się z zegarem i pętla
+  wykonawcza manewru nie kończyła się (manewr `orbit` przekraczał limit 60 s).
+- **`orbit` startuje z bieżącego kursu.** Nowy `TrajectoryBuilder.rotate()`
+  dodaje obrót w miejscu przed łukiem; wcześniej pierwsza próbka planu miała
+  już kurs „nos w środek”, którego dron nie miał jak wykonać (90° błędu).
+- **Zrzuty stanu do JSONL ograniczone czasem** (`SNAPSHOT_EVERY_S`). Zapis
+  całej telemetrii po każdej komendzie dawał narzut O(n²): `orbit` (252 komendy
+  RC) zapisywał setki megabajtów JSON.
+- **`Pilot.path()` startuje z `(0, 0, z)`**, a nie z pierwszego punktu listy -
+  dron nie „teleportuje się” o odległość do pierwszego punktu.
+
+### Zgodność symulator <-> biblioteka (ścieżka RC, speed=35)
+
+Końcowa pozycja z telemetrii vs `pilot.position()`; tolerancja testu
+**15 cm / 8°** (kwantyzacja wychyleń do liczb całkowitych):
+
+| Manewr | Odchylenie pozycji | Odchylenie kursu |
+|---|---|---|
+| `forward(100)` | 0,1 cm | 0,0° |
+| `turn(±90, r=60)` | 1,5 cm | 0,4° |
+| `arc(180, r=100)` | 7,4 cm | 2,3° |
+| `arc(-120, r=80)` | 1,4 cm | 0,5° |
+| `circle(60, left/right)` | 1,3 cm | 1,3° |
+| `orbit(60, 1)` | 1,3 cm | 2,2° |
+| `slalom(3, 70, 40)` | 11,3 cm | 0,6° |
+| `figure_eight(60)` | 2,9 cm | 4,8° |
+| `spiral(50, 60, 3)` | 0,4 cm | 0,5° |
+| `path(3D)` | 5,7 cm | 1,5° |
+
+### Dodane
+
+- `Pilot(..., sim_exact=True)` - diagnostyczny kanał prędkości (opis w README).
+- `TrajectoryBuilder.rotate(angle_deg)` - obrót w miejscu w planie.
+- Testy: 12 manewrów przez ścieżkę RC, test „tylko `send_rc_control`” oraz
+  test wykrywający odwróconą oś boczną / brak obrotu prędkości do układu drona.
+
 ## [0.1.1] - 2026-10-21
 
 Poprawki zgodności z symulatorem i z rzeczywistym `djitellopy` (znaki RC).

@@ -111,9 +111,11 @@ MANEUVERS = [
     ("path(3D)", "pilot.path([(80, 0, 0), (80, 60, 20), (0, 60, 40)])"),
 ]
 
-#: tolerancja: 10 cm w poziomie i 5 deg kursu
-POSITION_TOLERANCE_CM = 10.0
-YAW_TOLERANCE_DEG = 5.0
+#: tolerancja: 15 cm w poziomie i 8 deg kursu. Symulator steruje wyłącznie przez
+#: ``send_rc_control`` (jak prawdziwy dron), więc wychylenia są zaokrąglane do
+#: liczb całkowitych - przy długich manewrach (slalom: 169 komend) narasta błąd.
+POSITION_TOLERANCE_CM = 15.0
+YAW_TOLERANCE_DEG = 8.0
 
 
 def _pilot_state(result):
@@ -129,7 +131,11 @@ def _pilot_state(result):
 
 @pytest.mark.parametrize("name,body", MANEUVERS, ids=[m[0] for m in MANEUVERS])
 def test_maneuver_matches_simulator(name, body):
-    """Symulator wykonuje manewr tak samo jak zakłada biblioteka."""
+    """Symulator wykonuje manewr tak samo jak zakłada biblioteka.
+
+    Sterowanie idzie wyłącznie przez ``send_rc_control`` (bez diagnostycznego
+    ``send_dronemoves_profile``), czyli tak jak na prawdziwym Tello.
+    """
     import math
 
     source = MANEUVER_TEMPLATE.format(body=body)
@@ -138,7 +144,6 @@ def test_maneuver_matches_simulator(name, body):
     pilot = _pilot_state(result)
     assert pilot is not None, result.stderr
 
-    # telemetria przed lądowaniem (land() zjeżdża do z = 0, ale XY/yaw nie zmienia)
     last = result.flight.samples[-1]
     dx = last["x"] - pilot["x"]
     dy = last["y"] - pilot["y"]
@@ -151,3 +156,79 @@ def test_maneuver_matches_simulator(name, body):
     assert dyaw <= YAW_TOLERANCE_DEG, (
         f"{name}: kurs symulatora {last['yaw']:.1f}° vs pilot {pilot['yaw']:.1f}° "
         f"- różnica {dyaw:.1f}°")
+
+
+def test_maneuver_uses_only_send_rc_control():
+    """Ścieżka prawdziwego drona: żadne wywołanie ``send_dronemoves_profile``."""
+    source = """
+import json
+from djitellopy import Tello
+from dronemoves import Pilot
+
+t = Tello()
+t.connect()
+t.takeoff()
+pilot = Pilot(t, speed=35)
+used = {"profile": False}
+orig = pilot.backend.send_profile
+
+
+def spy(*args, **kwargs):
+    result = orig(*args, **kwargs)
+    if result:
+        used["profile"] = True
+    return result
+
+
+pilot.backend.send_profile = spy
+pilot.turn(90, radius=60)
+print("PROFILE", json.dumps(used))
+t.land()
+"""
+    result = runner.run_script(source, "rc_only.py")
+    assert result.status == "ok", [e["message"] for e in result.flight.errors]
+    text = next((line if isinstance(line, str) else line.get("text", "")
+                 for line in result.stdout or []), "")
+    assert '{"profile": false}' in text.replace("'", '"'), result.stdout
+    # a ruch naprawdę się odbył (RC dotarło do symulatora)
+    rc_events = [e for e in result.flight.events if e["command"] == "send_rc_control"]
+    assert len(rc_events) > 20
+
+
+def test_turn_left_goes_left_and_right_goes_right():
+    """Wykrywacz odwróconego znaku / braku obrotu do układu drona.
+
+    ``turn(90)`` skręca w LEWO (dodatnie +Y), a ``turn(-90)`` w PRAWO - w obu
+    przypadkach dron musi skończyć po właściwej stronie osi X. Test łapie
+    sytuację, w której symulator ignoruje ``yaw`` przy przeliczaniu prędkości
+    (wtedy tor byłby prosty) albo ma odwróconą oś boczną (strony by się zamieniły).
+    """
+    source = """
+import json
+from djitellopy import Tello
+from dronemoves import Pilot
+
+t = Tello()
+t.connect()
+t.takeoff()
+pilot = Pilot(t, speed=35)
+{body}
+print("PILOT", json.dumps({{"x": pilot.x, "y": pilot.y}}))
+t.land()
+"""
+    for body, expect_positive_y in (("pilot.turn(90, radius=60)", True),
+                                    ("pilot.turn(-90, radius=60)", False)):
+        result = runner.run_script(source.format(body=body), "side.py")
+        assert result.status == "ok", [e["message"] for e in result.flight.errors]
+        last = result.flight.samples[-1]
+        pilot = _pilot_state(result)
+        assert pilot is not None
+        # symulator: ta sama strona co plan
+        assert last["y"] * pilot["y"] > 0, (
+            f"{body}: symulator y={last['y']:.1f}, pilot y={pilot['y']:.1f} "
+            "(przeciwne strony - odwrócona oś boczna)")
+        # i ta właściwa strona geometrycznie
+        if expect_positive_y:
+            assert last["y"] > 30, f"{body}: skręt w lewo powinien dać +Y, jest {last['y']:.1f}"
+        else:
+            assert last["y"] < -30, f"{body}: skręt w prawo powinien dać -Y, jest {last['y']:.1f}"

@@ -161,6 +161,11 @@ class Pilot:
     :param land_on_exit: lądowanie przy wyjściu z kontekstu **po wyjątku**
         (normalne wyjście zostawia sterowanie skryptowi)
     :param frequency_hz: częstotliwość wysyłania RC (domyślnie 20 Hz)
+    :param sim_exact: **tylko diagnostyka w symulatorze.** Gdy ``True``, a dron
+        udostępnia ``send_dronemoves_profile`` (mock symulatora), executor wysyła
+        mu prędkości z planu wprost, zamiast wychyleń RC. Domyślnie ``False`` -
+        symulator testuje wtedy dokładnie tę ścieżkę, co prawdziwy Tello
+        (``send_rc_control`` z wychyleniami RC).
     """
 
     def __init__(self, drone: Any = None, *, backend: Optional[MotionBackend] = None,
@@ -168,7 +173,8 @@ class Pilot:
                  profile_path: Optional[str] = None,
                  max_height_cm: float = 300.0, max_radius_cm: float = 500.0,
                  min_battery: int = 20, min_height_cm: float = 30.0,
-                 land_on_exit: bool = True, frequency_hz: float = CONTROL_HZ) -> None:
+                 land_on_exit: bool = True, frequency_hz: float = CONTROL_HZ,
+                 sim_exact: bool = False) -> None:
         if drone is None and backend is None:
             raise ValueError("Pilot wymaga obiektu drona (drone=...) albo backend=...")
         if backend is None:
@@ -190,7 +196,8 @@ class Pilot:
         )
         self.min_battery = int(min_battery)
         self.land_on_exit = land_on_exit
-        self.executor = Executor(backend, frequency_hz=frequency_hz)
+        self.executor = Executor(backend, frequency_hz=frequency_hz, profile=self.profile,
+                                 sim_exact=sim_exact)
 
         # szacowana pozycja/yaw w układzie startu lotu (metryka lokalna)
         self.x = 0.0

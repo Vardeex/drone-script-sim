@@ -190,11 +190,12 @@ def test_rc_positive_yaw_turns_clockwise_via_controller():
     _takeoff(controller)
     controller.send_rc_control(0, 0, 0, 30)
     controller.rc_tick(1.0)
-    assert controller.sim.yaw == pytest.approx(27.0, abs=1.0)
+    # get_yaw() to interfejs Tello: skręt w prawo daje +27 (a nie -27)
+    assert controller.get_yaw() == pytest.approx(27.0, abs=1.0)
 
 
 def test_backend_maps_library_convention_to_djitellopy():
-    """Biblioteka (lewo+/CCW+) -> djitellopy (prawo+/CW+): obie osie odwrócone."""
+    """Executor przekazuje RC w konwencji djitellopy (lr+ = prawo, yaw+ = w prawo)."""
     from dronemoves.backends.tello import TelloBackend
 
     class Dummy:
@@ -205,5 +206,6 @@ def test_backend_maps_library_convention_to_djitellopy():
             self.calls.append((lr, fb, ud, yaw))
 
     drone = Dummy()
-    TelloBackend(drone).rc(vx=0, vy=40, vz=0, yaw_rate=20)   # 40 = w lewo, 20 = CCW
-    assert drone.calls == [(-40, 0, 0, -20)]
+    # Executor podaje wartości już w kolejności rc a b c d
+    TelloBackend(drone).rc(vx=-40, vy=20, vz=0, yaw_rate=-30)   # lr, fb, ud, yaw
+    assert drone.calls == [(-40, 20, 0, -30)]
