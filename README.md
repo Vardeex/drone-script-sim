@@ -76,9 +76,10 @@ z historii wracają te same przeszkody, znaczniki i lista problemów.
   na liście problemów (czas, przeszkoda, komenda i linia skryptu),
 * **zbliżenie** - odstęp mniejszy niż margines: żółty znacznik i wpis,
 * **odległość od bramki** mierzona jest do **belek ramy** (nie do płaszczyzny
-  bramki): dron 140 cm przed bramką ma 140 cm do ramy, przelot przez środek
-  otworu 90 × 90 cm to 40 cm do boków i 15 cm do górnej belki. Samo przejście
-  przez płaszczyznę ramy nie jest kolizją ani zbliżeniem,
+  bramki): przelot przez środek otworu 90 × 90 cm to 40 cm luzu (do krawędzi
+  otworu), dron 140 cm przed bramką ma ~139 cm do ramy (najbliższy wierzchołek
+  górnej belki), a 10 cm nad ramą dokładnie 7,5 cm. Samo przejście przez
+  płaszczyznę ramy nie jest kolizją ani zbliżeniem - liczy się dotknięcie belki,
 * **bramka** - zaliczona, gdy dron przeleciał przez płaszczyznę ramy w całości
   w otworze (z 2 cm zapasu od ramy); zahaczenie o ramę to kolizja,
 * statystyki lotu: liczba kolizji, ostrzeżeń, zaliczonych bramek i minimalny
@@ -125,7 +126,7 @@ z meblami), `gate_slalom` (slalom z bramkami), `obstacle_course` (tor przeszkód
 
 | Plik | Co pokazuje | Wynik |
 |---|---|---|
-| `examples/obstacles_demo.py` | slalom przez 3 bramki (scena `gate_slalom`) | 3/3 bramki, 0 kolizji |
+| `examples/obstacles_demo.py` | slalom przez 3 bramki (scena `gate_slalom`) | 3/3 bramki, 0 kolizji, 0 ostrzeżeń |
 | `examples/obstacles_crash.py` | za mały zjazd w bok przed bramką 2 | kolizja z ramą bramki 2 |
 
 ## Punkty rozszerzeń
@@ -229,8 +230,8 @@ nie zapisuje w konfiguracji systemu.
 | `rc_control.py` | `send_rc_control` + `time.sleep` | OK (ruch RC) |
 | `error_out_of_range.py` | `move_forward(600)` | błąd zakresu (linia 15) |
 | `no_takeoff.py` | ruch bez `takeoff()` | błąd stanu (linia 13) |
-| `obstacles_demo.py` | slalom przez 3 bramki (scena `gate_slalom`) | 3/3 bramki |
-| `obstacles_crash.py` | zbyt mały zjazd w bok przed bramką | kolizja z ramą bramki |
+| `obstacles_demo.py` | slalom przez 3 bramki (scena `gate_slalom`) | 3/3 bramki, 0 kolizji, 0 ostrzeżeń |
+| `obstacles_crash.py` | zbyt mały zjazd w bok przed bramką 2 | kolizja z ramą bramki 2 |
 
 ## Ograniczenia symulacji
 

@@ -3,6 +3,44 @@
 Format: [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/); wersjonowanie
 zgodne z [SemVer](https://semver.org/lang/pl/).
 
+## [0.2.2] - 2026-10-21
+
+### Naprawione
+
+* **kolizje z belkami bramek**: `_gate_distance` przekazywał do
+  `_gate_bar_distance` **wysokość bezwzględną** (`z`), a funkcja oczekuje
+  wartości liczonej od środka ramy (`v = z - gate.position[2]`). Skutki na
+  `gate_slalom.json` (bramka 1: środek `z = 80`, rama `z: 20-140`,
+  otwór `z: 35-125`): dron w środku górnej belki `(150, 0, 135)` dostawał
+  72,5 cm zamiast 0, lot `move_up(55)` + `move_forward(200)` przechodził przez
+  belkę bez kolizji, a przelot środkiem otworu dawał 17,5 cm i 6 fałszywych
+  ostrzeżeń zamiast luzu 40 cm,
+* **brak kolizji przy dotknięciu belki**: kolizja z ramą była rozpoznawana
+  tylko przy przelocie „przez płaszczyznę”, a nie przy zetknięciu; teraz
+  wejście w belkę to kolizja (jeden wpis na wejście, jak przy bryłach),
+* zły nawias przy dronie w połowie wysokości ramy (płaszczyzna ramy wewnątrz
+  bryły drona) dawał urojone 0,5 cm zamiast 0,
+* dwa wpisy kolizji dla jednego zdarzenia (zetknięcie z belką + „nie zmieścił
+  się w otworze”) - teraz jeden,
+* `_interpolate` nie interpolował odcinków o zerowym czasie (początek
+  lądowania), więc trasa „skakała” przez ramę,
+* `examples/obstacles_demo.py`: zjazdy w bok tuż za ramą (20 cm) realnie
+  zbliżały bryłę drona do ramki (12,5 cm), a lądowanie wypadało w płaszczyźnie
+  bramki 3 (przelot przez belkę dolną). Slalom kończy się teraz 40 cm za ramą
+  i 50 cm przed zjazdami - wynik: 3/3 bramki, 0 kolizji, 0 ostrzeżeń.
+
+### Zmienione
+
+* dla drona w otworze bramki odległość to **luz** do najbliższej krawędzi
+  (`min(otwór/2 - |u|, otwór/2 - |v|)`), np. 40 cm w środku otworu 90 × 90,
+* ostrzeżenia o zbliżeniu do ramy pokazują luz i brakujący zapas,
+* testy odległości bramek liczą oczekiwane wartości **ręcznie z geometrii**
+  (komentarz przy każdej asercji), m.in. `(150, 0, 80)` → 40 cm,
+  `(150, 0, 135)` → 0, `(150, 0, 30)` → 0, `(150, 55, 80)` → 0,
+  `(150, 0, 150)` → 7,5 cm, lot przez górną belkę → kolizja,
+* `docs/obstacles.png` zaktualizowany (slalom bez fałszywych ostrzeżeń,
+  min. odstęp 32,5 cm).
+
 ## [0.2.1] - 2026-10-21
 
 ### Naprawione

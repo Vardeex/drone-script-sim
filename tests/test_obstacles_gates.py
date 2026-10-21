@@ -31,9 +31,8 @@ def test_gate_through_center_is_passed():
     report = C.analyse_flight(straight(), [], scene.as_dict())
     assert report["stats"]["gates_passed"] == 1
     assert report["stats"]["collisions"] == 0
-    # przelot przez środek: 40 cm do boków, 15 cm do górnej belki (17,5 cm od
-    # środka drona, bo liczy się górna powierzchnia bryły)
-    assert report["stats"]["min_distance_cm"] == pytest.approx(17.5, abs=0.5)
+    # przelot przez środek otworu: luz = min(45 - 0, 45 - 0) = 40 cm
+    assert report["stats"]["min_distance_cm"] == pytest.approx(40.0, abs=0.5)
     entry = next(f for f in report["findings"] if f["level"] == "gate")
     assert "bramka" in entry["message"]
 
@@ -65,12 +64,11 @@ def test_gate_offset_flight_through_opening_is_passed():
 
 def test_gate_too_far_side_hits_frame():
     scene = Scene(obstacles=[gate()])
-    # otwór ma 90 cm, dron 10 cm - przy y = 50 dron zachodzi na ramę
+    # otwór ma 90 cm, dron 10 cm - przy y = 50 dron zachodzi na ramę;
+    # to jedno zdarzenie (wejście w belkę), nie dwa wpisy
     report = C.analyse_flight(straight(y=50), [], scene.as_dict())
     assert report["stats"]["gates_passed"] == 0
-    assert report["stats"]["collisions"] == 1
-    message = next(f["message"] for f in report["findings"] if f["level"] == "collision")
-    assert "otworze" in message
+    assert report["stats"]["collisions"] == 1, report["findings"]
 
 
 def test_gate_missed_entirely_is_not_counted():
@@ -105,9 +103,9 @@ def test_gate_rotated_90_degrees_requires_flight_along_y():
     assert report["stats"]["gates_passed"] == 0
 
 # --------------------------------------------------- odległość od ramy bramki
-# Scena `scenes/gate_slalom.json`: bramka 1 w (150, 0), rama 120 x 120,
-# otwór 90 x 90, środek otworu na z = 80 (belki: dół 20-35, góra 125-140,
-# boki 90-105 i -105..-90 cm od osi).
+# Scena `scenes/gate_slalom.json`, bramka 1:
+#   środek (150, 0, 80), rama 120 x 120 (x: 147,5-152,5, z: 20-140),
+#   otwór 90 x 90 (y: -45..45, z: 35-125), dron 10 x 10 x 5 cm.
 SLALOM_GATE = {"id": "gate-1", "kind": "gate", "name": "Bramka 1 (środek)",
                "position": [150, 0, 80], "size": [120, 5, 120],
                "opening": [90, 90], "yaw_deg": 0}
@@ -121,75 +119,125 @@ def slalom_gate() -> Obstacle:
     return Scene.from_dict(slalom_scene()).gates()[0]
 
 
-def test_gate_distance_measures_to_frame_not_plane():
-    """Dron 140 cm przed bramką (x = 10, z = 80) - odległość do ramy ~133 cm.
+def horiz_z(z: float) -> list:
+    """Trasa w osi bramki (y = 0) na wysokości ``z``, od x = 0 do x = 250."""
+    return [
+        {"t": 0.0, "x": 0.0, "y": 0.0, "z": z, "yaw": 0.0},
+        {"t": 5.0, "x": 250.0, "y": 0.0, "z": z, "yaw": 0.0},
+    ]
 
-    Do najbliższej belki (dolna/górna, z = 35 / 125) jest
-    139,3 cm, odejmujemy 5 cm połowy wysokości drona -> ok. 134 cm.
-    (Stary błąd mierzył przenikanie płaszczyzny ramy: 140 - 5/2 = 137,5 cm
-    w poziomie, a z brakiem prawidłowego złożenia pionu dawał ~2,5 cm.)
+
+def test_gate_center_distance_is_half_opening():
+    """Dron w środku otworu: luz = min(45 - 0, 45 - 0) = 40 cm.
+
+    Otwór 90 x 90 -> półotwór 45 cm. Dron w (150, 0, 80) ma środek ościeżnicy
+    45 cm od każdej belki; promień drona w płaszczyźnie ramy to 5 cm, więc
+    luz mierzony od środka do krawędzi otworu to 40 cm (od boku drona).
     """
     gate = slalom_gate()
-    assert C._gate_distance((10.0, 0.0, 80.0), 0.0, gate) == pytest.approx(134.3, abs=3.0)
+    assert C._gate_distance((150.0, 0.0, 80.0), 0.0, gate) == pytest.approx(40.0, abs=0.5)
 
 
-def test_gate_center_pass_distance_is_half_opening():
-    """Przelot przez środek otworu: 40 cm do boków, 15 cm do górnej belki."""
+def test_gate_top_bar_center_is_collision():
+    """(150, 0, 135) to środek górnej belki (z: 125-140) -> 0 cm."""
     gate = slalom_gate()
-    # górna powierzchnia drona (82,5) jest 17,5 cm od dolnej krawędzi górnej belki (100)
-    assert C._gate_distance((150.0, 0.0, 80.0), 0.0, gate) == pytest.approx(17.5, abs=0.5)
-    # obok ramy (y = 105 -> krawędź drona 100, rama kończy się na 60):
-    # 40 cm w poziomie + 2,5 cm w pionie (górna powierzchnia vs. koniec ramy)
-    assert C._gate_distance((150.0, 105.0, 80.0), 0.0, gate) == pytest.approx(43.7, abs=3.0)
+    assert C._gate_distance((150.0, 0.0, 135.0), 0.0, gate) == pytest.approx(0.0, abs=0.1)
+
+
+def test_gate_bottom_bar_is_collision():
+    """(150, 0, 30) leży w dolnej belce (z: 20-35) -> 0 cm."""
+    gate = slalom_gate()
+    assert C._gate_distance((150.0, 0.0, 30.0), 0.0, gate) == pytest.approx(0.0, abs=0.1)
+
+
+def test_gate_side_bar_is_collision():
+    """(150, 55, 80): otwór kończy się na y = 45, rama na y = 60 -> 0 cm.
+
+    Dron 10 cm szerokości sięga od y = 50 do 60, czyli w belkę boczną.
+    """
+    gate = slalom_gate()
+    assert C._gate_distance((150.0, 55.0, 80.0), 0.0, gate) == pytest.approx(0.0, abs=0.1)
+
+
+def test_gate_above_frame_distance():
+    """(150, 0, 150) nad ramą: 150 - 2,5 (pół wysokości drona) - 140 (góra ramy) = 7,5 cm."""
+    gate = slalom_gate()
+    assert C._gate_distance((150.0, 0.0, 150.0), 0.0, gate) == pytest.approx(7.5, abs=0.2)
+
+
+def test_gate_distance_measures_to_frame_not_plane():
+    """140 cm przed bramką (x = 10, z = 80): odległość do ramy, nie do płaszczyzny.
+
+    Najbliższy punkt ramy to górna belka: krawędź drona (x = 15) i górna
+    powierzchnia (z = 82,5) kontra wierzchołek ramy (x = 147,5, z = 125):
+    sqrt(132,5^2 + 42,5^2) = 139,2 cm. Środek drona jest 140 cm od płaszczyzny.
+    """
+    gate = slalom_gate()
+    assert C._gate_distance((10.0, 0.0, 80.0), 0.0, gate) == pytest.approx(139.2, abs=3.0)
 
 
 def test_gate_plane_is_not_an_obstacle():
-    """Przelot „na wylot” przez płaszczyznę ramy nie jest kolizją ani zbliżeniem."""
-    samples = [
-        {"t": 0.0, "x": 0.0, "y": 0.0, "z": 80.0, "yaw": 0.0},
-        {"t": 1.0, "x": 300.0, "y": 0.0, "z": 80.0, "yaw": 0.0},
-    ]
-    report = C.analyse_flight(samples, [], slalom_scene())
+    """Przelot „na wylot” przez otwór: 0 kolizji, 0 ostrzeżeń, luz 40 cm."""
+    report = C.analyse_flight(horiz_z(80.0), [], slalom_scene())
     assert report["stats"]["collisions"] == 0
+    assert report["stats"]["warnings"] == 0
     assert report["stats"]["gates_passed"] == 1
-    assert report["stats"]["min_distance_cm"] == pytest.approx(17.5, abs=1.0)
-    assert all(f["level"] != "collision" for f in report["findings"])
+    assert report["stats"]["min_distance_cm"] == pytest.approx(40.0, abs=1.0)
+    assert all(f["level"] == "gate" for f in report["findings"])
 
 
 def test_slalom_hover_140cm_in_front_reports_140cm():
-    """Lot w miejscu 140 cm przed bramką 1 (jak po move_left(200)) -> ~134 cm."""
+    """Lot w miejscu 140 cm przed bramką (x = 10, z = 80) -> 139,2 cm (jak wyżej)."""
     samples = [{"t": i * 0.1, "x": 10.0, "y": 0.0, "z": 80.0, "yaw": 0.0}
                for i in range(11)]
     report = C.analyse_flight(samples, [], slalom_scene())
     stats = report["stats"]
     assert stats["collisions"] == 0
     assert stats["warnings"] == 0
-    assert stats["min_distance_cm"] == pytest.approx(134.3, abs=3.0)
+    assert stats["min_distance_cm"] == pytest.approx(139.2, abs=3.0)
     assert stats["min_distance_obstacle"] == "Bramka 1 (środek)"
 
 
 def test_slalom_center_pass_reports_frame_clearance():
-    """Lot od startu przez środek otworu bramki 1 - odstęp od ramy 15 cm.
-
-    Lewą/prawą belkę ramy dzieli od osi lotu 40 cm, górną belkę 15 cm, więc
-    minimalny odstęp to 15 cm - (w starym kodzie 2,5 cm „od płaszczyzny”).
-    """
-    samples = [
-        {"t": 0.0, "x": 0.0, "y": 0.0, "z": 80.0, "yaw": 0.0},
-        {"t": 1.0, "x": 200.0, "y": 0.0, "z": 80.0, "yaw": 0.0},
-    ]
-    report = C.analyse_flight(samples, [], slalom_scene())
+    """Przelot środkiem otworu: luz 40 cm, bez fałszywych ostrzeżeń."""
+    report = C.analyse_flight(horiz_z(80.0), [], slalom_scene())
     stats = report["stats"]
     assert stats["gates_passed"] == 1
     assert stats["collisions"] == 0
-    assert stats["min_distance_cm"] == pytest.approx(15.0, abs=3.0)
-    warnings = [f for f in report["findings"] if f["level"] == "warning"]
-    # ostrzeżenia pokazują rzeczywisty odstęp od belek ramy (15 cm)
-    assert warnings and all(f["distance_cm"] >= 14.0 for f in warnings)
+    assert stats["warnings"] == 0
+    assert stats["min_distance_cm"] == pytest.approx(40.0, abs=3.0)
+
+
+def test_flight_through_top_bar_is_collision():
+    """Lot takeoff (80) + move_up(55) -> z = 135 + move_forward: w górną belkę.
+
+    z = 135 leży w belce (125-140), więc trasa musi dać kolizję z bramką 1.
+    """
+    samples = [
+        {"t": 0.0, "x": 0.0, "y": 0.0, "z": 80.0, "yaw": 0.0},
+        {"t": 1.0, "x": 0.0, "y": 0.0, "z": 135.0, "yaw": 0.0},
+        {"t": 6.0, "x": 200.0, "y": 0.0, "z": 135.0, "yaw": 0.0},
+    ]
+    report = C.analyse_flight(samples, [], slalom_scene())
+    stats = report["stats"]
+    assert stats["collisions"] == 1, report["findings"]
+    assert stats["min_distance_cm"] == pytest.approx(0.0, abs=1e-6)
+    hit = next(f for f in report["findings"] if f["level"] == "collision")
+    assert hit["obstacle_name"] == "Bramka 1 (środek)"
+    assert hit["distance_cm"] == 0.0
+
+
+def test_flight_above_frame_only_warns():
+    """Lot 10 cm nad ramą nie dotyka jej: 150 - 2,5 - 140 = 7,5 cm -> ostrzeżenie."""
+    report = C.analyse_flight(horiz_z(150.0), [], slalom_scene())
+    stats = report["stats"]
+    assert stats["collisions"] == 0
+    assert stats["warnings"] >= 1
+    assert stats["min_distance_cm"] == pytest.approx(7.5, abs=0.5)
 
 
 def test_gate_passer_by_40cm_has_no_collision():
-    """Lot obok bramki (40 cm od ramy) nie jest kolizją ani zbliżeniem."""
+    """Lot obok ramy (y = 105): krawędź drona 100, rama kończy się na 60 -> 40 cm."""
     samples = [
         {"t": 0.0, "x": 0.0, "y": 105.0, "z": 80.0, "yaw": 0.0},
         {"t": 1.0, "x": 300.0, "y": 105.0, "z": 80.0, "yaw": 0.0},
@@ -198,6 +246,5 @@ def test_gate_passer_by_40cm_has_no_collision():
     assert report["stats"]["collisions"] == 0
     assert report["stats"]["warnings"] == 0
     assert report["stats"]["gates_passed"] == 0
-    # bok ramy 40 cm od osi lotu, licząc od krawędzi drona (5 cm) -> ~45 cm
-    assert report["stats"]["min_distance_cm"] == pytest.approx(45.0, abs=3.0)
+    assert report["stats"]["min_distance_cm"] == pytest.approx(40.0, abs=1.0)
 

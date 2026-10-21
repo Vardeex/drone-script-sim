@@ -161,6 +161,10 @@ def clearance_to_obstacle(pos: Sequence[float], yaw_internal: float,
 
     ``0`` = dotknięcie (dla bramki: rzut drona na belkę ramy).
     Płaszczyzny (``plane``) są pomijane - zwracają ``inf``.
+
+    Wysokości są liczone bezwzględnie (od poziomu 0), tak jak ``z`` telemetrii:
+    dla bryły zakres ``position[2] ± size[2]/2``, dla bramki środek
+    ``position[2]`` i ``z - position[2]`` wewnątrz :func:`_gate_distance`.
     """
     if not obstacle.solid:
         return math.inf
@@ -179,8 +183,9 @@ def clearance_to_obstacle(pos: Sequence[float], yaw_internal: float,
 def _gate_bar_distance(u: float, v: float, gate: Obstacle) -> float:
     """Odległość punktu na płaszczyźnie ramy od czterech belek ramy (cm).
 
-    :param u: współrzędna wzdłuż ramy (poziomo), mierzona od środka ramy
-    :param v: współrzędna w pionie, mierzona od środka ramy
+    :param u: współrzędna wzdłuż ramy (poziomo), mierzona **od środka ramy**
+    :param v: współrzędna w pionie, mierzona **od środka ramy**
+        (czyli ``z - gate.position[2]``, a nie wysokość bezwzględna)
 
     Rama to cztery belki między otworem ``opening`` a obrysem ``size``, więc
     najbliższa belka może leżeć po dowolnej stronie punktu. Ze względu na
@@ -199,6 +204,16 @@ def _gate_bar_distance(u: float, v: float, gate: Obstacle) -> float:
     return 0.0                       # rzut na belkę ramy
 
 
+def _gate_opening_slack(u: float, v: float, gate: Obstacle) -> float:
+    """Luz punktu wewnątrz otworu (cm): ``min(otwór/2 - |u|, otwór/2 - |v|)``.
+
+    :param u: współrzędna wzdłuż ramy, mierzona **od środka ramy**
+    :param v: współrzędna w pionie, mierzona **od środka ramy**
+        (czyli ``z - gate.position[2]``)
+    """
+    return min(gate.opening[0] / 2.0 - abs(u), gate.opening[1] / 2.0 - abs(v))
+
+
 def _gate_distance(pos: Sequence[float], yaw_internal: float, gate: Obstacle) -> float:
     """Odległość drona od konstrukcji ramy bramki (bez marginesu).
 
@@ -211,23 +226,28 @@ def _gate_distance(pos: Sequence[float], yaw_internal: float, gate: Obstacle) ->
     Sprawdzana jest cała bryła drona (8 wierzchołków + krawędzie z krokiem
     0,5 cm); dron jest obracany tylko kursem (przechyły w telemetrii są
     pomijane - bryła nie rusza się w pionie). W układzie ramy liczymy odległość
-    w płaszczyźnie (``u`` wzdłuż ramy, ``v`` w pionie) i przesunięcie poza
-    płaszczyznę; odległość 3D to ``hypot(oba)``.
+    w płaszczyźnie (``u`` wzdłuż ramy, ``v = z - gate.position[2]`` w pionie)
+    i przesunięcie poza płaszczyznę; odległość 3D to ``hypot(oba)``.
+
+    * dron **w otworze**: luz najbliższej krawędzi (środek otworu 90 × 90 → 40 cm),
+    * dron dotyka ramy / jest w płaszczyźnie ramy: wartość nieujemna liczona
+      po najgorszym punkcie bryły (0 = wejście w belkę).
     """
     half_depth = gate.size[1] / 2.0
-    radius = math.hypot(DRONE_WIDTH, DRONE_LENGTH) / 2.0
-    low_z = pos[2] - DRONE_HEIGHT / 2.0
-    high_z = pos[2] + DRONE_HEIGHT / 2.0
-    center_depth = _gate_local_depth(gate, (pos[0], pos[1]))
+    center_z = gate.position[2]
+    low_z = pos[2] - center_z - DRONE_HEIGHT / 2.0     # od środka ramy, nie od podłogi
+    high_z = pos[2] - center_z + DRONE_HEIGHT / 2.0
 
-    # rzut drona leży w płaszczyźnie ramy - musi zmieścić się w otworze
-    if abs(center_depth) <= half_depth and radius < half_depth:
-        corners = _box_footprint(pos[0], pos[1], yaw_internal, DRONE_WIDTH, DRONE_LENGTH)
-        return max(_gate_bar_distance(gate.to_local(c)[1], z, gate)
-                   for c in corners for z in (low_z, high_z))
+    # Bryła drona obraca się tylko kursem (przechyły pomijamy), ale płaszczyzna
+    # ramy może leżeć w środku bryły (dron przelatuje przez ramę): wtedy liczymy
+    # oba „piętra” punktów, przed i za płaszczyzną.
+    if low_z <= 0.0 <= high_z:
+        planes = (low_z, high_z)
+    else:
+        planes = (low_z,) if abs(low_z) < abs(high_z) else (high_z,)
 
     corners = _box_footprint(pos[0], pos[1], yaw_internal, DRONE_WIDTH, DRONE_LENGTH)
-    best = math.inf
+    points = []
     for i in range(len(corners)):
         a = corners[i]
         b = corners[(i + 1) % len(corners)]
@@ -237,9 +257,18 @@ def _gate_distance(pos: Sequence[float], yaw_internal: float, gate: Obstacle) ->
             px = a[0] + (b[0] - a[0]) * frac
             py = a[1] + (b[1] - a[1]) * frac
             depth = max(abs(_gate_local_depth(gate, (px, py))) - half_depth, 0.0)
-            u = gate.to_local((px, py))[1]
-            for z in (low_z, high_z):
-                best = min(best, math.hypot(_gate_bar_distance(u, z, gate), depth))
+            points.append((gate.to_local((px, py))[1], depth))
+
+    # rzut drona w otworze: luz liczony od krawędzi otworu (najmniejszy zapas)
+    if all(depth == 0.0 for _, depth in points):
+        slack = min(_gate_opening_slack(u, z, gate) for u, _ in points for z in planes)
+        if slack > 0.0:
+            return slack
+
+    best = math.inf
+    for u, depth in points:
+        for z in planes:
+            best = min(best, math.hypot(_gate_bar_distance(u, z, gate), depth))
     return best
 
 
@@ -261,6 +290,13 @@ def _interpolate(samples: Sequence[Dict[str, Any]]) -> List[Tuple[float, float, 
         dx = float(current["x"]) - float(previous["x"])
         dy = float(current["y"]) - float(previous["y"])
         dz = float(current["z"]) - float(previous["z"])
+        dt = t1 - t0
+        if dt <= 0.0:
+            # dwie próbki w tej samej chwili (np. początek lądowania): bez
+            # interpolacji, bo między nimi nie ma trasy do sprawdzenia
+            points.append((t1, float(current["x"]), float(current["y"]),
+                           float(current["z"]), float(current.get("yaw", 0.0))))
+            continue
         distance = math.sqrt(dx * dx + dy * dy + dz * dz)
         steps = max(MIN_SUBSTEPS, int(math.ceil(distance / SAMPLE_STEP_CM)))
         dyaw = ((float(current.get("yaw", 0.0)) - float(previous.get("yaw", 0.0)) + 180.0)
@@ -469,12 +505,18 @@ def analyse_flight(samples: Sequence[Dict[str, Any]], events: Sequence[Dict[str,
     solids = [o for o in scene.solids() if o.kind != "gate"]
     gates = scene.gates()
 
-    was_inside = {id(o): False for o in solids}
+    was_inside = {id(o): False for o in solids + gates}
     # (wpis, strona ramy): strona rozdziela ostrzeżenia bramki przed/za ramą
     tagged: List[Tuple[Finding, int]] = []
 
     def _add(finding: Finding, side: int = 0) -> None:
         tagged.append((finding, side))
+
+    def already_hit(gate: Obstacle) -> bool:
+        """Czy trasa już zgłosiła kolizję z tą bramką (wejście w belkę)?"""
+        gate_id = gate.id or gate.name
+        return any(item[0].level == "collision" and item[0].obstacle_id == gate_id
+                   for item in tagged)
 
     for index, point in enumerate(points):
         t, x, y, z, yaw = point
@@ -502,7 +544,7 @@ def analyse_flight(samples: Sequence[Dict[str, Any]], events: Sequence[Dict[str,
             _add(_entry("warning", t, obstacle, clearance - margin, pos,
                         _find_event(events, t), margin))
         # bramki: odległość od belek ramy (bez marginesu - dron ma przelecieć
-        # przez otwór); zbliżenie rozpoznajemy po marginesie, jak dla brył
+        # przez otwór); kolizja = dotknięcie ramy, zbliżenie - zapas < margines
         for gate in gates:
             clearance = _gate_distance(pos, yaw, gate)
             if clearance < min_distance:
@@ -513,13 +555,24 @@ def analyse_flight(samples: Sequence[Dict[str, Any]], events: Sequence[Dict[str,
                     obstacle_name=gate.name, distance_cm=clearance,
                     message="", event_index=event.get("index") if event else None,
                     line=event.get("line") if event else None, position=pos)
-            if 0.0 < clearance < margin:
-                warning = _gate_warning(t, gate, clearance, pos,
-                                        _find_event(events, t), margin)
-                # strona ramy liczona z pozycji (nie z najgorszego rogu rzutu,
-                # który bywa dokładnie na płaszczyźnie ramy)
-                depth = _gate_local_depth(gate, (x, y))
-                _add(warning, 1 if depth > 0 else -1)
+            if clearance <= 0.0:
+                # jeden wpis na całe wejście w ramę (jak dla brył)
+                if not was_inside[id(gate)]:
+                    was_inside[id(gate)] = True
+                    _add(_entry(
+                        "collision", t, gate, 0.0, pos, _find_event(events, t), margin,
+                        message=f"Kolizja z ramą bramki „{gate.name}” - dron dotknął "
+                                f"belki ramy."))
+                continue
+            if clearance >= margin:
+                was_inside[id(gate)] = False
+                continue
+            warning = _gate_warning(t, gate, clearance, pos,
+                                    _find_event(events, t), margin)
+            # strona ramy liczona z pozycji (nie z najgorszego rogu rzutu,
+            # który bywa dokładnie na płaszczyźnie ramy)
+            depth = _gate_local_depth(gate, (x, y))
+            _add(warning, 1 if depth > 0 else -1)
         # przelot przez bramkę: ocena po zebraniu całej trasy (patrz niżej)
     # przeloty przez bramki - cała trasa naraz (odporne na zaokrąglenia telemetrii)
     for gate in gates:
@@ -528,7 +581,9 @@ def analyse_flight(samples: Sequence[Dict[str, Any]], events: Sequence[Dict[str,
             position = (points[start][1], points[start][2], points[start][3])
             if result == "clean":
                 _add(_entry("gate", t_cross, gate, 0.0, position, event, margin))
-            elif result == "touch":
+            elif result == "touch" and not already_hit(gate):
+                # kolizję „dron nie zmieścił się w otworze” zgłaszamy tylko, gdy
+                # trasa nie wpisała już kolizji z belką ramy (ten sam przelot)
                 _add(_entry(
                     "collision", t_cross, gate, 0.0, position, event, margin,
                     message=f"Kolizja z ramą bramki „{gate.name}” - dron nie zmieścił "
@@ -561,12 +616,13 @@ def _gate_warning(t: float, gate: Obstacle, clearance: float,
                   pos: Sequence[float], event: Optional[Dict[str, Any]],
                   margin: float) -> Finding:
     """Zbliżenie do ramy bramki (odstęp od belek, bez marginesu)."""
-    missing = clearance - margin          # brakujący zapas do marginesu
-    text = (f"Zbliżenie do ramy bramki „{gate.name}”: {clearance:.1f} cm od belek, "
-            f"brakuje {abs(missing):.1f} cm do marginesu bezpieczeństwa "
-            f"({margin:.0f} cm).")
+    missing = clearance - margin          # ujemne: brakujący zapas do marginesu
+    text = f"Zbliżenie do ramy bramki „{gate.name}”: {clearance:.1f} cm od belek."
+    if missing < 0.0:
+        text += (f" Brakuje {abs(missing):.1f} cm do marginesu bezpieczeństwa "
+                 f"({margin:.0f} cm).")
     finding = _entry("warning", t, gate, missing, pos, event, margin, message=text)
-    finding.distance_cm = clearance       # dla bramki pokazujemy odstęp od ramy
+    finding.distance_cm = max(0.0, clearance)   # dla bramki pokazujemy odstęp od ramy
     return finding
 
 

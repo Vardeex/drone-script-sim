@@ -19,13 +19,14 @@ def main() -> None:
     tello.set_speed(SPEED)
     try:
         tello.move_forward(150)          # przelot przez bramkę 1 (x = 150, y = 0)
-        tello.move_forward(20)           # wylot 20 cm za ramę (x = 170)
-        tello.move_left(45)              # na y = +45
-        tello.move_forward(110)          # x = 280, tuż przed bramką 2
-        tello.move_forward(40)           # przelot przez bramkę 2 (x = 300) -> x = 320
-        tello.move_right(90)             # na y = -45
-        tello.move_forward(110)          # x = 430, tuż przed bramką 3
-        tello.move_forward(40)           # przelot przez bramkę 3 (x = 450) -> x = 470
+        tello.move_forward(50)           # wylot 50 cm za ramę (x = 200): miejsce na
+        tello.move_left(45)              # zjazd w bok - na y = +45 (bramka 1 jest
+                                         # już 47,5 cm za rufą drona)
+        tello.move_forward(100)          # x = 300, tuż przed bramką 2
+        tello.move_forward(40)           # przelot przez bramkę 2 (x = 300) -> x = 340
+        tello.move_right(90)             # na y = -45 (50 cm za ramą bramki 2)
+        tello.move_forward(110)          # x = 450: przelot przez bramkę 3 (y = -45)
+        tello.move_forward(40)           # wylot za ramę (x = 490), z dala od bramki
     finally:
         tello.land()
 
