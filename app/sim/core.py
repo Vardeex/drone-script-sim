@@ -24,6 +24,10 @@ from . import physics
 #: Interwał próbkowania telemetrii (s czasu symulacji).
 TELEMETRY_DT = 0.05
 
+#: Maksymalny krok całkowania ruchu RC (s). Tello przyjmuje ``rc`` co 100 ms,
+#: biblioteka wysyła co 50 ms - symulator całkuje z tym samym krokiem.
+RC_STEP = 0.05
+
 #: Stany drona.
 STATE_IDLE = "idle"
 STATE_AIRBORNE = "airborne"
@@ -49,6 +53,52 @@ class CommandError(SimulationError):
         self.kind = kind
 
 
+@dataclass(frozen=True)
+class RcProfile:
+    """Przelicznik wychyleń RC na prędkości - odpowiednik profilu kalibracji.
+
+    Wzory są **identyczne** jak w ``dronemoves.calibration.CalibrationProfile``
+    (``rc / 100 * max``, opcjonalna martwa strefa i wykładnik nieliniowości),
+    dzięki czemu symulator wykonuje dokładnie to, co zaplanowała biblioteka.
+
+    :param max_speed_cm_s: prędkość przy ``rc = 100`` (cm/s)
+    :param max_yaw_rate_dps: obrót przy ``rc = 100`` (°/s)
+    :param max_vertical_cm_s: prędkość pionowa przy ``ud = 100`` (cm/s)
+    :param deadzone: wychylenie poniżej tej wartości = 0
+    :param response_exponent: wykładnik nieliniowości (1.0 = liniowo)
+    """
+
+    max_speed_cm_s: float = 50.0
+    max_yaw_rate_dps: float = 90.0
+    max_vertical_cm_s: float = 50.0
+    deadzone: int = 0
+    response_exponent: float = 1.0
+
+    def _shape(self, rc: float) -> float:
+        value = max(-100.0, min(100.0, float(rc))) / 100.0
+        if abs(value) * 100.0 <= self.deadzone:
+            return 0.0
+        sign = -1.0 if value < 0 else 1.0
+        return sign * (abs(value) ** self.response_exponent)
+
+    def rc_to_speed(self, rc: float) -> float:
+        """Wychylenie ``rc`` -> prędkość liniowa [cm/s]."""
+        return self._shape(rc) * self.max_speed_cm_s
+
+    def rc_to_yaw_rate(self, rc: float) -> float:
+        """Wychylenie ``rc`` (obrót) -> prędkość kątowa [°/s], plus = w prawo."""
+        return self._shape(rc) * self.max_yaw_rate_dps
+
+    def rc_to_vertical(self, rc: float) -> float:
+        """Wychylenie ``rc`` (pion) -> prędkość pionowa [cm/s], plus = w górę."""
+        return self._shape(rc) * self.max_vertical_cm_s
+
+
+#: Profil domyślny: DJI Tello (100% drążka = 50 cm/s poziomo, 90 °/s obrotu).
+def default_rc_profile() -> RcProfile:
+    return RcProfile()
+
+
 @dataclass
 class Settings:
     """Parametry silnika."""
@@ -63,6 +113,9 @@ class Settings:
     battery_drain_flight: float = 0.05
     battery_drain_idle: float = 0.002
     default_speed: int = 50
+    #: profil zamiany wychyleń RC na prędkości (cm/s, °/s) - ten sam, którego
+    #: używa biblioteka dronemoves (domyślnie profil Tello)
+    rc_profile: "RcProfile" = field(default_factory=default_rc_profile)
     #: maksymalny czas symulacji (s) - zabezpieczenie przed nieskończonymi pętlami
     max_sim_time: float = 3600.0
     #: maksymalna wysokość (cm) - limit drona wynika z adaptera
@@ -519,6 +572,9 @@ class Simulation:
         """Wykonaj ruch: przesuń zegar o czas segmentu i zaktualizuj stan."""
         yaw0 = self.yaw
         yaw_end = yaw0 if yaw1 is None else yaw1
+        # kąt nosa trzymamy w zakresie (-180, 180] jak get_yaw() Tello - dzięki temu
+        # symulator i biblioteka (która normalizuje yaw % 360) mówią o tym samym kącie
+        yaw_end = ((yaw_end + 180.0) % 360.0) - 180.0
         duration = move.duration()
         motion = MotionSpan(move=move, yaw0=yaw0, yaw1=yaw_end)
         span = self._run_span(self.now, self.now + duration, motion=motion)
@@ -600,31 +656,141 @@ class Simulation:
         self._record_sample(self.now, self.position, self.velocity, self.yaw,
                             self.state, self.battery)
 
+    # --------------------------------------------------------------------- RC
     def rc_motion(self, event: Event, lr: float, fb: float, ud: float, yaw_rate: float,
                   seconds: float) -> None:
-        """Ruch wynikający z trybu RC trwający ``seconds`` sekund symulacji.
+        """Ruch z trybu RC trwający ``seconds`` sekund symulacji.
 
-        Wejścia RC: ``lr`` lewo(+)/prawo(-), ``fb`` przód(+)/tył(-),
-        ``ud`` góra(+)/dół(-), ``yaw_rate`` obrót w lewo(+), w zakresie -100..100.
-        Prędkość maksymalna = aktualna ``self.speed`` (cm/s), obrót 90 deg/s.
+        Wejścia RC w konwencji djitellopy/Tello (``rc a b c d``), zweryfikowane
+        w ``examples/manual-control-pygame.py``:
+
+        * ``lr``  - wychylenie w prawo **dodatnie**, w lewo ujemne,
+        * ``fb``  - przód dodatnie, tył ujemne,
+        * ``ud``  - góra dodatnie, dół ujemne,
+        * ``yaw_rate`` - obrót w prawo (zgodnie z zegarem) **dodatni**,
+          w lewo ujemny - tak samo rośnie ``get_yaw()`` w Tello.
+
+        Ruch jest całkowany w krokach <= 50 ms w układzie drona obracanym
+        w trakcie (nos drona skręca razem z RC), więc łuk odpowiada temu,
+        co robi biblioteka ``dronemoves`` (patrz :meth:`rc_profile_motion`).
         """
         self.require_airborne("send_rc_control")
         if seconds <= 0:
             self.commit(event)
             return
-        full = 100.0
-        vx = (fb / full) * self.speed
-        vy = (lr / full) * self.speed
-        # pion: założenie symulacji - pełne wychylenie = 50 cm/s
-        vz = (ud / full) * self.settings.vertical_speed
-        dyaw = (yaw_rate / full) * 90.0 * seconds
-        points = physics.relative_move_points(self.position, self.yaw, vx * seconds,
-                                              vy * seconds, vz * seconds)
-        move = physics.LinearMove(start=tuple(self.position), end=tuple(points[-1]),
-                                  speed=max(abs(vx), abs(vy), abs(vz), 0.01),
+        prof = self.settings.rc_profile
+        v_forward = prof.rc_to_speed(fb)          # cm/s
+        v_right = prof.rc_to_speed(lr)            # cm/s (dodatnie = prawo)
+        v_up = prof.rc_to_vertical(ud)            # cm/s
+        # yaw: w symulatorze yaw rośnie w prawo (jak get_yaw()), więc +rc = +yaw.
+        # ``integrate_rc`` oczekuje yaw_rate dodatniego = w prawo, więc przekazujemy
+        # wartość z profilu bez zmiany znaku.
+        yaw_rate = prof.rc_to_yaw_rate(yaw_rate)  # deg/s (dodatnie = w prawo)
+        if not any((v_forward, v_right, v_up, yaw_rate)):
+            self.advance(seconds)
+            self.commit(event)
+            return
+        self.integrate_rc(event, v_forward, v_right, v_up, yaw_rate, seconds)
+
+    def integrate_rc(self, event: Event, v_forward: float, v_right: float, v_up: float,
+                     yaw_rate: float, seconds: float) -> None:
+        """Całkuj ruch RC krokami <= :data:`RC_STEP`.
+
+        ``v_forward``/``v_right`` to prędkości w **układzie drona** (przód / prawo),
+        więc kierunek ruchu liczymy z bieżącego ``yaw`` (nos obraca się w trakcie
+        ruchu - tak powstaje łuk). ``yaw_rate`` w °/s, dodatni = w prawo.
+
+        Krok jest dzielony na połowę obrotu i przesunięcie z kątem środkowym
+        (schemat punktu środkowego), dzięki czemu łuk jest gładki i niezależny
+        od długości ``seconds`` (symulator i biblioteka dają ten sam wynik
+        przy RC co 50 ms i przy większych porcjach czasu).
+        """
+        remaining = float(seconds)
+        points: List[Vec3] = [tuple(self.position)]  # type: ignore[list-item]
+        x, y, z = self.position
+        yaw = self.yaw
+        while remaining > 1e-9:
+            dt = min(RC_STEP, remaining)
+            remaining -= dt
+            mid = yaw + yaw_rate * dt / 2.0        # kąt nosa w połowie kroku
+            # kierunek nosa: (cos, sin); prawo = nos obrócony o -90 deg
+            x += (v_forward * math.cos(math.radians(mid))
+                  + v_right * math.cos(math.radians(mid - 90.0))) * dt
+            y += (v_forward * math.sin(math.radians(mid))
+                  + v_right * math.sin(math.radians(mid - 90.0))) * dt
+            z += v_up * dt
+            yaw += yaw_rate * dt
+            points.append((x, y, z))
+        speed = max(abs(v_forward), abs(v_right), abs(v_up), 0.01)
+        move = physics.LinearMove(start=tuple(self.position), end=(x, y, z), speed=speed,
                                   polyline=points)
-        self.check_ceiling(move.end[2], event)
-        self._execute_motion(event, move, yaw1=self.yaw + dyaw)
+        self.check_ceiling(z, event)
+        self._execute_motion(event, move, yaw1=yaw)
+
+    def integrate_world(self, event: Event, vx: float, vy: float, v_up: float,
+                        yaw_rate: float, seconds: float) -> None:
+        """Całkuj ruch podany w układzie **globalnym** (vx, vy już obrócone).
+
+        Używane, gdy trajektoria biblioteki podaje prędkości w układzie lotu
+        (tak liczy ``dronemoves``: ``vx``/``vy`` próbki są w układzie globalnym,
+        a ``yaw`` opisuje tylko orientację nosa).
+        """
+        remaining = float(seconds)
+        points: List[Vec3] = [tuple(self.position)]  # type: ignore[list-item]
+        x, y, z = self.position
+        yaw = self.yaw
+        while remaining > 1e-9:
+            dt = min(RC_STEP, remaining)
+            remaining -= dt
+            x += vx * dt
+            y += vy * dt
+            z += v_up * dt
+            yaw += yaw_rate * dt
+            points.append((x, y, z))
+        speed = max(math.hypot(vx, vy), abs(v_up), 0.01)
+        move = physics.LinearMove(start=tuple(self.position), end=(x, y, z), speed=speed,
+                                  polyline=points)
+        self.check_ceiling(z, event)
+        self._execute_motion(event, move, yaw1=yaw)
+
+    def rc_profile_motion(self, event: Event, vx: float, vy: float, v_up: float,
+                          yaw_rate: float, seconds: float, world: bool = False,
+                          yaw: Optional[float] = None) -> None:
+        """Ruch RC podany wprost w cm/s i deg/s (profil kalibracji biblioteki).
+
+        Używane przez adapter, gdy skrypt steruje biblioteką ``dronemoves``:
+        silnik nie przelicza wychyleń RC drugi raz, tylko wykonuje dokładnie
+        ten profil, który zaplanowała biblioteka.
+
+        :param vx: przód (``world=True``: globalna X)
+        :param vy: lewo (``world=True``: globalna Y)
+        :param v_up: pion (cm/s)
+        :param yaw_rate: obrót (°/s, dodatni = w prawo)
+        :param world: ``vx``/``vy`` są w układzie globalnym - wtedy nie obracamy
+            ich ponownie (planer biblioteki już to zrobił)
+        :param yaw: kurs nosa z planu na początku próbki (°). Plan bywa zaczyna
+            się od innego kursu niż bieżący (np. ``orbit`` ustawia nos w środek
+            okręgu) - wtedy różnicę dowracamy na początku kroku.
+        """
+        self.require_airborne("send_rc_control")
+        if seconds <= 0:
+            self.commit(event)
+            return
+        if yaw is not None:
+            delta = ((yaw + 180.0) % 360.0) - 180.0 - self.yaw
+            delta = ((delta + 180.0) % 360.0) - 180.0
+            if abs(delta) > 0.5:
+                # plan zakłada inny kurs wyjściowy - obracamy w miejscu na starcie
+                yaw_rate += delta / seconds
+        if not any((vx, vy, v_up, yaw_rate)):
+            self.advance(seconds)
+            self.commit(event)
+            return
+        if world:
+            self.integrate_world(event, vx, vy, v_up, yaw_rate, seconds)
+        else:
+            self.integrate_rc(event, vx, vy, v_up, yaw_rate, seconds)
+
 
     @staticmethod
     def _maneuver_label(command: str, args: Sequence[Any]) -> Optional[str]:

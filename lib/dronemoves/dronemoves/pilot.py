@@ -364,7 +364,7 @@ class Pilot:
             finally:
                 self.backend.annotate(f"end: {label}")
             last = traj.samples[-1]
-            self.x, self.y, self.z, self.yaw = last.x, last.y, last.z, last.yaw
+            self.x, self.y, self.z, self.yaw = last.x, last.y, last.z, last.yaw % 360.0
             self.flight_time += traj.duration
             return traj
 
@@ -455,9 +455,19 @@ class Pilot:
 
     def path(self, points: Sequence[tuple], smooth: bool = True,
              mode: str = "rc") -> Trajectory:
-        """Przelot przez punkty względne ``[(x, y, z), ...]`` (spline albo łamana)."""
+        """Przelot przez punkty względne ``[(x, y, z), ...]`` (spline albo łamana).
+
+        Pierwszy punkt bywa oddalony od drona (np. ``(80, 0, 0)``) - trajektoria
+        zaczyna się wtedy w punkcie ``(0, 0, z)`` (miejsce, gdzie dron jest),
+        żeby plan nie „teleportował” drona na start trasy.
+        """
         label = f"path {len(points)} pkt"
-        return self._execute_mode(Maneuver("path", self._path_planner(points, smooth),
+        first = tuple(float(v) for v in points[0])
+        start_z = first[2] if len(first) > 2 else 0.0
+        route = list(points)
+        if len(points) > 1 and (abs(first[0]) > 0.5 or abs(first[1]) > 0.5):
+            route = [(0.0, 0.0, start_z)] + [tuple(float(v) for v in p) for p in points]
+        return self._execute_mode(Maneuver("path", self._path_planner(route, smooth),
                                            label=label), label, mode)
 
     # ------------------------------------------------------- planery (domknięcia)
@@ -519,7 +529,7 @@ class Pilot:
         return planner
 
     # ------------------------------------------------------- tryby rc / native
-    def _execute_mode(self, maneuver: Maneuver, label: str, mode: str) -> Trajectory:
+    def _execute_mode(self, maneuver: "ManeuverLike", label: str, mode: str) -> Trajectory:
         if mode not in ("rc", "native"):
             raise ValueError("mode musi być 'rc' albo 'native'")
         if mode == "native" and not self.backend.supports_native():

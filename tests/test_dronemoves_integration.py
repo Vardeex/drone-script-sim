@@ -76,3 +76,78 @@ def test_planned_trail_saved_in_flight_file(flight, tmp_path):
     data = storage.flight_to_dict(flight, "test-id")
     assert data["planned_trail"]
     assert data["planned_trail"][0]["label"]
+
+
+# ------------------------------------------- zgodność biblioteka <-> symulator
+# Każdy manewr uruchamiany osobno przez runner: końcowa pozycja z telemetrii
+# symulatora musi się zgadzać z pilot.position() (tolerancja 10 cm i 5 deg).
+
+MANEUVER_TEMPLATE = """\
+import json
+from djitellopy import Tello
+from dronemoves import Pilot
+
+t = Tello()
+t.connect()
+t.takeoff()
+pilot = Pilot(t, speed=35)
+{body}
+print("PILOT", json.dumps({{"x": pilot.x, "y": pilot.y, "yaw": pilot.yaw}}))
+t.land()
+"""
+
+MANEUVERS = [
+    ("forward(100)", "pilot.forward(100)"),
+    ("turn(90, radius=60)", "pilot.turn(90, radius=60)"),
+    ("turn(-90, radius=60)", "pilot.turn(-90, radius=60)"),
+    ("arc(180, radius=100)", "pilot.arc(180, radius=100)"),
+    ("arc(-120, radius=80)", "pilot.arc(-120, radius=80)"),
+    ("circle(60, left)", "pilot.circle(radius=60, direction='left')"),
+    ("circle(60, right)", "pilot.circle(radius=60, direction='right')"),
+    ("orbit(60, 1)", "pilot.orbit(radius=60, turns=1.0)"),
+    ("slalom(3, 70, 40)", "pilot.slalom(gates=3, spacing=70, width=40)"),
+    ("figure_eight(60)", "pilot.figure_eight(radius=60)"),
+    ("spiral(50, 60, 3)", "pilot.spiral(radius=50, height=60, turns=3)"),
+    ("path(3D)", "pilot.path([(80, 0, 0), (80, 60, 20), (0, 60, 40)])"),
+]
+
+#: tolerancja: 10 cm w poziomie i 5 deg kursu
+POSITION_TOLERANCE_CM = 10.0
+YAW_TOLERANCE_DEG = 5.0
+
+
+def _pilot_state(result):
+    """Odczytaj ``PILOT {...}`` wypisane przez skrypt."""
+    for line in result.stdout or []:
+        text = line if isinstance(line, str) else str(line.get("text", ""))
+        if text.startswith("PILOT "):
+            import json
+
+            return json.loads(text[6:])
+    return None
+
+
+@pytest.mark.parametrize("name,body", MANEUVERS, ids=[m[0] for m in MANEUVERS])
+def test_maneuver_matches_simulator(name, body):
+    """Symulator wykonuje manewr tak samo jak zakłada biblioteka."""
+    import math
+
+    source = MANEUVER_TEMPLATE.format(body=body)
+    result = runner.run_script(source, "maneuver.py")
+    assert result.status == "ok", [e["message"] for e in result.flight.errors]
+    pilot = _pilot_state(result)
+    assert pilot is not None, result.stderr
+
+    # telemetria przed lądowaniem (land() zjeżdża do z = 0, ale XY/yaw nie zmienia)
+    last = result.flight.samples[-1]
+    dx = last["x"] - pilot["x"]
+    dy = last["y"] - pilot["y"]
+    distance = math.hypot(dx, dy)
+    dyaw = abs(((last["yaw"] - pilot["yaw"]) % 360 + 540) % 360 - 180)
+
+    assert distance <= POSITION_TOLERANCE_CM, (
+        f"{name}: symulator ({last['x']:.1f}, {last['y']:.1f}) vs pilot "
+        f"({pilot['x']:.1f}, {pilot['y']:.1f}) - różnica {distance:.1f} cm")
+    assert dyaw <= YAW_TOLERANCE_DEG, (
+        f"{name}: kurs symulatora {last['yaw']:.1f}° vs pilot {pilot['yaw']:.1f}° "
+        f"- różnica {dyaw:.1f}°")

@@ -57,16 +57,47 @@ class TelloBackend(BackendAdapter):
 
     # ------------------------------------------------------------------- RC
     def rc(self, vx: float, vy: float, vz: float, yaw_rate: float) -> None:
-        """``vx`` przód, ``vy`` lewo, ``vz`` góra, ``yaw_rate`` w lewo (wartości RC)."""
-        lr = _clamp_rc(vy)
+        """Wyślij wychylenia RC.
+
+        Konwencja **biblioteki**: ``vx`` przód, ``vy`` w lewo, ``vz`` w górę,
+        ``yaw_rate`` w lewo (dodatnia wartość = obrót w lewo, CCW) - wartości RC.
+
+        Konwencja **djitellopy** (``rc a b c d``, potwierdzona w oficjalnym
+        przykładzie ``manual-control-pygame.py``): ``a`` dodatnie = **w prawo**,
+        ``d`` dodatnie = obrót **w prawo** (zgodnie z zegarem). Dlatego obie
+        osie „boczne” trzeba odwrócić.
+        """
+        lr = _clamp_rc(-vy)          # lewo(+) -> prawo(+)
         fb = _clamp_rc(vx)
         ud = _clamp_rc(vz)
-        yaw = _clamp_rc(yaw_rate)
+        yaw = _clamp_rc(-yaw_rate)   # CCW(+) -> CW(+)
         try:
             self.drone.send_rc_control(lr, fb, ud, yaw)
         except Exception as exc:  # wyjątki drona przekazujemy dalej z kontekstem
             self.stop()
             raise BackendError(f"Błąd send_rc_control({lr}, {fb}, {ud}, {yaw}): {exc}") from exc
+
+    def send_profile(self, vx_cm_s: float, vy_cm_s: float, v_up_cm_s: float,
+                     yaw_rate_dps: float, world: bool = False,
+                     yaw_deg: Optional[float] = None) -> bool:
+        """Przekaż symulatorowi prędkości ruchu, zamiast wychyleń RC.
+
+        Wywoływane tylko wtedy, gdy dron udostępnia ``send_dronemoves_profile``
+        (mock symulatora). Prawdziwe ``djitellopy`` nie ma tej metody i wtedy
+        sterowanie idzie przez :meth:`rc`.
+
+        :param vx_cm_s: prędkość „do przodu” (``world=True``: globalna X)
+        :param vy_cm_s: prędkość „w lewo” (``world=True``: globalna Y)
+        :param v_up_cm_s: prędkość pionowa (cm/s)
+        :param yaw_rate_dps: prędkość obrotu (°/s, dodatnia = w lewo)
+        :param world: czy ``vx``/``vy`` są w układzie globalnym (tak liczy planer)
+        :param yaw_deg: kurs nosa z planu (°, dodatni = w lewo)
+        """
+        func = getattr(self.drone, "send_dronemoves_profile", None)
+        if not callable(func):
+            return False
+        func(vx_cm_s, vy_cm_s, v_up_cm_s, yaw_rate_dps, bool(world), yaw_deg)
+        return True
 
     def stop(self) -> None:
         try:

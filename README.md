@@ -130,13 +130,13 @@ wybrano rozsądne wartości):
 
 | Element | Przyjęte założenie |
 |---|---|
-| Układ współrzędnych | X do przodu, Y w lewo, Z w górę; yaw 0° = przód w +X, obrót dodatni = w lewo (jak Tello) |
+| Układ współrzędnych | X do przodu, Y w lewo, Z w górę; yaw 0° = przód w +X, **yaw dodatni = obrót w prawo (zgodnie z zegarem)**, tak jak `get_yaw()` w Tello po `rotate_clockwise` |
 | `takeoff()` | start pionowy na **80 cm** przy 50 cm/s (Tello faktycznie ok. 0,8–1 m) |
 | `land()` | opadanie pionowe do z = 0 przy 50 cm/s |
 | Ruch pionowy (`up`/`down`, RC) | 50 cm/s niezależnie od `set_speed` |
 | Prędkość domyślna | `set_speed` = 50 cm/s (Tello w pętli używa zwykle 100, 50 jest bezpieczniejsze) |
 | Prędkość obrotu | 90°/s (Tello nie publikuje czasu obrotu) |
-| Tryb RC (`send_rc_control`) | ruch trwa tyle, ile `time.sleep`; prędkość = wychylenie/100 × `set_speed`; obrót 100 = 90°/s; pion 100 = 50 cm/s; zerowe RC = tylko upływ czasu |
+| Tryb RC (`send_rc_control`) | znaki jak w djitellopy/Tello (`rc a b c d`): **left_right > 0 = w prawo**, **yaw > 0 = obrót w prawo** (zgodnie z zegarem, rośnie `get_yaw()`); ruch trwa tyle, ile `time.sleep`, całkowany krokami ≤ 50 ms w układzie drona obracanym w trakcie; prędkość z profilu kalibracji (50 cm/s przy 100), obrót 90°/s, pion 50 cm/s; zerowe RC = tylko upływ czasu |
 | `flip()` | trwa 1 s, dron wraca na tę samą pozycję i yaw |
 | `curve_xyz_speed` | łuk Beziera 2. stopnia (punkt kontrolny → punkt docelowy), 24 próbki |
 | Bateria | 100% na start, −0,05%/s w locie, −0,002%/s na ziemi |

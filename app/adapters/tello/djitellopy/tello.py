@@ -11,7 +11,7 @@ Zachowanie:
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 
 class TelloException(Exception):
@@ -135,30 +135,6 @@ class Tello:
         """Etykieta manewru (tylko symulator - prawdziwe Tello jej nie ma)."""
         self._ctrl.annotate(label)
 
-    def send_rc_control_left(self, speed: int) -> None:
-        self.send_rc_control(speed, 0, 0, 0)
-
-    def send_rc_control_right(self, speed: int) -> None:
-        self.send_rc_control(-speed, 0, 0, 0)
-
-    def send_rc_control_forward(self, speed: int) -> None:
-        self.send_rc_control(0, speed, 0, 0)
-
-    def send_rc_control_back(self, speed: int) -> None:
-        self.send_rc_control(0, -speed, 0, 0)
-
-    def send_rc_control_up(self, speed: int) -> None:
-        self.send_rc_control(0, 0, speed, 0)
-
-    def send_rc_control_down(self, speed: int) -> None:
-        self.send_rc_control(0, 0, -speed, 0)
-
-    def send_rc_control_left_yaw(self, speed: int) -> None:
-        self.send_rc_control(0, 0, 0, speed)
-
-    def send_rc_control_right_yaw(self, speed: int) -> None:
-        self.send_rc_control(0, 0, 0, -speed)
-
     # ----------------------------------------------------------------- odczyty
     def get_battery(self) -> int:
         return self._ctrl.get_battery()
@@ -216,6 +192,26 @@ class Tello:
 
     def get_udp_video_address(self) -> str:
         return "udp://@0.0.0.0:11111"
+
+    # ------------------------------------------------------ integracja symulatora
+    def send_dronemoves_profile(self, vx: float, vy: float, v_up: float,
+                                yaw_rate: float, world: bool = False,
+                                yaw: Optional[float] = None) -> None:
+        """Profil ruchu z biblioteki ``dronemoves`` (tylko mock symulatora).
+
+        Prawdziwe ``djitellopy`` nie ma tej metody - biblioteka wywołuje ją
+        wyłącznie wtedy, gdy obiekt drona ją udostępnia. Symulator dzięki temu
+        wykonuje ruch z prędkościami zaplanowanymi przez bibliotekę, zamiast
+        przeliczać wychylenia RC drugi raz.
+
+        :param vx: przód (``world=True``: globalna X)
+        :param vy: lewo (``world=True``: globalna Y)
+        :param v_up: pion (cm/s)
+        :param yaw_rate: obrót (°/s, dodatni = w lewo)
+        :param world: prędkości poziome są w układzie globalnym
+        :param yaw: kurs nosa z planu (°, 0 = +X, dodatni = w lewo)
+        """
+        self._ctrl.set_dronemoves_profile(vx, vy, v_up, yaw_rate, bool(world), yaw)
 
     # ---------------------------------------------------------------- strumień
     def streamon(self) -> None:

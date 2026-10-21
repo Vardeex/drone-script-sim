@@ -2,8 +2,10 @@
 
 Układ współrzędnych (zgodnie z wymaganiami projektu):
     X - do przodu, Y - w lewo, Z - w górę (prawoskrętny), yaw w stopniach.
-    yaw = 0 oznacza przód skierowany w +X, yaw dodatni = obrót w lewo (CCW),
-    tak jak w Tello (rotate_counter_clockwise zwiększa yaw).
+    yaw = 0 oznacza przód skierowany w +X. Wewnętrznie kąt jest matematyczny
+    (dodatni = obrót w lewo/CCW), więc ``rotate_counter_clockwise`` zwiększa yaw.
+    Interfejsy zewnętrzne Tello mówią inaczej: ``get_yaw()`` i wychylenie ``yaw``
+    w ``send_rc_control`` rosną w prawo (CW) - adapter i silnik tłumaczą znak.
 
 Ruch jest modelowany jako przesunięcie po prostej (dla ``curve``: łuk
 opisany punktem kontrolnym krzywej Beziera 2. stopnia) w czasie wynikającym

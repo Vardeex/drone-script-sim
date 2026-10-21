@@ -14,7 +14,7 @@ Rodzaje wyjątków (jak w djitellopy / SDK 2.0):
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 from ...paths import ADAPTERS_DIR
 from ...sim import core
@@ -55,6 +55,10 @@ class TelloController:
         self.connected = False
         self.streaming = False
         self.rc: Dict[str, int] = {"lr": 0, "fb": 0, "ud": 0, "yaw": 0}
+        #: profil ruchu RC przesłany przez bibliotekę dronemoves (cm/s, °/s) albo None
+        self._dronemoves_rc: Optional[Tuple[float, float, float, float, bool]] = None
+        #: kurs nosa z planu biblioteki (°, konwencja symulatora) albo None
+        self._dronemoves_yaw: Optional[float] = None
         self.speed = LIMITS.default_speed
 
     # ---------------------------------------------------------- pomocnicze
@@ -232,11 +236,16 @@ class TelloController:
 
     # -------------------------------------------------------------------- RC
     def send_rc_control(self, lr: Any, fb: Any, ud: Any, yaw: Any) -> None:
-        """Zapamiętaj wejścia RC (ruch wykonuje się podczas ``time.sleep``)."""
+        """Zapamiętaj wejścia RC (ruch wykonuje się podczas ``time.sleep``).
+
+        Znaki jak w djitellopy (``rc a b c d``): ``lr`` dodatnie = **w prawo**,
+        ``yaw`` dodatni = obrót **w prawo** (zgodnie z zegarem).
+        """
         vals = [_as_int(v, n) for v, n in ((lr, "lr"), (fb, "fb"), (ud, "ud"), (yaw, "yaw"))]
         for name, value in zip(("lr", "fb", "ud", "yaw"), vals):
             _range(value, -LIMITS.rc_range, LIMITS.rc_range, name, "", None)
         self.rc = {"lr": vals[0], "fb": vals[1], "ud": vals[2], "yaw": vals[3]}
+        self._dronemoves_rc = None      # nowa komenda RC = koniec trybu biblioteki
 
     def annotate(self, label: str) -> None:
         """Zaznacz początek/koniec manewru (biblioteka dronemoves) - nie steruje dronem."""
@@ -246,13 +255,46 @@ class TelloController:
     def rc_active(self) -> bool:
         return any(self.rc.values())
 
+    def set_dronemoves_profile(self, vx: float, vy: float, v_up: float,
+                               yaw_rate: float, world: bool = False,
+                               yaw: Optional[float] = None) -> None:
+        """Zapisz profil ruchu przesłany przez bibliotekę ``dronemoves``.
+
+        Biblioteka wysyła RC zgodnie ze swoim profilem kalibracji i pełną
+        trajektorią; przekazanie tych prędkości wprost pozwala symulatorowi
+        wykonać ruch 1:1 (bez drugiego przeliczenia wychyleń RC).
+
+        :param vx: przód (``world=True``: globalna X)
+        :param vy: lewo (``world=True``: globalna Y)
+        :param v_up: pion (cm/s)
+        :param yaw_rate: obrót (°/s, dodatni = w lewo - konwencja biblioteki)
+        :param world: prędkości poziome w układzie globalnym (tak liczy planer)
+        :param yaw: kurs nosa z planu (°, konwencja biblioteki: 0 = +X)
+        """
+        self._dronemoves_rc = (float(vx), float(vy), float(v_up), float(yaw_rate), bool(world))
+        self._dronemoves_yaw = None if yaw is None else float(yaw) % 360.0
+
     def rc_tick(self, seconds: float) -> None:
         """Upływ ``seconds`` czasu symulacji: ruch RC, jeśli aktywne wejścia RC.
 
         Wywoływane przez ``time.sleep`` w sandboxie (tak działają przykłady
-        djitellopy: ``send_rc_control`` + ``time.sleep``).
+        djitellopy: ``send_rc_control`` + ``time.sleep``). Ruch jest całkowany
+        krokami <= 50 ms w układzie drona obracanym w trakcie.
         """
         sim = self.sim
+        profile = self._dronemoves_rc
+        if profile is not None:
+            if sim.airborne:
+                vx, vy, v_up, yaw_rate, world = profile
+                event, _f, _l = sim.begin("send_rc_control", [
+                    round(vx, 1), round(vy, 1), round(v_up, 1), round(yaw_rate, 1),
+                    round(seconds, 3),
+                ])
+                sim.rc_profile_motion(event, vx, vy, v_up, yaw_rate, seconds, world=world,
+                                      yaw=self._dronemoves_yaw)
+            else:
+                sim.advance(seconds)
+            return
         if self.rc_active():
             if sim.airborne:
                 event, _f, _l = sim.begin("send_rc_control", [self.rc["lr"], self.rc["fb"],
@@ -267,6 +309,7 @@ class TelloController:
     def rc_stop(self) -> None:
         """Zatrzymaj ruch RC (wywoływane na land/emergency)."""
         self.rc = {"lr": 0, "fb": 0, "ud": 0, "yaw": 0}
+        self._dronemoves_rc = None
 
     # ---------------------------------------------------------------- odczyt
     def _read(self, command: str, value: Any) -> Any:

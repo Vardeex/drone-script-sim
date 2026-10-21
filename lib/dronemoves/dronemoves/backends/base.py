@@ -55,6 +55,23 @@ class MotionBackend(ABC):
         return False
 
     # ------------------------------------------------------ integracja/UI
+    def send_profile(self, vx_cm_s: float, vy_cm_s: float, v_up_cm_s: float,
+                     yaw_rate_dps: float, world: bool = False,
+                     yaw_deg: Optional[float] = None) -> bool:
+        """Przekaż dokładne prędkości ruchu (cm/s, °/s) zamiast wychyleń RC.
+
+        Używane przez ``Executor`` raz na próbkę. Zwraca ``True``, jeśli backend
+        przekazał profil (symulator); ``False`` = steruj klasycznie przez RC.
+        Prawdziwe drony tego nie obsługują - tam zawsze idą wychylenia RC.
+
+        :param vx_cm_s: przód (``world=True``: globalna X)
+        :param vy_cm_s: lewo (``world=True``: globalna Y)
+        :param yaw_rate_dps: obrót (°/s, dodatni = w lewo)
+        :param world: czy ``vx``/``vy`` są w układzie globalnym (tak liczy planer)
+        :param yaw_deg: kurs nosa z planu (°, dodatni = w lewo)
+        """
+        return False
+
     def annotate(self, label: str) -> None:
         """Oznacz początek/koniec manewru (tylko mock symulatora).
 

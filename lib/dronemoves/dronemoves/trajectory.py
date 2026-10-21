@@ -146,13 +146,17 @@ class Trajectory:
         return worst
 
     def with_rc(self, profile: CalibrationProfile) -> "Trajectory":
-        """Uzupełnij wychylenia RC na podstawie profilu kalibracji (mapa prędkości)."""
+        """Uzupełnij wychylenia RC na podstawie profilu kalibracji (mapa prędkości).
+
+        Kolejność zgodna z ``Executor``: ``(fb, lr, ud, yaw)`` w konwencji
+        djitellopy - ``lr`` dodatnie = w prawo, ``yaw`` dodatnie = w prawo.
+        """
         for s in self.samples:
             s.rc = (
-                profile.speed_to_rc(s.vx),           # fb (przód+)
-                profile.speed_to_rc(-s.vy),          # lr (lewo+ -> w djitellopy lr+ = lewo)
-                profile.speed_to_rc(s.vz),           # ud
-                profile.yaw_rate_to_rc(s.yaw_rate),  # yaw (+ = w lewo)
+                profile.speed_to_rc(s.vx),            # fb (przód+)
+                profile.speed_to_rc(-s.vy),           # lr (lewo+ -> w djitellopy prawo+)
+                profile.speed_to_rc(s.vz),            # ud
+                profile.yaw_rate_to_rc(-s.yaw_rate),  # yaw (lewo+ -> w djitellopy prawo+)
             )
         return self
 

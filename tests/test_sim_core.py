@@ -186,3 +186,86 @@ def test_export_flight_data_structure():
     for key in ("t", "command", "args", "status", "warning"):
         assert key in data.events[0]
     assert data.stats["distance_cm"] > 0
+
+
+# ---------------------------------------------------------------- konwencja RC
+# djitellopy/Tello: `rc a b c d` - a > 0 = W PRAWO, d > 0 = obrót W PRAWO
+# (zgodnie z zegarem, tak rośnie get_yaw()). Potwierdzone w oficjalnym przykładzie
+# examples/manual-control-pygame.py: K_RIGHT -> +S, K_d (clockwise) -> +S.
+
+
+def _airborne() -> core.Simulation:
+    sim = core.Simulation()
+    ev, _, _ = sim.begin("takeoff", [])
+    sim.takeoff(ev)
+    return sim
+
+
+def test_rc_positive_left_right_moves_right():
+    """``send_rc_control(+30, 0, 0, 0)`` przesuwa drona w prawo (nie w lewo)."""
+    sim = _airborne()
+    start = sim.position
+    ev, _, _ = sim.begin("send_rc_control", [30, 0, 0, 0, 1.0])
+    sim.rc_motion(ev, 30, 0, 0, 0, 1.0)
+    # yaw = 0: przód to +X, PRAWO to -Y
+    assert sim.position[1] < start[1] - 10, f"dron nie poszedł w prawo: {sim.position}"
+    assert abs(sim.position[0] - start[0]) < 0.5
+
+
+def test_rc_negative_left_right_moves_left():
+    sim = _airborne()
+    ev, _, _ = sim.begin("send_rc_control", [-30, 0, 0, 0, 1.0])
+    sim.rc_motion(ev, -30, 0, 0, 0, 1.0)
+    assert sim.position[1] > 10, f"dron nie poszedł w lewo: {sim.position}"
+
+
+def test_rc_positive_yaw_turns_clockwise():
+    """``send_rc_control(0, 0, 0, +30)`` zwiększa yaw w prawo (zgodnie z zegarem)."""
+    sim = _airborne()
+    ev, _, _ = sim.begin("send_rc_control", [0, 0, 0, 30, 1.0])
+    sim.rc_motion(ev, 0, 0, 0, 30, 1.0)
+    # yaw rośnie w prawo, jak get_yaw() w Tello (30% drążka * 90 deg/s = 27 deg)
+    assert sim.yaw == pytest.approx(27.0, abs=1.0), f"yaw={sim.yaw}"
+
+
+def test_rc_negative_yaw_turns_counter_clockwise():
+    sim = _airborne()
+    ev, _, _ = sim.begin("send_rc_control", [0, 0, 0, -30, 1.0])
+    sim.rc_motion(ev, 0, 0, 0, -30, 1.0)
+    assert sim.yaw == pytest.approx(-27.0, abs=1.0), f"yaw={sim.yaw}"
+
+
+def test_rc_forward_moves_along_nose():
+    sim = _airborne()
+    start = sim.position
+    ev, _, _ = sim.begin("send_rc_control", [0, 30, 0, 0, 1.0])
+    sim.rc_motion(ev, 0, 30, 0, 0, 1.0)
+    assert sim.position[0] > start[0] + 10
+    assert abs(sim.position[1] - start[1]) < 0.5
+
+
+def test_rc_turn_and_forward_makes_arc():
+    """Ruch w przód z jednoczesnym obrotem daje łuk (układ drona się obraca)."""
+    sim = _airborne()
+    ev, _, _ = sim.begin("send_rc_control", [0, 30, 0, 30, 1.0])
+    sim.rc_motion(ev, 0, 30, 0, 30, 1.0)
+    # obrót dodatni = w prawo od +X, czyli tor schodzi w stronę... sprawdzamy łuk:
+    # pozycja różni się od prostego przelotu 15 cm wzdłuż X
+    assert sim.position[0] > 10
+    assert abs(sim.position[1]) > 1.0, f"brak łuku: {sim.position}"
+
+
+def test_rc_integration_step_independent_of_chunk_size():
+    """Ten sam ruch w jednym kroku 1 s i w 20 krokach po 50 ms daje ten sam tor."""
+    one = _airborne()
+    ev, _, _ = one.begin("send_rc_control", [0, 30, 0, 30, 1.0])
+    one.rc_motion(ev, 0, 30, 0, 30, 1.0)
+
+    many = _airborne()
+    for _ in range(20):
+        ev, _, _ = many.begin("send_rc_control", [0, 30, 0, 30, 0.05])
+        many.rc_motion(ev, 0, 30, 0, 30, 0.05)
+
+    assert many.position[0] == pytest.approx(one.position[0], abs=0.2)
+    assert many.position[1] == pytest.approx(one.position[1], abs=0.2)
+    assert many.yaw == pytest.approx(one.yaw, abs=0.2)

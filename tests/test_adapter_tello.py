@@ -160,3 +160,50 @@ def test_tello_limits_values():
     assert (LIMITS.move_min_cm, LIMITS.move_max_cm) == (20, 500)
     assert (LIMITS.rotate_min_deg, LIMITS.rotate_max_deg) == (1, 360)
     assert (LIMITS.speed_min, LIMITS.speed_max) == (10, 100)
+
+
+# --------------------------------------------------- konwencja znaków RC (mock)
+def test_mock_has_no_invented_rc_helpers():
+    """Mock nie udaje metod, których prawdziwe djitellopy nie ma."""
+    from app.adapters.tello.djitellopy import tello as mock_tello
+
+    for name in ("send_rc_control_left", "send_rc_control_right", "send_rc_control_forward",
+                 "send_rc_control_back", "send_rc_control_left_yaw",
+                 "send_rc_control_right_yaw"):
+        assert not hasattr(mock_tello.Tello, name), f"mock nie powinien mieć {name}"
+
+
+def test_rc_positive_left_right_moves_right_via_controller():
+    """``send_rc_control(+30, 0, 0, 0)`` = W PRAWO (konwencja djitellopy)."""
+    controller = TelloController(core.Simulation())
+    _takeoff(controller)
+    controller.send_rc_control(30, 0, 0, 0)
+    controller.rc_tick(1.0)
+    pos = controller.sim.position
+    # yaw = 0: przód = +X, prawo = -Y
+    assert pos[1] < -10, f"dron nie poleciał w prawo: {pos}"
+
+
+def test_rc_positive_yaw_turns_clockwise_via_controller():
+    """``send_rc_control(0, 0, 0, +30)`` = obrót w prawo (get_yaw rośnie)."""
+    controller = TelloController(core.Simulation())
+    _takeoff(controller)
+    controller.send_rc_control(0, 0, 0, 30)
+    controller.rc_tick(1.0)
+    assert controller.sim.yaw == pytest.approx(27.0, abs=1.0)
+
+
+def test_backend_maps_library_convention_to_djitellopy():
+    """Biblioteka (lewo+/CCW+) -> djitellopy (prawo+/CW+): obie osie odwrócone."""
+    from dronemoves.backends.tello import TelloBackend
+
+    class Dummy:
+        def __init__(self):
+            self.calls = []
+
+        def send_rc_control(self, lr, fb, ud, yaw):
+            self.calls.append((lr, fb, ud, yaw))
+
+    drone = Dummy()
+    TelloBackend(drone).rc(vx=0, vy=40, vz=0, yaw_rate=20)   # 40 = w lewo, 20 = CCW
+    assert drone.calls == [(-40, 0, 0, -20)]
