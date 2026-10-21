@@ -56,7 +56,7 @@ try:
     with Pilot(tello, speed=40, max_height_cm=200, max_radius_cm=300,
                min_battery=30) as p:
         p.forward(100)            # płynnie: rozpędzanie, jazda, hamowanie
-        p.turn(90, radius=80)     # łuk, nos podąża za torem
+        p.turn(90, radius=80)     # łuk w PRAWO (dodatni kąt = w prawo, jak w Tello)
         p.hover(2)
 finally:
     tello.land()
@@ -89,8 +89,8 @@ Pilot(drone=None, *, backend=None, speed=40, profile=TELLO_PROFILE,
 | Metoda | Opis |
 |---|---|
 | `forward(distance_cm)` | prosty płynny ruch do przodu |
-| `turn(angle_deg, radius=80)` | łuk z nosem po torze (ujemny kąt = w prawo) |
-| `arc(angle_deg, radius=100, direction=None)` | łuk o zadanym kącie |
+| `turn(angle_deg, radius=80)` | łuk z nosem po torze (**dodatni kąt = w prawo**, jak w Tello) |
+| `arc(angle_deg, radius=100, direction=None)` | łuk (**dodatni kąt = w prawo**; `direction` wymusza stronę) |
 | `circle(radius=100, direction="right", face="tangent")` | pełne okrążenie |
 | `orbit(radius=120, turns=1)` | krążenie z nosem do środka |
 | `slalom(gates=4, spacing=100, width=60)` | slalom przez środki bramek |
@@ -104,6 +104,30 @@ Pilot(drone=None, *, backend=None, speed=40, profile=TELLO_PROFILE,
 
 Każdy manewr przyjmuje `mode="rc"` (domyślnie) lub `mode="native"`.
 Manewr `sequence` działa na liście obiektów `Maneuver` (np. z `p._line_planner`).
+
+## Kierunek kątów (konwencja Tello)
+
+**Dodatni kąt = skręt w PRAWO** (zgodnie z zegarem), ujemny = w lewo — tak samo
+jak `rotate_clockwise` i rosnący `get_yaw()` w Tello. Dotyczy `turn`, `arc`,
+`Pilot.yaw` oraz `yaw` w `preview_trajectory`:
+
+```python
+pilot.turn(90, radius=60)     # w PRAWO: Pilot.yaw == 90, dron kończy na −y
+pilot.turn(-90, radius=60)    # w LEWO:  Pilot.yaw == 270, dron kończy na +y
+pilot.arc(180, radius=100)    # półkole w prawo
+```
+
+Parametry tekstowe są jednoznaczne i niezależne od znaku kąta:
+`direction="right"` = po prawej stronie kursu startowego (dla `circle`, `orbit`
+i `arc` z wymuszoną stroną), `"left"` = po lewej.
+
+Wewnętrznie (planer, trajektorie, symulator) kurs jest matematyczny — dodatni =
+w lewo (CCW). Konwersja jest w **jednym miejscu**:
+`dronemoves.pilot.api_angle_to_internal()` / `internal_angle_to_api()`.
+
+> **Uwaga do wersji 0.1.3**: wydanie 0.1.3 miało odwrócony kierunek
+> `turn`/`arc` (dodatni kąt = w lewo). Wersja 0.1.4 przywraca konwencję Tello
+> z 0.1.0–0.1.2. Jeśli piszesz kod pod 0.1.3, zmień znaki kątów.
 
 ## Symulator: ścieżka jak na prawdziwym dronie
 

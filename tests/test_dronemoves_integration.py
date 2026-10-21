@@ -92,7 +92,8 @@ t.connect()
 t.takeoff()
 pilot = Pilot(t, speed=35)
 {body}
-print("PILOT", json.dumps({{"x": pilot.x, "y": pilot.y, "yaw": pilot.yaw}}))
+print("PILOT", json.dumps({{"x": pilot.x, "y": pilot.y, "yaw": pilot.yaw,
+                            "get_yaw": t.get_yaw()}}))
 t.land()
 """
 
@@ -148,13 +149,15 @@ def test_maneuver_matches_simulator(name, body):
     dx = last["x"] - pilot["x"]
     dy = last["y"] - pilot["y"]
     distance = math.hypot(dx, dy)
-    dyaw = abs(((last["yaw"] - pilot["yaw"]) % 360 + 540) % 360 - 180)
+    # porównujemy kurs w konwencji API: pilot.yaw (CW+) vs tello.get_yaw()
+    # (telemetria ``sample.yaw`` jest wewnętrzna, CCW+ - potrzebna scenie 3D)
+    dyaw = abs(((pilot["get_yaw"] - pilot["yaw"]) % 360 + 540) % 360 - 180)
 
     assert distance <= POSITION_TOLERANCE_CM, (
         f"{name}: symulator ({last['x']:.1f}, {last['y']:.1f}) vs pilot "
         f"({pilot['x']:.1f}, {pilot['y']:.1f}) - różnica {distance:.1f} cm")
     assert dyaw <= YAW_TOLERANCE_DEG, (
-        f"{name}: kurs symulatora {last['yaw']:.1f}° vs pilot {pilot['yaw']:.1f}° "
+        f"{name}: kurs get_yaw() {pilot['get_yaw']}° vs Pilot.yaw {pilot['yaw']:.1f}° "
         f"- różnica {dyaw:.1f}°")
 
 
@@ -198,10 +201,10 @@ t.land()
 def test_turn_left_goes_left_and_right_goes_right():
     """Wykrywacz odwróconego znaku / braku obrotu do układu drona.
 
-    ``turn(90)`` skręca w LEWO (dodatnie +Y), a ``turn(-90)`` w PRAWO - w obu
-    przypadkach dron musi skończyć po właściwej stronie osi X. Test łapie
-    sytuację, w której symulator ignoruje ``yaw`` przy przeliczaniu prędkości
-    (wtedy tor byłby prosty) albo ma odwróconą oś boczną (strony by się zamieniły).
+    Konwencja publicznego API (jak Tello): **``turn(90)`` skręca w PRAWO**
+    (ujemne y w układzie wewnętrznym), a ``turn(-90)`` w LEWO (dodatnie y).
+    Test łapie sytuację, w której symulator ignoruje ``yaw`` przy przeliczaniu
+    prędkości (tor byłby prosty) albo ma odwróconą oś boczną.
     """
     source = """
 import json
@@ -216,8 +219,8 @@ pilot = Pilot(t, speed=35)
 print("PILOT", json.dumps({{"x": pilot.x, "y": pilot.y}}))
 t.land()
 """
-    for body, expect_positive_y in (("pilot.turn(90, radius=60)", True),
-                                    ("pilot.turn(-90, radius=60)", False)):
+    for body, expect_right in (("pilot.turn(90, radius=60)", True),
+                               ("pilot.turn(-90, radius=60)", False)):
         result = runner.run_script(source.format(body=body), "side.py")
         assert result.status == "ok", [e["message"] for e in result.flight.errors]
         last = result.flight.samples[-1]
@@ -227,11 +230,11 @@ t.land()
         assert last["y"] * pilot["y"] > 0, (
             f"{body}: symulator y={last['y']:.1f}, pilot y={pilot['y']:.1f} "
             "(przeciwne strony - odwrócona oś boczna)")
-        # i ta właściwa strona geometrycznie
-        if expect_positive_y:
-            assert last["y"] > 30, f"{body}: skręt w lewo powinien dać +Y, jest {last['y']:.1f}"
+        # i ta właściwa strona geometrycznie (prawo = −y)
+        if expect_right:
+            assert last["y"] < -30, f"{body}: skręt w prawo powinien dać −Y, jest {last['y']:.1f}"
         else:
-            assert last["y"] < -30, f"{body}: skręt w prawo powinien dać -Y, jest {last['y']:.1f}"
+            assert last["y"] > 30, f"{body}: skręt w lewo powinien dać +Y, jest {last['y']:.1f}"
 
 
 def test_circle_right_stays_on_the_right_side_of_start_heading():
@@ -261,11 +264,12 @@ t.land()
     assert min(ys) < -40, f"okrążenie w prawo powinno wyraźnie wejść na −Y, min y={min(ys):.1f}"
 
 
-def test_turn_positive_is_left_matching_simulator_physics():
-    """``turn(+90)`` = skręt w LEWO (+Y) - zgodnie z układem z README.
+def test_pilot_angles_use_tello_convention():
+    """``Pilot.turn(+90)`` = skręt w PRAWO; ``Pilot.yaw`` = +90 (konwencja Tello).
 
-    Niezależnie od symulatora: biblioteka ma trzymać kurs CCW+ (dodatni kąt =
-    w lewo), tak jak reszta projektu.
+    Sprawdza publiczne API ``dronemoves``: dodatni kąt/kurs = w prawo (CW),
+    tak jak ``rotate_clockwise`` i ``get_yaw()`` w Tello. Wewnętrznie projekt
+    trzyma kurs matematyczny (CCW+), więc konwersja musi działać na granicy.
     """
     source = """
 import json
@@ -276,11 +280,54 @@ t = Tello()
 t.connect()
 t.takeoff()
 pilot = Pilot(t, speed=35)
-pilot.turn(90, radius=60)
+{body}
+print("PILOT", json.dumps({{"x": pilot.x, "y": pilot.y, "yaw": pilot.yaw,
+                            "get_yaw": t.get_yaw()}}))
+t.land()
+"""
+    # turn(+90): prawo (-y w układzie wewnętrznym), yaw = +90
+    result = runner.run_script(source.format(body="pilot.turn(90, radius=60)"), "api_turn.py")
+    assert result.status == "ok", [e["message"] for e in result.flight.errors]
+    pilot = _pilot_state(result)
+    assert pilot is not None
+    assert pilot["y"] < -30, f"turn(+90) ma kończyć po prawej stronie (−y), jest y={pilot['y']:.1f}"
+    assert pilot["yaw"] == pytest.approx(90, abs=2), f"Pilot.yaw = {pilot['yaw']:.1f}, oczekiwano 90"
+    assert abs(pilot["yaw"] - pilot["get_yaw"] % 360) <= 2, (
+        f"Pilot.yaw ({pilot['yaw']:.1f}) musi zgadzać się z tello.get_yaw() "
+        f"({pilot['get_yaw']})")
+
+    # turn(-90): lewo (+y), yaw = 270
+    result = runner.run_script(source.format(body="pilot.turn(-90, radius=60)"), "api_turn2.py")
+    assert result.status == "ok", [e["message"] for e in result.flight.errors]
+    pilot = _pilot_state(result)
+    assert pilot is not None
+    assert pilot["y"] > 30, f"turn(-90) ma kończyć po lewej stronie (+y), jest y={pilot['y']:.1f}"
+    assert min(abs(pilot["yaw"] - 270), abs(pilot["yaw"] + 90)) <= 2, (
+        f"Pilot.yaw = {pilot['yaw']:.1f}, oczekiwano 270 (albo -90)")
+    get_yaw_norm = pilot["get_yaw"] % 360
+    assert min(abs(pilot["yaw"] - get_yaw_norm), abs(pilot["yaw"] - get_yaw_norm + 360),
+               abs(pilot["yaw"] - get_yaw_norm - 360)) <= 2, (
+        f"Pilot.yaw ({pilot['yaw']:.1f}) vs get_yaw ({pilot['get_yaw']})")
+
+
+def test_arc_positive_turns_right():
+    """``arc(+180)`` kończy po prawej stronie kursu startowego (jak ``turn``)."""
+    source = """
+import json
+from djitellopy import Tello
+from dronemoves import Pilot
+
+t = Tello()
+t.connect()
+t.takeoff()
+pilot = Pilot(t, speed=35)
+pilot.arc(180, radius=100)
 print("PILOT", json.dumps({"x": pilot.x, "y": pilot.y, "yaw": pilot.yaw}))
 t.land()
 """
-    pilot = _pilot_state(runner.run_script(source, "t.py"))
+    result = runner.run_script(source, "arc_api.py")
+    assert result.status == "ok", [e["message"] for e in result.flight.errors]
+    pilot = _pilot_state(result)
     assert pilot is not None
-    assert pilot["y"] > 30, f"turn(+90) ma skręcać w lewo (+Y), jest y={pilot['y']:.1f}"
-    assert ((pilot["yaw"] % 360) + 360) % 360 == pytest.approx(90, abs=5)
+    assert pilot["y"] < -100, f"arc(+180) ma iść na −y (prawo), jest y={pilot['y']:.1f}"
+    assert pilot["yaw"] == pytest.approx(180, abs=3)

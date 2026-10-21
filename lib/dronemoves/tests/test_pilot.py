@@ -42,11 +42,49 @@ def test_rc_frequency_is_20hz():
 
 
 def test_turn_updates_pose():
+    """``turn(+90)`` = skręt w PRAWO (konwencja Tello): kończy na −y, yaw = +90."""
     pilot = make_pilot()
     pilot.turn(90, radius=80)
     x, y, _ = pilot.position()
-    assert (x, y) == pytest.approx((80, 80), abs=1)
+    assert (x, y) == pytest.approx((80, -80), abs=1)
     assert pilot.yaw == pytest.approx(90, abs=1)
+
+
+def test_api_angle_conversion_is_centralized():
+    """Konwersja API (CW+) <-> wnętrze (CCW+) jest w jednym miejscu i jest inwolucją."""
+    from dronemoves.pilot import api_angle_to_internal, internal_angle_to_api
+
+    assert api_angle_to_internal(90) == -90      # w prawo (API) = -90 wewnętrznie
+    assert api_angle_to_internal(-90) == 90      # w lewo (API) = +90 wewnętrznie
+    assert internal_angle_to_api(-90) == 90
+    for angle in (0, 30, -45, 90, 180, 270, -270):
+        assert internal_angle_to_api(api_angle_to_internal(angle)) == pytest.approx(angle)
+
+
+def test_pilot_yaw_is_api_convention():
+    """``Pilot.yaw`` rośnie w prawo (CW+) - tak jak ``get_yaw()`` w Tello."""
+    pilot = make_pilot()
+    assert pilot.yaw == pytest.approx(0, abs=1e-9)
+    pilot.turn(90, radius=80)
+    assert pilot.yaw == pytest.approx(90, abs=1)      # dodatni = w prawo
+    pilot2 = make_pilot()
+    pilot2.turn(-90, radius=80)
+    assert min(abs(pilot2.yaw - 270), abs(pilot2.yaw + 90)) <= 1
+
+
+def test_circle_right_keeps_the_right_side():
+    """``direction="right"`` = okrążanie po prawej stronie kursu startowego (−y)."""
+    pilot = make_pilot()
+    traj = pilot.circle(radius=100, direction="right")
+    ys = [s.y for s in traj.samples]
+    assert max(ys) <= 0.5, f"circle(right) wyszło na +y: max y={max(ys):.1f}"
+    assert min(ys) < -40
+
+    pilot = make_pilot()
+    traj = pilot.circle(radius=100, direction="left")
+    ys = [s.y for s in traj.samples]
+    assert min(ys) >= -0.5, f"circle(left) wyszło na −y: min y={min(ys):.1f}"
+    assert max(ys) > 40
 
 
 def test_circle_returns_to_start():

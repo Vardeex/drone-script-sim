@@ -32,6 +32,38 @@ __all__ = ["Pilot", "Maneuver", "ManeuverCollection", "SafetyError", "ManeuverEr
 ManeuverLike = Union["Maneuver", Trajectory, Sequence["ManeuverLike"]]
 
 
+# ------------------------------------------------------------------ konwencja kątów
+# JEDYNE miejsce konwersji kierunku między publicznym API a wnętrzem biblioteki.
+#
+# Publiczne API (zgodnie z Tello i `rotate_clockwise`/`get_yaw()`):
+#     kąt dodatni = obrót W PRAWO (zgodnie z zegarem, CW),
+#     kąt ujemny  = obrót W LEWO  (przeciwnie do zegara, CCW).
+#
+# Wnętrze (planer, `physics`, silnik symulacji - układ x przód, y lewo, z góra):
+#     kurs matematyczny CCW+ (dodatni = w lewo), bo tak liczą się obroty
+#     i transformacje wektorów. Planer używa `side = +1` dla lewa, `-1` dla prawa.
+#
+# Dlatego na granicy API wystarczy zmienić znak kąta. Jeżeli kiedyś zmieni się
+# jedna z konwencji, poprawka jest tutaj - nigdzie indziej.
+
+
+def api_angle_to_internal(angle_deg: float) -> float:
+    """Kąt z publicznego API (CW+, dodatni = w prawo) -> kurs wewnętrzny (CCW+)."""
+    return -float(angle_deg)
+
+
+def internal_angle_to_api(angle_deg: float) -> float:
+    """Kurs wewnętrzny (CCW+) -> kąt publicznego API (CW+, dodatni = w prawo)."""
+    return -float(angle_deg)
+
+
+def _side_from_api(angle_deg: float) -> int:
+    """Strona skrętu dla planera (``+1`` lewo, ``-1`` prawo) z kąta API."""
+    if angle_deg == 0:
+        return 0
+    return 1 if api_angle_to_internal(angle_deg) > 0 else -1
+
+
 class SafetyError(RuntimeError):
     """Naruszenie limitu bezpieczeństwa (wysokość, promień, bateria)."""
 
@@ -97,13 +129,13 @@ class ManeuverCollection:
                         label=f"forward {distance:.0f}cm")
 
     def turn(self, angle_deg: float, radius: float = 80.0) -> Maneuver:
-        """Manewr: zakręt łukiem o ``angle_deg`` i promieniu ``radius``."""
+        """Manewr: zakręt łukiem (**dodatni kąt = w prawo**, jak w Tello)."""
         label = f"turn {angle_deg:.0f}° r={radius:.0f}"
         return Maneuver("turn", self.pilot._turn_planner(angle_deg, radius), label=label)
 
     def arc(self, angle_deg: float, radius: float = 100.0,
             direction: Optional[str] = None) -> Maneuver:
-        """Manewr: łuk o ``angle_deg`` (opcjonalnie wymuszona strona)."""
+        """Manewr: łuk (**dodatni kąt = w prawo**; ``direction`` wymusza stronę)."""
         side = {"left": 1, "right": -1}.get(direction or "", 0)
         label = f"arc {angle_deg:.0f}° r={radius:.0f}"
         return Maneuver("arc", self.pilot._turn_planner(angle_deg, radius, side),
@@ -203,7 +235,8 @@ class Pilot:
         self.x = 0.0
         self.y = 0.0
         self.z = 0.0
-        self.yaw = 0.0
+        # kurs wewnętrzny (CCW+, planer) - API wystawia `yaw` w konwencji Tello (CW+)
+        self._yaw = 0.0
         self._home_z = self._read_height() or 0.0
         self._in_context = False
         self._lock = threading.Lock()
@@ -282,6 +315,21 @@ class Pilot:
                 f"(manewry wymagają min. {self.limits.min_height_cm:.0f} cm)."
             )
 
+    @property
+    def yaw(self) -> float:
+        """Kurs drona w konwencji **publicznego API**: 0..360, dodatni = w prawo (CW).
+
+        Wnętrze (``_yaw``) liczy kurs matematycznie (CCW+, jak planer i silnik);
+        konwersja jest w :func:`internal_angle_to_api`. Wartość 0..360 pozwala
+        porównywać ją wprost z ``tello.get_yaw()`` po normalizacji.
+        """
+        return internal_angle_to_api(self._yaw) % 360.0
+
+    @yaw.setter
+    def yaw(self, value: float) -> None:
+        """Ustaw kurs (konwencja API) - używane też w testach i przy starcie."""
+        self._yaw = api_angle_to_internal(value) % 360.0
+
     def preview(self, maneuver: "ManeuverLike") -> List[tuple]:
         """Zwróć zaprojektowaną trajektorię (lista punktów x, y, z) bez lotu."""
         traj = self._plan(maneuver)
@@ -303,8 +351,16 @@ class Pilot:
             pass
 
     def preview_trajectory(self, maneuver: "ManeuverLike") -> Trajectory:
-        """Jak ``preview``, ale zwraca pełną ``Trajectory`` (z RC i czasem)."""
-        return self._plan(maneuver)
+        """Jak ``preview``, ale zwraca pełną ``Trajectory`` (z RC i czasem).
+
+        Zwracana trajektoria ma ``yaw`` i ``yaw_rate`` w konwencji **publicznego
+        API** (CW+, dodatni = w prawo), żeby nie wyciekał układ wewnętrzny.
+        """
+        traj = self._plan(maneuver)
+        for sample in traj.samples:
+            sample.yaw = internal_angle_to_api(sample.yaw) % 360.0
+            sample.yaw_rate = internal_angle_to_api(sample.yaw_rate)
+        return traj
 
 
     def _plan(self, maneuver: "ManeuverLike") -> Trajectory:
@@ -322,13 +378,13 @@ class Pilot:
             limits=self.limits, profile=self.profile, speed=self.speed, **maneuver.params
         )
         # przenieś plan (liczony od bieżącej pozycji, yaw=0) do układu lotu
-        _transform(plan, (self.x, self.y, self.z), self.yaw)
+        _transform(plan, (self.x, self.y, self.z), self._yaw)
         return plan
 
     def _plan_sequence(self, items: List["ManeuverLike"]) -> Trajectory:
         """Zaplanuj sekwencję: każdy segment liczony od końca poprzedniego."""
         segments: List[Trajectory] = []
-        x, y, z, yaw = self.x, self.y, self.z, self.yaw
+        x, y, z, yaw = self.x, self.y, self.z, self._yaw
         for item in items:
             if isinstance(item, Trajectory):
                 plan = item
@@ -371,7 +427,7 @@ class Pilot:
             finally:
                 self.backend.annotate(f"end: {label}")
             last = traj.samples[-1]
-            self.x, self.y, self.z, self.yaw = last.x, last.y, last.z, last.yaw % 360.0
+            self.x, self.y, self.z, self._yaw = last.x, last.y, last.z, last.yaw % 360.0
             self.flight_time += traj.duration
             return traj
 
@@ -390,14 +446,23 @@ class Pilot:
         return self._execute_mode(maneuver, maneuver.label, mode)
 
     def turn(self, angle_deg: float, radius: float = 80.0, mode: str = "rc") -> Trajectory:
-        """Płynny zakręt łukiem; nos podąża za torem (ujemny kąt = w prawo)."""
+        """Płynny zakręt łukiem; nos podąża za torem.
+
+        **Kąt dodatni = skręt w PRAWO** (zgodnie z zegarem, jak
+        ``rotate_clockwise`` i rosnący ``get_yaw()`` w Tello), **ujemny = w lewo**.
+        """
         label = f"turn {angle_deg:.0f}° r={radius:.0f}"
         maneuver = Maneuver("turn", self._turn_planner(angle_deg, radius), label=label)
         return self._execute_mode(maneuver, label, mode)
 
     def arc(self, angle_deg: float, radius: float = 100.0, mode: str = "rc",
             direction: Optional[str] = None) -> Trajectory:
-        """Łuk o zadanym kącie; ``direction`` (``left``/``right``) wymusza stronę."""
+        """Łuk o zadanym kącie (**dodatni = w prawo**, jak w ``turn``).
+
+        :param direction: ``"right"``/``"left"`` wymusza stronę skrętu
+            niezależnie od znaku kąta (wtedy ``Pilot.yaw`` podąża za wymuszoną
+            stroną, a ``angle_deg`` decyduje tylko o długości łuku).
+        """
         side = {"left": 1, "right": -1}.get(direction or "", 0)
         label = f"arc {angle_deg:.0f}° r={radius:.0f}"
         maneuver = Maneuver("arc", self._turn_planner(angle_deg, radius, side), label=label)
@@ -405,7 +470,11 @@ class Pilot:
 
     def circle(self, radius: float = 100.0, direction: str = "right",
                face: str = "tangent", mode: str = "rc") -> Trajectory:
-        """Pełne okrążenie; ``face``: ``tangent`` (nos po torze), ``center``, ``fixed``."""
+        """Pełne okrążenie; ``direction="right"`` = okrążanie po prawej stronie.
+
+        ``face`` przyjmuje ``tangent``/``center``/``fixed``; obecnie wszystkie
+        warianty prowadzą nos po torze (`tangent`).
+        """
         label = f"circle r={radius:.0f}"
         maneuver = Maneuver("circle", self._circle_planner(radius, direction, face),
                             label=label)
@@ -485,8 +554,16 @@ class Pilot:
         return planner
 
     def _turn_planner(self, angle_deg: float, radius: float, side: int = 0):
+        """Planer zakrętu; ``angle_deg`` i ``side`` są w konwencji **publicznego API**.
+
+        ``side`` (jeśli podany) pochodzi z ``direction="left"/"right"``, więc
+        +1 = lewo, -1 = prawo - zgodnie z planerem, bez konwersji.
+        Sam kąt jest konwertowany tutaj: API CW+ -> planer CCW+.
+        """
+        internal = api_angle_to_internal(angle_deg)
+
         def planner(*, limits, profile, speed):
-            return plan_turn(angle_deg, radius, side=side, limits=limits, profile=profile,
+            return plan_turn(internal, radius, side=side, limits=limits, profile=profile,
                              speed=speed, label=f"turn {angle_deg:.0f}° r={radius:.0f}")
         return planner
 

@@ -7,9 +7,9 @@ def main() -> None:
     tello, pilot = examples.start(speed=40)
     try:
         pilot.forward(80)
-        pilot.turn(90, radius=80)    # skręt w lewo łukiem o promieniu 80 cm
+        pilot.turn(90, radius=80)    # skręt w PRAWO (dodatni kąt = w prawo, jak w Tello)
         pilot.forward(80)
-        pilot.turn(-90, radius=80)   # skręt w prawo (ujemny kąt)
+        pilot.turn(-90, radius=80)   # skręt w LEWO (ujemny kąt)
         pilot.forward(80)
     finally:
         examples.finish(tello)

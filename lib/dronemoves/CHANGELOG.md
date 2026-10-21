@@ -3,6 +3,51 @@
 Forma zgodna z [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/),
 wersjonowanie zgodne z [SemVer](https://semver.org/lang/pl/).
 
+## [0.1.4] - 2026-10-21
+
+**Przywrócono konwencję Tello w publicznym API: dodatni kąt = skręt w PRAWO.**
+
+> ⚠️ **0.1.3 miało odwrócony kierunek `turn`/`arc`** (dodatni kąt skręcał w lewo).
+> Jeśli piszesz kod pod 0.1.3, **zmień znaki kątów** — wersja 0.1.4 wraca do
+> zachowania z 0.1.0–0.1.2.
+
+### Naprawione
+
+- **`turn(+90)` skręca w prawo**, `turn(-90)` w lewo — tak jak `rotate_clockwise`
+  i rosnący `get_yaw()` w Tello. We wcześniejszych wersjach 0.1.0–0.1.2 było
+  tak samo; 0.1.3 odwróciło kierunek, teraz wraca poprawna konwencja.
+- **`Pilot.yaw`** jest w konwencji API (0..360, dodatni = w prawo) i zgadza się
+  z `tello.get_yaw()`: po `turn(90)` wynosi `90`, po `turn(-90)` `270`.
+  Wcześniej zwracał kurs wewnętrzny (CCW+).
+- **`preview_trajectory()`** zwraca `yaw`/`yaw_rate` w konwencji API, więc nie
+  wycieka układ wewnętrzny.
+
+### Zmienione
+
+- **Konwersja kątów w jednym miejscu**: `dronemoves.pilot.api_angle_to_internal()`
+  i `internal_angle_to_api()` (z komentarzem opisującym obie konwencje).
+  Publiczne API = CW+ (Tello), wnętrze (planer, `physics`, symulator) = CCW+.
+- `Pilot.yaw` to własność z konwersją; wewnętrznie kurs trzyma `Pilot._yaw`
+  (CCW+), używany przez `_transform` i `_plan_sequence`.
+- Docstringi `turn`, `arc`, `circle` oraz README (sekcja „Kierunek kątów
+  (konwencja Tello)”), przykłady `maneuvers_turn.py` i `maneuvers_arc_circle.py`.
+
+### Niezmienione (parametry tekstowe)
+
+`direction="right"` / `"left"` w `circle`, `orbit` i `arc` znaczą **stronę
+względem kursu startowego**: `"right"` = po prawej stronie (−y), `"left"` = po
+lewej (+y) — niezależnie od znaku kąta. Sprawdzone testami:
+`circle(direction="right")` ma `y ∈ [−120, 0]`.
+
+### Dodane
+
+- `tests/test_pilot.py`: konwersja jest inwolucją i skupiona w jednym miejscu,
+  `Pilot.yaw` w konwencji API, `circle(right)`/`circle(left)` po właściwej stronie.
+- `test_dronemoves_integration.py`: `turn(+90)` kończy po prawej (−y),
+  `Pilot.yaw == 90` i zgadza się z `tello.get_yaw()`; `turn(-90)` po lewej;
+  `arc(+180)` po prawej.
+- README: wyraźna uwaga o odwróconym kierunku w 0.1.3.
+
 ## [0.1.3] - 2026-10-21
 
 Spójność układu współrzędnych: obrót w prawo i ruch w prawo idą teraz na tę

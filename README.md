@@ -136,11 +136,26 @@ nie zapisuje w konfiguracji systemu.
 | `send_rc_control` left_right | dodatni = **w prawo** (= −y) |
 | `rotate_clockwise(90)` | w prawo; `get_yaw()` = +90, ruch naprzód idzie na −y |
 | `rotate_counter_clockwise(90)` | w lewo; `get_yaw()` = −90, ruch naprzód idzie na +y |
-| `yaw` w planerze `dronemoves` | CCW+ (zgodnie z kursem wewnętrznym); `turn(+90)` = skręt w lewo |
+| `yaw` w planerze `dronemoves` | CCW+ wewnętrznie; **publiczne API** (`turn`, `arc`, `Pilot.yaw`, `preview_trajectory`) używa konwencji Tello: **dodatni = w prawo** |
 
 Zmiana znaku między „kursem wewnętrznym” a API Tello jest robiona **tylko na
 granicy** (adapter `get_yaw`, `rc_motion`, `Executor._rc_for_sample`), dzięki
 czemu wewnątrz projektu nie ma dwóch konkurencyjnych konwencji.
+
+**Biblioteka `dronemoves`**: publiczne API (`turn`, `arc`, `Pilot.yaw`,
+`preview_trajectory`) używa **konwencji Tello** — dodatni kąt/kurs = **w prawo**.
+Konwersja na kurs wewnętrzny jest w jednym miejscu:
+`dronemoves.pilot.api_angle_to_internal` / `internal_angle_to_api`.
+
+```python
+pilot.turn(90, radius=60)    # skręt w PRAWO (get_yaw rośnie), Pilot.yaw == 90
+pilot.turn(-90, radius=60)   # skręt w LEWO,  Pilot.yaw == 270
+pilot.circle(radius=60, direction="right")   # okrążanie po prawej stronie
+```
+
+> **Uwaga do wersji 0.1.3**: miała odwrócony kierunek `turn`/`arc` (dodatni kąt
+> = w lewo). Wersja 0.1.4 przywraca konwencję Tello z 0.1.0–0.1.2 —
+> jeśli piszesz kod pod 0.1.3, zmień znaki kątów.
 
 **Widok 3D**: telemetria (x, y, z) trafia do sceny three.js jako
 `(x, z, −y)`, więc przy kamerze patrzącej od tyłu drona wzdłuż +X **prawa
