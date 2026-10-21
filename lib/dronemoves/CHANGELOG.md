@@ -3,6 +3,56 @@
 Forma zgodna z [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/),
 wersjonowanie zgodne z [SemVer](https://semver.org/lang/pl/).
 
+## [0.1.3] - 2026-10-21
+
+Spójność układu współrzędnych: obrót w prawo i ruch w prawo idą teraz na tę
+samą stronę. Ustalono **jeden układ dla całego projektu** (opis w README,
+sekcja „Układ współrzędnych”):
+
+* osie świata: **x = przód, y = lewo, z = góra** (prawo drona = −y),
+* kurs wewnętrzny (silnik, planer, `physics`): **CCW+** (dodatni = obrót w lewo),
+* `get_yaw()` i `yaw` w `send_rc_control` (API Tello): **CW+** (dodatni = w prawo),
+* zmiana znaku tylko na granicy API (adapter, `rc_motion`, `Executor`).
+
+### Naprawione
+
+- **Obrót i przesunięcie boczne w RC miały odwrotne znaki.** `send_rc_control(0, 30, 0, 30)`
+  obracało drona w prawo (`get_yaw()` rósł), ale tor szedł na **+y** (w lewo) -
+  fizycznie niespójnie z `send_rc_control(30, 0, 0, 0)`, które szło na −y.
+  Przyczyna: `rc_motion` przeliczał `yaw` RC (CW+) bez zmiany znaku, a
+  `integrate_rc` traktuje kurs matematycznie (CCW+). Teraz `rc_motion` neguje
+  `yaw_rate`, a `Executor._rc_for_sample` neguje `yaw_rate` planu (CCW+ -> CW+),
+  więc obie ścieżki dają tę samą stronę.
+- **`get_yaw()` zwracał kurs w konwencji wewnętrznej**, nie Tello. Teraz, na
+  granicy API, znak jest odwracany: `rotate_clockwise(90)` -> `+90`,
+  `rotate_counter_clockwise(90)` -> `-90`, a skręt w prawo (`yaw > 0` w RC)
+  zwiększa `get_yaw()` - zgodnie z opisem w README.
+
+### Dodane
+
+- Sekcja **„Układ współrzędnych”** w README - jedno źródło prawdy dla osi,
+  znaków RC/`get_yaw()` i transformacji widoku 3D.
+- `tests/test_coordinate_system.py` - testy **fizyczne**, niezależne od
+  biblioteki: ruch w prawo = −y, skręt w prawo = ta sama strona, `rotate_*` +
+  `move_forward`, zgodność `move_*` / `go_xyz_speed` z układem, spójność
+  strony ruchu i skrętu.
+- `tests/test_scene_coordinates.mjs` - test transformacji sceny: punkt po prawej
+  stronie drona (−y) jest rysowany po prawej stronie ekranu, gdy kamera patrzy
+  od tyłu wzdłuż +X (uruchamiany też z pytest).
+- Testy w `test_dronemoves_integration.py`: `turn(+90)` = w lewo (+y),
+  `circle(direction="right")` w całości po prawej stronie kursu startowego.
+
+### Sprawdzone liczbowo (symulator, czysty djitellopy)
+
+| Operacja | Wynik |
+|---|---|
+| `send_rc_control(+30, 0, 0, 0)` 2 s | `(0, −30)` - prawo = −y |
+| `send_rc_control(0, +30, 0, +30)` 3 s | `(31.4, −26.9)`, `get_yaw() = 81` - skręt i tor w prawo |
+| `rotate_clockwise(90)` + `move_forward(100)` | `(0, −100)`, `get_yaw() = +90` |
+| `rotate_counter_clockwise(90)` + `move_forward(100)` | `(0, +100)`, `get_yaw() = −90` |
+| `dronemoves.turn(90)` | `(+60, +60)` - w lewo (zgodnie z planerem) |
+| `dronemoves.circle(direction="right")` | `y ∈ [−120, 0]` - całość po prawej |
+
 ## [0.1.2] - 2026-10-21
 
 Symulator testuje teraz **dokładnie tę ścieżkę sterowania, co prawdziwy dron**.

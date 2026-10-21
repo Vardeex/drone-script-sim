@@ -220,19 +220,22 @@ def test_rc_negative_left_right_moves_left():
 
 
 def test_rc_positive_yaw_turns_clockwise():
-    """``send_rc_control(0, 0, 0, +30)`` zwiększa ``get_yaw()`` (skręt w prawo)."""
+    """``send_rc_control(0, 0, 0, +30)`` = obrót w prawo (zgodnie z zegarem).
+
+    ``sim.yaw`` jest wewnętrzny (CCW+), więc skręt w prawo go **zmniejsza**;
+    ``get_yaw()`` (API Tello) pokazuje wtedy wartość dodatnią.
+    """
     sim = _airborne()
     ev, _, _ = sim.begin("send_rc_control", [0, 0, 0, 30, 1.0])
     sim.rc_motion(ev, 0, 0, 0, 30, 1.0)
-    # ``sim.yaw`` jest w konwencji get_yaw(): skręt w prawo daje +27
-    assert sim.yaw == pytest.approx(27.0, abs=1.0), f"yaw={sim.yaw}"
+    assert sim.yaw == pytest.approx(-27.0, abs=1.0), f"sim.yaw={sim.yaw} (CCW+: w prawo = ujemny)"
 
 
 def test_rc_negative_yaw_turns_counter_clockwise():
     sim = _airborne()
     ev, _, _ = sim.begin("send_rc_control", [0, 0, 0, -30, 1.0])
     sim.rc_motion(ev, 0, 0, 0, -30, 1.0)
-    assert sim.yaw == pytest.approx(-27.0, abs=1.0), f"yaw={sim.yaw}"
+    assert sim.yaw == pytest.approx(27.0, abs=1.0), f"sim.yaw={sim.yaw} (CCW+: w lewo = dodatni)"
 
 
 def test_rc_forward_moves_along_nose():

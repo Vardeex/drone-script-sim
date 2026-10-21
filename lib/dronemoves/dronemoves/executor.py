@@ -140,7 +140,9 @@ class Executor:
             self.profile.speed_to_rc(right),
             self.profile.speed_to_rc(forward),
             self.profile.speed_to_rc(sample.vz),
-            self.profile.yaw_rate_to_rc(sample.yaw_rate),
+            # planer trzyma kurs CCW+ (dodatni = w lewo), a `yaw` w RC/djitellopy
+            # rośnie w prawo (CW+) - na granicy API zmieniamy znak
+            self.profile.yaw_rate_to_rc(-sample.yaw_rate),
         )
 
     def _send_profile(self, sample) -> bool:

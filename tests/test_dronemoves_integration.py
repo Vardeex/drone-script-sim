@@ -232,3 +232,55 @@ t.land()
             assert last["y"] > 30, f"{body}: skręt w lewo powinien dać +Y, jest {last['y']:.1f}"
         else:
             assert last["y"] < -30, f"{body}: skręt w prawo powinien dać -Y, jest {last['y']:.1f}"
+
+
+def test_circle_right_stays_on_the_right_side_of_start_heading():
+    """``circle(direction="right")`` krąży po prawej stronie kursu startowego.
+
+    Kurs startowy to +X, więc prawo = −Y: **wszystkie** próbki lotu muszą mieć
+    ``y ≤ 0`` (środek okręgu leży po prawej, promień 60 cm → maks. −120 cm).
+    Test jest niezależny od planera: sprawdza geometrię w telemetrii.
+    """
+    source = """
+from djitellopy import Tello
+from dronemoves import Pilot
+
+t = Tello()
+t.connect()
+t.takeoff()
+pilot = Pilot(t, speed=35)
+pilot.circle(radius=60, direction="right")
+t.land()
+"""
+    result = runner.run_script(source, "circle.py")
+    assert result.status == "ok", [e["message"] for e in result.flight.errors]
+    ys = [s["y"] for s in result.flight.samples if s["z"] > 70]
+    assert ys, "brak próbek lotu"
+    assert max(ys) <= 1.0, (
+        f"okrążenie w prawo wyszło na stronę +Y (lewo): max y={max(ys):.1f}")
+    assert min(ys) < -40, f"okrążenie w prawo powinno wyraźnie wejść na −Y, min y={min(ys):.1f}"
+
+
+def test_turn_positive_is_left_matching_simulator_physics():
+    """``turn(+90)`` = skręt w LEWO (+Y) - zgodnie z układem z README.
+
+    Niezależnie od symulatora: biblioteka ma trzymać kurs CCW+ (dodatni kąt =
+    w lewo), tak jak reszta projektu.
+    """
+    source = """
+import json
+from djitellopy import Tello
+from dronemoves import Pilot
+
+t = Tello()
+t.connect()
+t.takeoff()
+pilot = Pilot(t, speed=35)
+pilot.turn(90, radius=60)
+print("PILOT", json.dumps({"x": pilot.x, "y": pilot.y, "yaw": pilot.yaw}))
+t.land()
+"""
+    pilot = _pilot_state(runner.run_script(source, "t.py"))
+    assert pilot is not None
+    assert pilot["y"] > 30, f"turn(+90) ma skręcać w lewo (+Y), jest y={pilot['y']:.1f}"
+    assert ((pilot["yaw"] % 360) + 360) % 360 == pytest.approx(90, abs=5)

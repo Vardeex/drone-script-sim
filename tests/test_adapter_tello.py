@@ -119,7 +119,8 @@ def test_getters_return_values(ctrl):
     assert ctrl.get_battery() == pytest.approx(100, abs=1)
     assert ctrl.get_height() == pytest.approx(80, abs=1)
     ctrl.rotate("rotate_counter_clockwise", "ccw", 90)
-    assert ctrl.get_yaw() == pytest.approx(90, abs=1)
+    # get_yaw() w konwencji Tello (CW+): obrót przeciwny do zegara daje -90
+    assert ctrl.get_yaw() == pytest.approx(-90, abs=1)
     frame = ctrl.get_frame_read()
     assert frame.frame.frame is None
 

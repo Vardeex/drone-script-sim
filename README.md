@@ -123,6 +123,30 @@ nie zapisuje w konfiguracji systemu.
 * Tylko jeden adapter (DJI Tello); inne drony wymagają nowego adaptera.
 
 
+## Układ współrzędnych
+
+**Jeden układ dla całego projektu** (symulator, biblioteka, widok 3D):
+
+| Pojęcie | Konwencja |
+|---|---|
+| Osie świata | **x = przód, y = lewo, z = góra** (prawoskrętny, ziemia z = 0) |
+| Strona „prawo” drona | **−y** (prawo = ujemne y); „lewo” = +y |
+| Kurs wewnętrzny (silnik `sim.yaw`, planer, `physics`) | **matematyczny CCW+**: dodatni = obrót w lewo |
+| `get_yaw()` i `yaw` w `send_rc_control` (API Tello) | **CW+**: dodatni = obrót w prawo, rośnie po `rotate_clockwise` |
+| `send_rc_control` left_right | dodatni = **w prawo** (= −y) |
+| `rotate_clockwise(90)` | w prawo; `get_yaw()` = +90, ruch naprzód idzie na −y |
+| `rotate_counter_clockwise(90)` | w lewo; `get_yaw()` = −90, ruch naprzód idzie na +y |
+| `yaw` w planerze `dronemoves` | CCW+ (zgodnie z kursem wewnętrznym); `turn(+90)` = skręt w lewo |
+
+Zmiana znaku między „kursem wewnętrznym” a API Tello jest robiona **tylko na
+granicy** (adapter `get_yaw`, `rc_motion`, `Executor._rc_for_sample`), dzięki
+czemu wewnątrz projektu nie ma dwóch konkurencyjnych konwencji.
+
+**Widok 3D**: telemetria (x, y, z) trafia do sceny three.js jako
+`(x, z, −y)`, więc przy kamerze patrzącej od tyłu drona wzdłuż +X **prawa
+strona drona jest po prawej stronie ekranu** (test:
+`tests/test_scene_coordinates.mjs`).
+
 ## Założenia symulacji
 
 Zachowania, których nie da się precyzyjnie odwzorować (lub co do których
@@ -130,7 +154,7 @@ wybrano rozsądne wartości):
 
 | Element | Przyjęte założenie |
 |---|---|
-| Układ współrzędnych | X do przodu, Y w lewo, Z w górę; yaw 0° = przód w +X, **yaw dodatni = obrót w prawo (zgodnie z zegarem)**, tak jak `get_yaw()` w Tello po `rotate_clockwise` |
+| Układ współrzędnych | patrz sekcja „Układ współrzędnych” powyżej: osie x przód / y lewo / z góra, kurs wewnętrzny CCW+, `get_yaw()` CW+ |
 | `takeoff()` | start pionowy na **80 cm** przy 50 cm/s (Tello faktycznie ok. 0,8–1 m) |
 | `land()` | opadanie pionowe do z = 0 przy 50 cm/s |
 | Ruch pionowy (`up`/`down`, RC) | 50 cm/s niezależnie od `set_speed` |

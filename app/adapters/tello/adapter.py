@@ -336,13 +336,13 @@ class TelloController:
         return self._read("get_speed_z", int(round(self.sim.velocity[2])))
 
     def get_yaw(self) -> int:
-        """Kurs jak ``djitellopy.get_yaw()``: ``rotate_counter_clockwise`` go zwiększa.
+        """Kurs w konwencji ``djitellopy.get_yaw()``: dodatni = obrót w prawo (CW).
 
-        Silnik trzyma ``sim.yaw`` w tej samej konwencji (obrót w lewo = dodatni),
-        więc odczyt jest bezpośredni; RC (``yaw`` w djitellopy) ma odwrotny znak
-        i jest negowane w :meth:`~app.sim.core.Simulation.rc_motion`.
+        Wewnętrzny kurs silnika (``sim.yaw``) jest matematyczny - dodatni = w lewo
+        (CCW) - bo tak liczą ruch ``physics`` i planer. Tutaj, na granicy API,
+        zamieniamy znak na konwencję Tello.
         """
-        yaw = self.sim.yaw % 360.0
+        yaw = (-self.sim.yaw) % 360.0
         return self._read("get_yaw", int(round(yaw - 360 if yaw > 180 else yaw)))
 
     def get_flight_time(self) -> int:

@@ -708,9 +708,10 @@ class Simulation:
         v_up = prof.rc_to_vertical(ud)            # cm/s
         # ``sim.yaw`` jest w konwencji Tello: ``rotate_counter_clockwise`` zwiększa
         # yaw, a wychylenie ``yaw`` w RC (dodatnie = obrót w prawo) też je zwiększa.
-        # Znaki "prawo/lewo" różnią się między tymi interfejsami, ale oba opisują
-        # ten sam kierunek - dlatego tu nie ma zmiany znaku.
-        yaw_rate = prof.rc_to_yaw_rate(yaw_rate)  # deg/s (dodatnie = zgodnie z zegarem)
+        # UKŁAD PROJEKTU (README „Układ współrzędnych”): wewnętrzny kurs silnika
+        # jest matematyczny (CCW+, dodatni = obrót w LEWO), a `yaw` w RC/djitellopy
+        # rośnie w PRAWO (CW+, jak get_yaw()) - dlatego zmiana znaku na granicy API.
+        yaw_rate = -prof.rc_to_yaw_rate(yaw_rate)  # deg/s (dodatnie = w lewo/CCW)
         if not any((v_forward, v_right, v_up, yaw_rate)):
             self.advance(seconds)
             self.commit(event)
