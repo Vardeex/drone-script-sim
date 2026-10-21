@@ -514,6 +514,64 @@ export class DroneScene {
     this.controls.update();
   }
 
+  /** Punkty (scena, metry) bieżącej trasy - do kadrowania także z funkcji. */
+  flightPoints() {
+    return (this.samples || []).map((s) => {
+      const p = toScene(s);
+      return new THREE.Vector3(p.x / M, p.y / M, p.z / M);
+    });
+  }
+
+  /** Środek bryły otaczającej trasę (scena, metry). */
+  _flightCenter() {
+    const points = this.flightPoints();
+    if (!points.length) return new THREE.Vector3(0, 0.8, 0);
+    return new THREE.Box3().setFromPoints(points).getCenter(new THREE.Vector3());
+  }
+
+  /** Odległość kamery od środka trasy, przy której cała trasa mieści się w kadrze. */
+  _flightDistance(padding = 1.25) {
+    const points = this.flightPoints();
+    const size = points.length
+      ? new THREE.Box3().setFromPoints(points).getSize(new THREE.Vector3())
+      : new THREE.Vector3(1, 1, 1);
+    const radius = Math.max(size.length() / 2, 0.5);
+    const fov = THREE.MathUtils.degToRad(this.camera.fov);
+    return (radius / Math.sin(fov / 2)) * padding;
+  }
+
+  /**
+   * Pokaż całą trasę z aktualnego kierunku kamery (zachowuje kierunek patrzenia).
+   *
+   * W odróżnieniu od `fitView` nie przestawia kamery pod kątem 3/4 - przydaje się,
+   * gdy funkcja (np. „Przeszkody 3D”) chce pokazać trasę razem z przeszkodami.
+   * :param padding: zapas wokół trasy (1.0 = dokładnie w kadrze)
+   */
+  frameFlight(padding = 1.25) {
+    const center = this._flightCenter();
+    const distance = this._flightDistance(padding);
+    const offset = this.camera.position.clone().sub(this.controls.target);
+    if (offset.length() < 0.05) offset.set(0.25, 1.0, 0.55);   // domyślnie: 3/4 z góry
+    offset.setLength(distance);
+    this.controls.target.copy(center);
+    this.camera.position.copy(center).add(offset);
+    this.controls.update();
+  }
+
+  /**
+   * Ustaw kamerę z góry tak, by widać było całą trasę (przeszkody i przeloty).
+   * Lekkie pochylenie (a nie pion) pozwala rozróżnić bramki od podłogi.
+   */
+  topDownFlight(padding = 1.35) {
+    const offset = new THREE.Vector3(0.0, 1.0, 0.45).normalize();
+    const distance = this._flightDistance(padding);
+    const center = this._flightCenter();
+    this.controls.target.copy(center);
+    this.camera.up.set(0, 1, 0);
+    this.camera.position.copy(center).add(offset.multiplyScalar(distance));
+    this.controls.update();
+  }
+
   resize() {
     const { clientWidth: width, clientHeight: height } = this.container;
     if (!width || !height) return;

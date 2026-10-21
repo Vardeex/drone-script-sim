@@ -65,9 +65,9 @@ def test_pass_beside_wall_without_warning():
 
 def test_approach_within_margin_is_warning():
     scene = Scene(obstacles=[wall()])
-    # ściana kończy się na y = 200; dron (10 cm szerokości) leci na y = 235:
-    # krawędź drona 230, czyli 30 cm od ściany - poza kolizją, w marginesie
-    report = C.analyse_flight(samples_along([(0, 235, 80), (200, 235, 80)]), [],
+    # ściana kończy się na y = 200; dron (10 cm szerokości) leci na y = 215:
+    # krawędź drona 210, czyli 10 cm od ściany - poza kolizją, w marginesie
+    report = C.analyse_flight(samples_along([(0, 215, 80), (200, 215, 80)]), [],
                               scene.as_dict())
     assert report["stats"]["collisions"] == 0
     assert report["stats"]["warnings"] >= 1

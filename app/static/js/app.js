@@ -507,6 +507,11 @@ function bindUi() {
     }
   });
   $('#btn-fit').addEventListener('click', () => {
+    if (scene.cameraMode === 'orbit') {
+      // swobodna: kadr na całą trasę bez zmiany kierunku patrzenia
+      scene.frameFlight();
+      return;
+    }
     scene.setCameraMode('orbit');
     $('#camera-select').value = 'orbit';
     scene.fitView();

@@ -60,6 +60,10 @@ def test_slalom_demo_passes_all_gates(client, scenes_tmp: Path):
         assert report["stats"]["gates_total"] == 3
         assert report["stats"]["gates_passed"] == 3, report["findings"]
         assert report["stats"]["collisions"] == 0
+        # minimalny odstęp liczony do belek ramy, nie do płaszczyzny bramki
+        assert report["stats"]["min_distance_cm"] >= 4.0, report["stats"]
+        assert all(f["distance_cm"] >= 4.0 for f in report["findings"]
+                   if f["level"] == "warning")
         assert flight["scene"]["name"] == scene["name"]
     finally:
         client.delete(f"/api/flights/{flight['id']}")

@@ -88,11 +88,17 @@ export function registerPanel(ctx) {
     findings: [],
   };
 
-  const layer = null;
-
   function notifySaved() {
     store.dirty = false;
     renderHeader();
+  }
+
+  /** Instancja warstwy 3D funkcji (rdzeń trzyma `{ id, instance, factory }`). */
+  function getLayer() {
+    if (typeof ctx.getLayer !== "function") return null;
+    const status = ctx.getLayer(ctx.feature?.id);
+    if (!status) return null;
+    return status.instance || status;
   }
 
   function markDirty() {
@@ -262,13 +268,6 @@ export function registerPanel(ctx) {
       ]);
       box.append(row);
     }
-  }
-
-  function selectObstacle(id) {
-    store.selectedId = store.selectedId === id ? null : id;
-    const layer = getLayer(); if (layer) layer.setSelection(store.selectedId);
-    renderList();
-    renderEditor();
   }
 
   function selectObstacle(id) {
@@ -462,7 +461,6 @@ export function registerPanel(ctx) {
         );
       }
     }
-    const layer = getLayer(); if (layer) layer.setFindings(store.findings);
     const box = $('#obs-findings');
     if (!box) return;
     box.innerHTML = '';

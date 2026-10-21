@@ -201,6 +201,7 @@ export function createLayer({ scene: droneScene } = {}) {
       sphere.position.copy(position);
       sphere.renderOrder = 10;
       markerGroup.add(sphere);
+      if (!state.labels) continue;          // etykiety wyłączone w panelu
       const label = makeTextSprite(LEVEL_LABEL[marker.level] || marker.level,
         `#${color.toString(16).padStart(6, '0')}`, 1.0);
       label.position.copy(position).add(new THREE.Vector3(0, 0.17, 0));

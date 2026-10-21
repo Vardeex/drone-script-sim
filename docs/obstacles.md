@@ -30,9 +30,20 @@ scen są w głównym `README.md` (sekcja „Przeszkody 3D”).
    między krawędziami (`_box_center_distance`).
 4. Odległość 3D = `hypot(odległość w poziomie, odległość w pionie)`; wynik
    pomniejszony o margines. `< 0` = kolizja, `0..margines` = zbliżenie.
-5. Jeden wpis kolizji na jedno wejście w bryłę (stan `was_inside` zerowany
-   po wyjściu z marginesu), wpisy zbliżeń scalane w czasie (`_group`).
-6. Bramki: szukamy przecięć płaszczyzny ramy (`_scan_gate`), ocena liczona
+5. **Bramka**: odległość liczona jest do **czterech belek ramy** (nie do
+   płaszczyzny bramki). Dla każdego punktu brzegu rzutu drona (wierzchołki
+   + odcinki co 0,5 cm) liczymy odległość w układzie ramy: `u` wzdłuż ramy,
+   przesunięcie poza płaszczyznę `|d| - grubość/2`; wynik to
+   `hypot(odległość w płaszczyźnie, przesunięcie)`. Punkt w otworze ma odległość
+   od jego krawędzi (środek otworu 90 × 90 → 40 cm do boków), punkt na belce - 0,
+   punkt poza obrysem ramy - odległość od jej krawędzi. Rzut drona leżący
+   w płaszczyźnie ramy oceniany jest po najgorszym rogu (czy zmieści się w otworze).
+   Płaszczyzna ramy nie jest przeszkodą: samo jej przecięcie nie daje kolizji
+   ani zbliżenia.
+6. Jeden wpis kolizji na jedno wejście w bryłę (stan `was_inside` zerowany
+   po wyjściu z marginesu), wpisy zbliżeń scalane w czasie (`_group`); dla
+   bramki występ przed ramą i za nią to dwa wpisy (strona ramy jest częścią klucza).
+7. Bramki: szukamy przecięć płaszczyzny ramy (`_scan_gate`), ocena liczona
    w punkcie przecięcia z kierunkiem lotu z małego okna (`_assess_passage`,
    `_gate_pass_at`). Przelot zaliczony, gdy cały rzut drona mieści się w otworze
    z zapasem `GATE_CENTER_TOLERANCE`.

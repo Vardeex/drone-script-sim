@@ -75,10 +75,14 @@ z historii wracają te same przeszkody, znaczniki i lista problemów.
 * **kolizja** - dron dotyka przeszkody: czerwony znacznik na trasie i wpis
   na liście problemów (czas, przeszkoda, komenda i linia skryptu),
 * **zbliżenie** - odstęp mniejszy niż margines: żółty znacznik i wpis,
+* **odległość od bramki** mierzona jest do **belek ramy** (nie do płaszczyzny
+  bramki): dron 140 cm przed bramką ma 140 cm do ramy, przelot przez środek
+  otworu 90 × 90 cm to 40 cm do boków i 15 cm do górnej belki. Samo przejście
+  przez płaszczyznę ramy nie jest kolizją ani zbliżeniem,
 * **bramka** - zaliczona, gdy dron przeleciał przez płaszczyznę ramy w całości
   w otworze (z 2 cm zapasu od ramy); zahaczenie o ramę to kolizja,
 * statystyki lotu: liczba kolizji, ostrzeżeń, zaliczonych bramek i minimalny
-  odstęp od przeszkody.
+  odstęp od przeszkody (dla bramki - od belek ramy).
 
 ### Format JSON sceny (`scenes/*.json`)
 
@@ -135,6 +139,7 @@ z nimi **tylko w tych punktach**:
 | 2 | **„Po symulacji przeanalizuj lot”**: jeden hook `register_post_save_hook(fn)`; rdzeń woła go po zapisaniu lotu, dostając zapis lotu i opcje uruchomienia | `app/features/<id>/hooks.py` → `app/storage.py` |
 | 3 | **Opcje uruchomienia**: pole `options` w `POST /api/run` (i formularz `options` w `/api/upload`) trafia do `storage.save(..., options=...)` i do hooków | `app/server.py` |
 | 4 | **UI**: `GET /api/features` zwraca manifesty włączonych funkcji; `boot.js` doładowuje panel (`ui.panel`, rejestracja przez `panels.registerFeaturePanel`), warstwę sceny 3D (`ui.scene_layer`, `scene.addOverlayLayer`) i style (`ui.styles`) | `app/static/js/boot.js`, `app/static/js/panels.js`, `app/static/js/scene.js` |
+| 5 | **Kamera na trasę**: `scene.frameFlight()` (kadr na całą trasę bez zmiany kierunku patrzenia) i `scene.topDownFlight()` (widok z góry); przycisk „Dopasuj” używa ich, gdy kamera jest swobodna | `app/static/js/scene.js`, `app/static/js/app.js` |
 
 Rdzeń nie importuje niczego z `app/features/*` poza rejestrem. Funkcję można
 **wyłączyć jednym ustawieniem** w `config.json`:

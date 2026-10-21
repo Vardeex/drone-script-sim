@@ -3,6 +3,34 @@
 Format: [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/); wersjonowanie
 zgodne z [SemVer](https://semver.org/lang/pl/).
 
+## [0.2.1] - 2026-10-21
+
+### Naprawione
+
+* **odległość od bramki** (`min_distance_cm`, ostrzeżenia): liczona do czterech
+  belek ramy zamiast do płaszczyzny bramki. Wcześniej lot 140 cm przed bramką
+  i przelot przez środek otworu dawały ok. 2,5 cm oraz fałszywe „zbliżenie”
+  / „kolizję” z ramą, przez którą dron tylko przelatywał,
+* ostrzeżenia o zbliżeniu do ramy bramki pokazują rzeczywisty odstęp od belek
+  („15.0 cm od belek, brakuje 5.0 cm do marginesu…”), a występ przed ramą
+  i za nią to dwa osobne wpisy,
+* panel „Przeszkody” nie wczytywał się (`Identifier 'layer' has already been
+  declared`, brak `getLayer`), przez co zakładka pozostawała ukryta,
+* etykiety znaczników („Kolizja”/„Zbliżenie”/„Bramka”) są ukrywane razem
+  z etykietami nazw (ustawienie „etykiety”).
+
+### Dodane
+
+* `scene.frameFlight()` / `scene.topDownFlight()` - punkty rozszerzeń kamery;
+  przycisk „Dopasuj” w trybie swobodnym kadruje trasę bez zmiany kierunku
+  patrzenia (README, „Punkty rozszerzeń”, punkt 5),
+* zrzut `docs/obstacles.png` robiony w przeglądarce (Playwright, 1600 × 950):
+  scena „Slalom z bramkami”, lot `examples/obstacles_demo.py`, trasa przez
+  bramki i otwarty panel „Przeszkody”; obraz sprawdzany programowo (różnorodność
+  kolorów), więc nie może być pustym kadrem,
+* testy odległości do ramy bramki (140 cm przed bramką, środek otworu,
+  przejście obok ramy, przelot „na wylot” przez płaszczyznę) - tolerancja ±3 cm.
+
 ## [0.2.0] - 2026-10-21
 
 ### Dodane
