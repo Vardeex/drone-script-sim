@@ -32,3 +32,7 @@ docs/ref/
 Thumbs.db
 desktop.ini
 .log
+
+# Raport sesji bez nadzoru (dokument roboczy, nie publikujemy)
+RAPORT_SESJI.md
+
