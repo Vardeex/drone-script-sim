@@ -3,6 +3,21 @@
 Format: [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/); wersjonowanie
 zgodne z [SemVer](https://semver.org/lang/pl/).
 
+## [Niewydane] - 2026-10-22
+
+### Dodane
+
+* **stopka aplikacji** „Development by Vardeex” na samym dole okna (własny,
+  24 px pasek pod `#app`, poza sceną 3D, osią czasu i panelami; nie nachodzi
+  na żaden z nich także po przełączeniu zakładki - sprawdzone zrzutami
+  przy szerokości 1280 i 1920 px),
+* słowo „Vardeex” to link `mailto:vardeex.exe@gmail.com` z tematem
+  „Drone Script Simulator” i podpowiedzią „Kontakt: vardeex.exe@gmail.com”;
+  w spoczynku stopka jest stonowana (kolor `--muted`, 10,5 px), po najechaniu
+  „Vardeex” podświetla się kolorem akcentu,
+* sekcja **Autor** w `README.md` (Vardeex, e-mail, GitHub),
+* odświeżony `docs/screenshot.png` (1600×950) - stopka jest na nim widoczna.
+
 ## [0.2.2] - 2026-10-21
 
 ### Naprawione

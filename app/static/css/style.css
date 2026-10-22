@@ -28,6 +28,12 @@ html, body {
 }
 
 #app { display: flex; height: 100vh; }
+/* ze stopką: #app zajmuje resztę wysokości, stopka dostaje własny pasek */
+body:has(#app-footer) #app { height: auto; flex: 1 1 auto; min-height: 0; }
+body:has(#app-footer) {
+  display: flex;
+  flex-direction: column;
+}
 
 /* ------------------------------------------------------------- lewa strona */
 #left {
@@ -399,6 +405,32 @@ table.data tr.status-ok td:first-child { border-left: 3px solid transparent; }
 }
 #status-bar.error { color: #fca5a5; }
 #status-bar.ok { color: #86efac; }
+
+/* ------------------------------------------------------------------- stopka */
+#app-footer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 3px 12px 4px;
+  font-size: 10.5px;
+  letter-spacing: .2px;
+  color: var(--muted);
+  background: var(--panel-2);
+  border-top: 1px solid var(--border);
+  user-select: none;
+}
+#app-footer a {
+  color: var(--muted);
+  text-decoration: none;
+  border-bottom: 1px dotted rgba(138, 151, 168, 0.5);
+}
+#app-footer a:hover,
+#app-footer a:focus-visible {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
 .spinner {
   display: inline-block;
   width: 12px;

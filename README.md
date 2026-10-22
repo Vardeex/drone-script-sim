@@ -420,3 +420,10 @@ API biblioteki na operacje silnika.
 MIT - patrz [LICENSE](LICENSE). three.js (`app/static/vendor/`) - MIT,
 Copyright 2010-2023 Three.js Authors.
 
+## Autor
+
+**Vardeex**
+
+* e-mail: [vardeex.exe@gmail.com](mailto:vardeex.exe@gmail.com?subject=Drone%20Script%20Simulator)
+* GitHub: [github.com/Vardeex](https://github.com/Vardeex)
+
