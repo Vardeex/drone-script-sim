@@ -7,6 +7,29 @@ zgodne z [SemVer](https://semver.org/lang/pl/).
 
 ### Dodane
 
+* **Planer trasy** (funkcja `route_planner`, punkt rozszerzeń nr 1): zakładka
+  „Planer” z listą punktów (X/Y/Z, kurs nosa, kolejność, wstawianie, usuwanie),
+  podglądem na żywo (dystans, czas, bateria, problemy z limitów i kolizji),
+  generowaniem skryptu („prosta” = djitellopy, „płynna” = dronemoves,
+  oznaczona jako **eksperymentalna**), kopiowaniem, pobieraniem `.py`
+  i wczytywaniem trasy z bloku `dronesim-route`,
+* trasa jest zapisywana w locie (`options.route_planner.route`) i może być
+  zapisana razem ze sceną (pole `routes`),
+* ostrzeżenie „tryb płynny: odchylenie do X cm od punktów”, gdy odchylenie
+  przekracza 15 cm (zamiast blokowania generowania),
+* `docs/route_planner.png` i sekcja „Planer trasy” w README z przykładami
+  kodu w obu trybach.
+
+### Naprawione
+
+* testy funkcji przeszkód nie zakładają już stałej listy funkcji
+  (`test_obstacles_feature_off`) - sprawdzają tylko, że `obstacles` jest
+  wyłączone, a reszta aplikacji działa,
+* `Planer.path` (dronemoves 0.1.5) startuje w miejscu drona i realnie się
+  wznosi (szczegóły w `lib/dronemoves/CHANGELOG.md`).
+
+### Dodane (wcześniej w tej serii)
+
 * **stopka aplikacji** „Development by Vardeex” na samym dole okna (własny,
   24 px pasek pod `#app`, poza sceną 3D, osią czasu i panelami; nie nachodzi
   na żaden z nich także po przełączeniu zakładki - sprawdzone zrzutami

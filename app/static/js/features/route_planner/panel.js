@@ -102,7 +102,10 @@ function updatePoint(index, patch) {
   const point = store.route.points[index];
   if (!point) return;
   Object.assign(point, patch);
-  changed();
+  // nie przerysowujemy listy: użytkownik właśnie edytuje pole i utraciłby fokus
+  if (store.layer) store.layer.setRoute(store.route);
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(refreshPreview, 220);
 }
 
 /** Po każdej zmianie trasy: warstwa 3D, lista, podgląd (debounce). */
@@ -236,10 +239,10 @@ function renderStats(preview) {
     box.innerHTML = '<span>Brak podglądu.</span>';
     return;
   }
-  const stats = preview.stats || {};
+  const stats = preview.stats || preview;
   const parts = [
     ['Dystans', `${Math.round(stats.distance_cm || 0)} cm`],
-    ['Czas', `${(stats.duration_s || 0).toFixed(1)} s`],
+    ['Czas', `${(stats.eta_s || stats.duration_s || 0).toFixed(1)} s`],
     ['Bateria', `${(stats.battery_pct || 0).toFixed(1)} %`],
     ['Punkty', `${store.route.points.length}`],
   ];

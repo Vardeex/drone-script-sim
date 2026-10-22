@@ -14,12 +14,13 @@
 }
 #route-panel .route-options {
   display: grid;
-  grid-template-columns: auto 1fr auto 1fr;
+  grid-template-columns: 92px 1fr;
   align-items: center;
   gap: 4px 8px;
   margin: 6px 0;
   font-size: 12px;
 }
+#route-panel .route-options label { white-space: nowrap; }
 #route-panel .route-options select,
 #route-panel .route-options input[type="number"] { padding: 3px 6px; }
 #route-panel .route-points {

@@ -129,6 +129,76 @@ z meblami), `gate_slalom` (slalom z bramkami), `obstacle_course` (tor przeszkód
 | `examples/obstacles_demo.py` | slalom przez 3 bramki (scena `gate_slalom`) | 3/3 bramki, 0 kolizji, 0 ostrzeżeń |
 | `examples/obstacles_crash.py` | za mały zjazd w bok przed bramką 2 | kolizja z ramą bramki 2 |
 
+## Planer trasy
+
+Zakładka **Planer** (funkcja `route_planner`, włączana w `config.json`) pozwala
+zbudować trasę z punktów i wygenerować gotowy skrypt.
+
+* **Dodawanie punktów** - przycisk „✚ Dodaj punkt” (kolejny punkt 100 cm dalej)
+  albo tryb „Klik na podłożu” (klik w scenie 3D). Wysokość nowego punktu
+  dziedziczy poprzedni punkt, startowo 100 cm.
+* **Lista punktów** - edycja X/Y/Z w cm, kurs nosa w punkcie (`po torze`,
+  `stały kurs`, `na punkt`, `na start`), zmiana kolejności (↑/↓), wstawianie
+  (✚), usuwanie (✕), zaznaczanie i przeciąganie w scenie 3D
+  (Shift + przeciąganie = wysokość).
+* **Podgląd na żywo** - po każdej zmianie panel pokazuje dystans, czas lotu
+  (`eta_s`), zużycie baterii i listę problemów (limity Tello, kolizje z
+  przeszkodami z aktywnej sceny).
+* **Generowanie** - „▶ Wygeneruj i uruchom” (kod trafia do edytora i startuje
+  symulację), „⌨ Pokaż kod”, „📋 Kopiuj kod”, „💾 Pobierz .py”,
+  „📥 Wczytaj ze skryptu” (trasa zapisana w bloku `dronesim-route`).
+
+### Tryby generowania
+
+| Tryb | Biblioteka | Charakterystyka |
+|---|---|---|
+| **Prosta** (domyślny) | `djitellopy` | `go_xyz_speed` + `rotate_*`; dokładny, przewidywalny |
+| **Płynna** (eksperymentalny) | `dronemoves` | `pilot.path(smooth=True)`; gładkie łuki, ale może odstawać od punktów |
+
+Tryb „płynna” jest oznaczony w UI jako **eksperymentalny**. Zmierzone
+odchylenie od punktów: kwadrat 3,6 cm, wokół przeszkody 13,7 cm,
+obroty 10,3 cm, „za plecami” 120 cm (znany problem KI-1 w `KNOWN_ISSUES.md`).
+Gdy odchylenie przekracza 15 cm, panel pokazuje ostrzeżenie
+„tryb płynny: odchylenie do X cm od punktów” - generowanie nie jest blokowane.
+
+### Przykład: trasa w trybie „prosta”
+
+```python
+from djitellopy import Tello
+
+tello = Tello()
+tello.connect()
+tello.takeoff()
+
+tello.go_xyz_speed(100, 0, 20, 50)      # punkt 1: 100 cm przód, 20 cm wyżej
+tello.rotate_clockwise(90)
+tello.go_xyz_speed(100, 0, 0, 50)       # punkt 2: 100 cm po nowym kursie
+tello.land()
+```
+
+### Przykład: ta sama trasa w trybie „płynna”
+
+```python
+from djitellopy import Tello
+from dronemoves import Pilot
+
+tello = Tello()
+tello.connect()
+tello.takeoff()                          # dron na 80 cm
+
+with Pilot(tello, speed=50, max_height_cm=500, max_radius_cm=500) as pilot:
+    # punkty WZGLĘDNE wobec pozycji drona (0, 0, 0 = tu, gdzie jestem)
+    pilot.path([(100, 0, 20), (100, 100, 20)], smooth=True)
+tello.land()
+```
+
+### Ograniczenia trybu „płynna”
+
+* jedna prędkość na całą trasę (bez prędkości indywidualnych),
+* brak „Wróć do startu” (obsługuje tylko tryb „prosta”),
+* punkt w innym kierunku niż nos drona na starcie nie jest realizowany
+  poprawnie (KI-1) - wstaw obrót albo użyj trybu „prosta”.
+
 ## Punkty rozszerzeń
 
 Funkcje dodatkowe (wtyczki) nie są wkompilowane w rdzeń - rdzeń łączy się
