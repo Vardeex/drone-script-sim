@@ -9,10 +9,7 @@ from __future__ import annotations
 
 import textwrap
 
-import pytest
-
 from app import runner
-from tests.route_helpers import run_script
 
 
 def _run(source: str):
