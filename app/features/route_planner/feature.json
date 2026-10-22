@@ -1,0 +1,15 @@
+{
+  "id": "route_planner",
+  "name": "Planer trasy",
+  "description": "Planowanie trasy z punktów, podgląd, kontrola kolizji i generowanie skryptu",
+  "enabled": true,
+  "api_prefix": "/api/route_planner",
+  "static": "static/js/features/route_planner",
+  "ui": {
+    "panel": "static/js/features/route_planner/panel.js",
+    "scene_layer": "static/js/features/route_planner/scene_layer.js",
+    "styles": ["static/css/features/route_planner.css"],
+    "tab": "tab-route",
+    "tab_button": "tab-btn-route"
+  }
+}

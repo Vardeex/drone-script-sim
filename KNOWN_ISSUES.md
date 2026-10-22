@@ -58,10 +58,64 @@ nie powinna ustawić kursu).
 ani teorii sterowania biblioteki — to wymaga decyzji o architekturze
 (obrót w miejscu vs. sterowanie kursem w RC), a nie kolejnej poprawki.
 
-**Obejście dla użytkownika.** Jeśli pierwszy punkt trasy leży w innym kierunku
-niż nos drona, wstaw w trasie obrót (tryb „prosta” robi to automatycznie:
-`rotate_*` przed ruchem) albo ustaw pierwszy punkt ze `heading="fixed"`.
-W trybie „płynna” generator dzieliłby wtedy trasę na segmenty.
+---
+
+## KI-3: warstwa 3D planera trasy nie jest podłączana do sceny (frontend)
+
+**Objaw.** Panel „Planer” ładuje się i działa (dodawanie punktów listą, kod,
+podgląd), ale **klik na podłożu w scenie 3D nie dodaje punktu** i markery trasy
+się nie rysują.
+
+**Pomiary (Playwright, Chromium):**
+- `window.__featureErrors` = `{obstacles: [], route_planner: []}` (brak błędów),
+- `boot.sceneLayers` = `['obstacles', 'route_planner']` (fabryki zarejestrowane),
+- log dodany tymczasowo w `attachSceneLayers`:
+  `obstacles: instance = object true` / **`route_planner: instance = undefined false`**,
+- `featureState.layers` = `{}` (pusta), `sceneLayers` rośnie do 4 wpisów przy
+  kolejnym wywołaniu (aplikacja inicjalizuje funkcje dwa razy),
+- moduł `scene_layer.js` importuje się bez błędu i eksportuje `createLayer`,
+- ten sam moduł wywołany z atrapą sceny zwraca `undefined` (bez wyjątku),
+- plik jest serwowany poprawnie (`200`, 8891 znaków), a `node` potwierdza
+  poprawną składnię po podmianie importu `three`.
+
+**Co sprawdziłem:**
+1. Rdzeń (`boot.js`, `app.js`) przekazuje `scene` do fabryki
+   (`layer.factory({ scene, ...context })`) i ma `try/catch` z
+   `console.error` — konsola nie pokazuje żadnego błędu.
+2. Kolejność: `registerFeatures` (panele) biegnie **przed**
+   `attachSceneLayers` (warstwy) — panel dostaje `getLayer` zwracające `null`
+   w chwili rejestracji; dodałem `waitForLayer()` z ponawianiem.
+3. Przeszkody (ta sama ścieżka rdzenia) działają poprawnie — więc to nie jest
+   ogólna regresja rdzenia.
+
+**Podejrzana przyczyna.** `createLayer` w `scene_layer.js` kończy się w taki
+sposób, że przeglądarka nie widzi `return` (zwraca `undefined` bez wyjątku),
+mimo że `node` przyjmuje składnię. Plik był składany w kilku krokach
+(wstawki edytora) i `return { ... }` (linia 216) może znajdować się w innym
+zasięgu niż się wydaje — dokładna analiza zasięgów: **do zrobienia**.
+
+**Obejście:** punkty dodaje się przyciskiem „✚ Dodaj punkt” w panelu (działa),
+a współrzędne edytuje w liście. Zaznaczanie punktów klikiem i rysowanie
+markerów w 3D będą dostępne po naprawie KI-3.
+
+**Naprawa (plan).** Zamiast pliku składanego wstawkami: napisać
+`scene_layer.js` od zera jednym zapisem (< 6000 znaków) i sprawdzić zwrot
+`createLayer` testem Playwright (`instance = object`). Wersja robocza tego
+pliku jest zapisana w gałęzi `backup-przed-sesja` (tam też jest punkt wyjścia).
+
+**Aktualizacja po przepisaniu pliku.** `scene_layer.js` został przepisany od
+zera (236 linii, `node` potwierdza poprawną składnię, struktura klamer
+domyka się do `depth=0`), a mimo to `createLayer` nadal zwraca `undefined`
+bez wyjątku w przeglądarce. Dodatkowy trop: serwer oddaje plik o długości
+**7585 znaków**, gdy na dysku jest **7589** (i `tail` pokazuje o jedną `}`
+więcej) — wygląda na to, że przeglądarka/serwer widzi inną wersję niż
+zapisana (cache `?v=25` albo bufor `StaticFiles`). Sprawdziłem: `?q=<timestamp>`
+nie pomógł; zrzut treści przez `fetch(..., {cache:'no-store'})` pokazał treść
+z nadmiarową `}`, której w pliku już nie ma. **Kolejny krok:** zrestartować
+serwer i wyczyścić cache przeglądarki w teście (`page.route` / nowy kontekst),
+albo podbić `ASSET_VERSION` w `app.js`.
+
+
 
 ---
 
