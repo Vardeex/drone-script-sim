@@ -127,8 +127,11 @@ class Executor:
         ``lr`` > 0 = **w prawo**, ``yaw`` > 0 = obrót **w prawo** (zgodnie z zegarem,
         tak rośnie ``get_yaw()``).
 
-        Kierunki: ``sample.yaw`` rośnie w lewo (CCW, jak w planie), a ``+Y`` to lewo,
-        więc oś „prawo” drona to ``(sin(yaw), -cos(yaw))``.
+        Kierunki: ``sample.yaw`` rośnie w lewo (CCW, jak w planie), a ``+Y`` to lewo:
+        oś nosa to ``(cos yaw, sin yaw)``, a oś „prawo” to nos obrócony w prawo,
+        czyli ``(sin yaw, -cos yaw)`` (dla yaw = 0 daje ``(0, -1)`` = -Y = prawo).
+        Dla lotu w -Y przy kursie 270° (CCW) wychodzi więc ``forward = +40``,
+        a dla kursu 0° z prędkością w -Y - ``right = +40``.
         """
         rad = math.radians(sample.yaw)
         cos_a = math.cos(rad)

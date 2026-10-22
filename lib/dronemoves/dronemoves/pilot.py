@@ -533,17 +533,14 @@ class Pilot:
              mode: str = "rc") -> Trajectory:
         """Przelot przez punkty względne ``[(x, y, z), ...]`` (spline albo łamana).
 
-        Pierwszy punkt bywa oddalony od drona (np. ``(80, 0, 0)``) - trajektoria
-        zaczyna się wtedy w punkcie ``(0, 0, z)`` (miejsce, gdzie dron jest),
-        żeby plan nie „teleportował” drona na start trasy.
+        Punkty są względne wobec pozycji drona - początek układu to miejsce,
+        w którym dron jest (także wysokość: ``z = 20`` znaczy 20 cm wyżej).
+        Punkt startu ``(0, 0, 0)`` doklejany jest w ``_path_planner``, żeby plan
+        nie „teleportował” drona na start trasy i nie zaczynał od razu na
+        docelowej wysokości. Trasa z jednym punktem też jest dozwolona.
         """
         label = f"path {len(points)} pkt"
-        first = tuple(float(v) for v in points[0])
-        start_z = first[2] if len(first) > 2 else 0.0
-        route = list(points)
-        if len(points) > 1 and (abs(first[0]) > 0.5 or abs(first[1]) > 0.5):
-            route = [(0.0, 0.0, start_z)] + [tuple(float(v) for v in p) for p in points]
-        return self._execute_mode(Maneuver("path", self._path_planner(route, smooth),
+        return self._execute_mode(Maneuver("path", self._path_planner(points, smooth),
                                            label=label), label, mode)
 
     # ------------------------------------------------------- planery (domknięcia)
@@ -607,8 +604,22 @@ class Pilot:
         return planner
 
     def _path_planner(self, points: Sequence[tuple], smooth: bool):
+        """Planer ``path``: punkty względne **wobec pozycji drona** (0, 0, 0).
+
+        Punkt startu dopisujemy zawsze jako ``(0, 0, 0)`` - dron jest tam, gdzie
+        jest, a jego wysokość względna to 0. Doklejamy go, gdy pierwszy punkt nie
+        leży w początku układu w **całej trzech osiach** (także ``z``): inaczej
+        plan zaczynał się od razu na docelowej wysokości i dron nigdy się do niej
+        nie wznosił (0.1.4 brało ``start_z`` z pierwszego punktu).
+        Trasa jedno-punktowa też jest dozwolona - po doklejeniu startu ma 2 punkty.
+        """
+        route = [tuple(float(v) for v in p) for p in points]
+        starts_at_origin = all(abs(v) <= 0.5 for v in route[0][:3])
+        if not starts_at_origin:
+            route = [(0.0, 0.0, 0.0)] + route
+
         def planner(*, limits, profile, speed):
-            return plan_path(points, smooth=smooth, limits=limits, profile=profile,
+            return plan_path(route, smooth=smooth, limits=limits, profile=profile,
                              speed=speed)
         return planner
 

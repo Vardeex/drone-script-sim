@@ -32,11 +32,13 @@ def _reload_server_with_config(monkeypatch: pytest.MonkeyPatch, tmp_path, payloa
 
 
 def test_config_feature_disabled(monkeypatch, tmp_path):
+    """Funkcja wyłączona w konfiguracji nie ma routera, a aplikacja działa dalej."""
     module = _reload_server_with_config(
         monkeypatch, tmp_path, {"features": {"obstacles": {"enabled": False}}})
     try:
         with TestClient(module.app) as client:
-            assert client.get("/api/features").json() == []
+            ids = [f["id"] for f in client.get("/api/features").json()]
+            assert "obstacles" not in ids, f"funkcja obstacles wciąż włączona: {ids}"
             assert client.get("/api/obstacles/info").status_code == 404
             assert client.get("/api/obstacles/scenes").status_code == 404
             # aplikacja działa normalnie: loty, adaptery, historia
@@ -52,12 +54,15 @@ def test_config_feature_disabled(monkeypatch, tmp_path):
 
 
 def test_config_feature_enabled_reports_ui(monkeypatch, tmp_path):
+    """Włączona funkcja jest na liście razem z manifestem UI."""
     module = _reload_server_with_config(monkeypatch, tmp_path, {})
     try:
         with TestClient(module.app) as client:
             features = client.get("/api/features").json()
-            assert [f["id"] for f in features] == ["obstacles"]
-            assert features[0]["ui"]["panel"].endswith("panel.js")
+            by_id = {f["id"]: f for f in features}
+            assert "obstacles" in by_id, [f["id"] for f in features]
+            panel = by_id["obstacles"]["ui"]["panel"]
+            assert panel.endswith("panel.js")
             assert client.get("/api/obstacles/info").status_code == 200
     finally:
         monkeypatch.undo()

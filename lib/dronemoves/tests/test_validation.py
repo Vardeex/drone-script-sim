@@ -45,8 +45,11 @@ def test_spiral_rejects_exceeding_height():
 
 
 def test_path_requires_two_points():
-    with pytest.raises(PathError):
-        plan_path([(0, 0, 0)], limits=LIMITS, profile=PROFILE, speed=40)
+    """Od 0.1.5 jeden punkt jest dozwolony (doklejany start), pusta lista nie."""
+    traj = plan_path([(0, 0, 0)], limits=LIMITS, profile=PROFILE, speed=40)
+    assert len(traj.samples) > 1
+    with pytest.raises(PathError, match="co najmniej 1 punkt"):
+        plan_path([], limits=LIMITS, profile=PROFILE, speed=40)
 
 
 def test_slalom_rejects_zero_gates():

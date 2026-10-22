@@ -3,7 +3,34 @@
 Forma zgodna z [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/),
 wersjonowanie zgodne z [SemVer](https://semver.org/lang/pl/).
 
-## [0.1.4] - 2026-10-21
+## [0.1.5] - 2026-10-22
+
+### Naprawione
+
+- **`Pilot.path` zaczyna plan w miejscu drona, a nie na wysokości pierwszego
+  punktu.** Punkt startu dopisywany jest zawsze jako `(0, 0, 0)` (a nie
+  `(0, 0, start_z)`, gdzie `start_z` było wysokością pierwszego punktu), i to
+  tylko wtedy, gdy pierwszy punkt nie leży w początku układu w **całej trzech
+  osiach**. Wcześniej `path([(120, 0, 20), (120, 150, 20)])` zaczynał się na
+  wysokości 20 cm, więc dron nigdy się nie wznosił: symulator trzymał 80 cm
+  (wysokość po `takeoff`) zamiast 100 cm. Teraz plan wznosi się poprawnie.
+- Ta sama poprawka działa dla `ManeuverCollection.path` (wspólny `_path_planner`).
+
+### Zmienione
+
+- **`path` z jednym punktem jest dozwolony** (po doklejeniu startu ma 2 punkty):
+  `plan_path([])` nadal rzuca `PathError`, ale `plan_path([(100, 0, 50)])`
+  planuje lot do tego punktu.
+
+### Znane problemy
+
+- `path`, którego pierwszy odcinek nie jest zgodny z kursem drona, jest wciąż
+  realizowany „prosto przed siebie” (symulator startuje z kursem 0° i plan nie
+  ustawia kursu na starcie manewru). Szczegóły i pomiary:
+  `KNOWN_ISSUES.md` w repozytorium symulatora (KI-1). Obejście: obrót przed
+  `path` (`rotate_*`) - gdy dron jest fizycznie obrócony, tor jest poprawny
+  (zmierzone: kurs 90° → lot w −Y, kurs 180° → lot w −X).
+
 
 **Przywrócono konwencję Tello w publicznym API: dodatni kąt = skręt w PRAWO.**
 

@@ -460,10 +460,15 @@ def plan_path(points: Sequence[Point], *, limits: PlanLimits,
 
     ``smooth=True``: gladka krzywa (spline Catmulla-Roma) przez punkty;
     ``smooth=False``: lamana z rozpedzaniem/hamowaniem na kazdym odcinku.
+
+    Jeden punkt jest dozwolony: ``Pilot.path`` dokleja start ``(0, 0, 0)``,
+    a wywołanie planera wprost z jednym punktem planuje lot do tego punktu.
     """
-    if len(points) < 2:
-        raise PathError("path wymaga co najmniej 2 punktow")
     pts = [(float(x), float(y), float(z)) for x, y, z in points]
+    if not pts:
+        raise PathError("path wymaga co najmniej 1 punktu")
+    if len(pts) == 1:
+        pts = [(0.0, 0.0, 0.0), pts[0]]
     if smooth:
         planar = _resample_by_arclength(
             _natural_spline_2d([(x, y) for x, y, _ in pts], samples_per_segment=20), 800)
