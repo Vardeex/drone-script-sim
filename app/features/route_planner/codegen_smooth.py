@@ -139,7 +139,6 @@ def generate(route: Route) -> str:
     ])
     lines.extend(battery_check())
     lines.extend([
-        "    tello.takeoff()            # wznosi się na 80 cm",
         f"    pilot = Pilot(tello, speed={num(speed)}, max_height_cm=500,"
         f" max_radius_cm={num(MAX_RADIUS_CM)})",
         "    yaw = 0.0   # kurs nosa w konwencji Tello (+ = w prawo)",

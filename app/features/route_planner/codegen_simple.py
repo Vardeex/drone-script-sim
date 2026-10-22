@@ -261,6 +261,7 @@ def generate(route: Route) -> str:
         "import time",
         "",
         "from djitellopy import Tello",
+        "from dronemoves.safety import safe_start",
         "",
         route_block(route, "simple"),
         "",
@@ -271,7 +272,6 @@ def generate(route: Route) -> str:
     ]
     lines.extend(battery_check())
     lines.extend([
-        "    tello.takeoff()            # wznosi się na 80 cm",
         f"    tello.set_speed({int(round(route.default_speed))})"
         f"   # prędkość domyślna",
         "    yaw = 0.0   # kurs nosa w konwencji Tello (+ = w prawo)",

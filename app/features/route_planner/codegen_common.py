@@ -20,13 +20,15 @@ def docstring(title: str, extra: List[str]) -> List[str]:
 
 
 def battery_check() -> List[str]:
-    """Sprawdzenie baterii przed startem (bez startu przy zbyt niskim poziomie)."""
+    """Start przez ``safe_start``: preflight (bateria, temperatura, Wi-Fi) + takeoff.
+
+    ``safe_start`` z biblioteki dronemoves sprawdza drona przed startem i rzuca
+    ``PreflightError`` (np. bateria < 50 % albo dron w powietrzu), więc skrypt
+    nie startuje w niebezpiecznych warunkach.
+    """
     return [
-        "    # 1. Bateria - przy zbyt niskim poziomie nie startujemy",
-        "    battery = tello.get_battery()",
-        '    print(f"Bateria: {battery}%")',
-        "    if battery < 30:",
-        '        raise SystemExit("Za niska bateria - start przerwany.")',
+        "    # 1. Preflight + start (bateria, temperatura, Wi-Fi, dron na ziemi)",
+        "    safe_start(tello)",
     ]
 
 
@@ -44,4 +46,5 @@ def header(route: Route, mode: str, title: str) -> List[str]:
         ["Wygenerowane przez DroneSim - Planer trasy.", "",
          "Układ: x = przód, y = lewo, z = góra (cm), start w (0, 0, 0).",
          "Kurs nosa w konwencji Tello: dodatni = w prawo."],
-        ["from djitellopy import Tello", "from dronemoves import Pilot"])
+        ["from djitellopy import Tello", "from dronemoves import Pilot",
+         "from dronemoves.safety import safe_start"])

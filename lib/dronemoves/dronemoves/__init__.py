@@ -20,12 +20,15 @@ from __future__ import annotations
 from .calibration import CalibrationProfile, TELLO_PROFILE, load_profile, save_profile
 from .executor import Executor
 from .pilot import Maneuver, ManeuverCollection, Pilot, ManeuverError, SafetyError
+from .safety import (Check, Geofence, PreflightError, PreflightReport, preflight,
+                     safe_start)
 from .trajectory import Trajectory
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "CalibrationProfile", "TELLO_PROFILE", "load_profile", "save_profile",
     "Executor", "Maneuver", "ManeuverCollection", "Pilot", "ManeuverError", "SafetyError",
+    "Check", "Geofence", "PreflightError", "PreflightReport", "preflight", "safe_start",
     "Trajectory", "__version__",
 ]

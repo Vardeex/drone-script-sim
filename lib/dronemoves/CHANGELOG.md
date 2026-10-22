@@ -3,6 +3,38 @@
 Forma zgodna z [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/),
 wersjonowanie zgodne z [SemVer](https://semver.org/lang/pl/).
 
+## [0.2.0] - 2026-10-22
+
+### Dodane
+
+- **`preflight(drone, ...)` i `Pilot.preflight()`** - raport przedstartowy:
+  bateria (błąd < 50 %, ostrzeżenie < 60 %), temperatura
+  (`get_highest_temperature`; błąd >= 80 °C, ostrzeżenie >= 70 °C), Wi-Fi
+  (`query_wifi_signal_noise_ratio`; brak odczytu = tylko ostrzeżenie), czy dron
+  odpowiada (`query_sdk_version`), czy stoi na ziemi (`get_height` <= 20 cm)
+  i czy szacowany czas trasy mieści się w baterii.
+- **`safe_start(drone, pilot=..., confirm=..., countdown_s=...)`** - preflight,
+  opcjonalne potwierdzenie z klawiatury i odliczanie, `takeoff` i sprawdzenie,
+  czy dron faktycznie się wzniósł. Przy błędzie preflight rzuca
+  `PreflightError` i **nie startuje**.
+- **`Pilot.return_home()`** - powrót do punktu startu po szacowanej pozycji.
+- **`Pilot.watch_battery(min_pct=20, action="return_home"|"land")`** - nadzór
+  baterii w tle; po spadku poniżej progu przerywa lot, wraca i ląduje.
+- **`Pilot.safe_land()`** - zatrzymanie ruchu, zawis i lądowanie z obsługą błędów.
+- **Geofence** (`Pilot.set_geofence`, `dronemoves.Geofence`) - wysokość,
+  odległość od startu i opcjonalny prostokąt X/Y; sprawdzany **przed każdym
+  manewrem** na całej zaplanowanej trajektorii (`SafetyError`).
+- Eksport `Check`, `PreflightError`, `PreflightReport`, `preflight`, `safe_start`,
+  `Geofence` z pakietu.
+- Przykłady `examples/preflight_demo.py` i `examples/waypoint_demo.py`.
+
+### Naprawione
+
+- **`circle(face="center")` i `circle(face="fixed")` działają zgodnie z opisem.**
+  Wcześniej oba parametr ignorowały i zawsze leciały nosem po torze
+  (`tangent`). `center` obraca nos w stronę środka okręgu, `fixed` zostawia
+  kurs startowy.
+
 ## [0.1.5] - 2026-10-22
 
 ### Naprawione

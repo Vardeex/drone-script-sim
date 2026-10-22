@@ -138,6 +138,12 @@ class Settings:
     max_sim_time: float = 3600.0
     #: maksymalna wysokość (cm) - limit drona wynika z adaptera
     max_height_cm: float = 500.0
+    #: bateria startowa [%] - do testowania preflight i nadzoru baterii
+    start_battery: float = 100.0
+    #: temperatura drona (`temph`) [°C] - do testowania preflight
+    start_temperature_c: float = 40.0
+    #: SNR Wi-Fi [dB] (odczyt `query_wifi_signal_noise_ratio`)
+    wifi_snr_db: int = 60
 
 
 @dataclass
@@ -340,7 +346,7 @@ class Simulation:
         self.yaw: float = 0.0
         self.velocity: Vec3 = (0.0, 0.0, 0.0)
         self.speed: int = int(self.settings.default_speed)
-        self.battery: float = 100.0
+        self.battery: float = float(self.settings.start_battery)
         self.state: str = STATE_IDLE
 
         # zegar

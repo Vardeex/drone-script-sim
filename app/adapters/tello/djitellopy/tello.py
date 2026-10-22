@@ -170,10 +170,30 @@ class Tello:
         return self._ctrl.get_temperature()
 
     def get_lowest_temperature(self) -> int:
-        return self._ctrl.get_temperature()
+        return self._ctrl.get_lowest_temperature()
 
     def get_highest_temperature(self) -> int:
-        return self._ctrl.get_temperature()
+        return self._ctrl.get_highest_temperature()
+
+    def query_wifi_signal_noise_ratio(self) -> int:
+        return self._ctrl.query_wifi_signal_noise_ratio()
+
+    def query_sdk_version(self) -> str:
+        return self._ctrl.query_sdk_version()
+
+    def set_sim_settings(self, **values: Any) -> None:
+        """Ustaw parametry symulatora (bateria startowa, temperatura, Wi-Fi).
+
+        Przyjmuje ``battery`` (bateria *bieżąca* i startowa), ``temperature``
+        i ``wifi_snr_db``. Na prawdziwym Tello metoda nie istnieje.
+        """
+        settings = self._ctrl.sim.settings
+        for key, value in values.items():
+            if key == "battery":
+                self._ctrl.sim.battery = float(value)
+                settings.start_battery = float(value)
+            elif hasattr(settings, key):
+                setattr(settings, key, value)
 
     def get_baro(self) -> float:
         return 0.0

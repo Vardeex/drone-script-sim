@@ -349,7 +349,27 @@ class TelloController:
         return self._read("get_flight_time", int(round(self.sim.flight_time)))
 
     def get_temperature(self) -> int:
-        return self._read("get_temperature", 40)  # założenie: stała temperatura
+        return self._read("get_temperature", int(round(self.sim_temperature())))
+
+    def get_highest_temperature(self) -> int:
+        """Najwyższa temperatura (``temph``) - z ustawień symulatora."""
+        return self._read("get_highest_temperature", int(round(self.sim_temperature())))
+
+    def get_lowest_temperature(self) -> int:
+        return self._read("get_lowest_temperature",
+                          max(int(round(self.sim_temperature())) - 4, 0))
+
+    def query_wifi_signal_noise_ratio(self) -> int:
+        """SNR Wi-Fi [dB] - z ustawień symulatora (do testów preflight)."""
+        return self._read("query_wifi_signal_noise_ratio",
+                          int(self.sim.settings.wifi_snr_db))
+
+    def query_sdk_version(self) -> str:
+        return self._read("query_sdk_version", "30")
+
+    def sim_temperature(self) -> float:
+        """Temperatura ustawiona w symulatorze [°C]."""
+        return float(self.sim.settings.start_temperature_c)
 
     def get_frame_read(self) -> "FrameReader":
         self._read("get_frame_read", None)

@@ -145,6 +145,80 @@ włączyć kanał dokładnych prędkości — działa tylko z mockiem symulatora
 pilot = Pilot(tello, speed=35, sim_exact=True)   # tylko diagnostyka!
 ```
 
+## Bezpieczeństwo (0.2.0)
+
+Biblioteka nie każe startować „w ciemno”. Przed lotem sprawdź drona, a potem
+użyj `safe_start`, który **nie wystartuje**, jeśli preflight znajdzie błąd:
+
+```python
+from djitellopy import Tello
+from dronemoves import Pilot, PreflightError, preflight, safe_start
+
+tello = Tello()
+tello.connect()
+
+print(preflight(tello, plan_eta_s=120))     # raport OK / OSTRZEŻENIE / BŁĄD
+
+pilot = Pilot(tello, speed=40)
+try:
+    safe_start(tello, pilot=pilot, confirm=True, countdown_s=3)
+except PreflightError as exc:
+    print("Start wstrzymany:", exc)
+```
+
+### Progi preflight (założenia)
+
+| Test | Błąd (nie startuj) | Ostrzeżenie |
+|---|---|---|
+| Bateria | < 50 % | < 60 % |
+| Temperatura (`get_highest_temperature`, °C) | >= 80 | >= 70 |
+| Wi-Fi (`query_wifi_signal_noise_ratio`, dB) | - | < 10 dB; brak odczytu też tylko ostrzeżenie |
+| Dron odpowiada (`query_sdk_version`) | - | brak odpowiedzi |
+| Dron na ziemi (`get_height`) | > 20 cm | - |
+| Czas trasy vs bateria (opcjonalnie) | - | plan > `(bateria-10)*10 s - 60 s` |
+
+Temperatura: Tello raportuje `temph` (najwyższa) z telemetrii; 80 °C to górna
+granica pracy bez ryzyka przegrzania, 70 °C - sygnał, żeby dać dronowi
+ostygnąć. Po `safe_start` sprawdzamy `get_height()` - brak wzniesienia daje
+ostrzeżenie w raporcie.
+
+### Pozostałe narzędzia
+
+```python
+pil.set_geofence(max_height_cm=250, max_radius_cm=300,
+                 box_cm=(-200, 200, -200, 200))   # każdy manewr sprawdzany z góry
+pil.watch_battery(min_pct=25, action="return_home")  # nadzór w tle
+pil.return_home()                                   # powrót po szacowanej pozycji
+pil.safe_land()                                     # stop, zawis, lądowanie
+```
+
+* **Geofence** - przed każdym manewrem sprawdzana jest cała zaplanowana
+  trajektoria (wysokość nad ziemią, odległość od startu, opcjonalny prostokąt
+  X/Y). Naruszenie = `SafetyError`, manewr się nie wykonuje.
+* **`watch_battery`** - wątek w tle; po spadku poniżej progu przerywa lot,
+  wraca do startu (albo tylko ląduje) i kończy pracę.
+* **`return_home`** - lot do `(0, 0)` po szacowanej pozycji pilota; w
+  symulatorze wraca w granicach kilku centymetrów.
+
+### `circle(face=...)`
+
+```python
+pil.circle(radius=100, direction="right", face="center")  # nos w środek okręgu
+pil.circle(radius=100, direction="right", face="fixed")   # nos bez zmian
+```
+
+`tangent` (domyślnie) prowadzi nos po torze, `center` obraca go w stronę
+środka okręgu, a `fixed` zostawia kurs startowy. Wcześniej oba działały jak
+`tangent`.
+
+### Symulator: ustawienia do testów preflight
+
+```python
+tello.set_sim_settings(battery=30, start_temperature_c=85, wifi_snr_db=5)
+```
+
+Działa tylko w symulatorze (mock) - na prawdziwym Tello metoda nie istnieje.
+
 ## Tryb `rc` vs `native`
 
 * **`rc`** (domyślnie) — biblioteka wysyła `send_rc_control` 20 Hz według

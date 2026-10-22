@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import math
 import threading
+import time
 from typing import Any, List, Optional, Sequence, Union
 
 from .backends.base import MotionBackend
@@ -242,6 +243,10 @@ class Pilot:
         self._lock = threading.Lock()
         #: czas lotu zrealizowany przez pilota [s] (do planu w symulatorze)
         self.flight_time = 0.0
+        #: geofence (None = brak; sprawdzany przed każdym manewrem)
+        self.geofence = None
+        #: znacznik zatrzymania nadzoru baterii (``watch_battery``)
+        self._watch_stop = threading.Event()
 
     # ------------------------------------------------------------------ stan
     def _read_height(self) -> Optional[float]:
@@ -264,6 +269,89 @@ class Pilot:
     def ground_height(self) -> float:
         """Wysokość nad ziemią [cm] (wysokość drona odczytana przy starcie + zmiana)."""
         return self._home_z + self.z
+
+    # ------------------------------------------------------------ bezpieczeństwo
+    def preflight(self, **options: Any):
+        """Raport przedstartowy (bateria, temperatura, Wi-Fi, ziemia, czas trasy).
+
+        Nie startuje drona - patrz ``dronemoves.safe_start``.
+        """
+        from .safety import preflight as run_preflight
+
+        return run_preflight(self.drone or self.backend,
+                             plan_eta_s=options.pop("plan_eta_s", None), **options)
+
+    def set_geofence(self, max_height_cm: Optional[float] = None,
+                     max_radius_cm: Optional[float] = None,
+                     box_cm: Optional[tuple] = None) -> None:
+        """Ustaw granice rejonu (``None`` = bez zmian); sprawdzane przed manewrem."""
+        from .safety import Geofence
+
+        self.geofence = Geofence(
+            max_height_cm=max_height_cm if max_height_cm is not None
+            else self.limits.max_height_cm,
+            max_radius_cm=max_radius_cm if max_radius_cm is not None
+            else self.limits.max_radius_from_start_cm,
+            box_cm=box_cm,
+        )
+
+    def return_home(self, speed: Optional[float] = None) -> "Trajectory":
+        """Wróć do punktu startu po szacowanej pozycji (x, y i wysokość startu).
+
+        Lot odbywa się przez ``path`` (relatywne punkty), więc działa też na
+        prawdziwym Tello; kurs nosa ustawiany przez ``path`` (po torze).
+        """
+        target = (-self.x, -self.y, -self.z)
+        distance = (target[0] ** 2 + target[1] ** 2) ** 0.5
+        if distance < 5.0 and abs(target[2]) < 5.0:
+            return Trajectory(label="return_home")
+        previous = self.speed
+        if speed:
+            self.speed = float(speed)
+        try:
+            return self._execute_mode(
+                Maneuver("path", self._path_planner([target], smooth=False),
+                         label="return_home"), "return_home", "rc")
+        finally:
+            self.speed = previous
+
+    def safe_land(self) -> None:
+        """Zatrzymaj ruch, zawieś na chwilę i wyląduj (błędy nie przerywają akcji)."""
+        self.emergency_stop()
+        time.sleep(0.2)
+        self.emergency_stop()
+        self._safe_land()
+
+    def watch_battery(self, min_pct: int = 20,
+                      action: str = "return_home",
+                      interval_s: float = 1.0) -> Optional["threading.Thread"]:
+        """Nadzór nad baterią w tle: po spadku poniżej ``min_pct`` wykonaj akcję.
+
+        :param action: ``"return_home"`` (powrót i lądowanie) albo ``"land"``
+        :returns: wątek nadzorczy (zakończy się sam po zadziałaniu)
+        """
+        if action not in ("return_home", "land"):
+            raise ValueError("action musi być 'return_home' albo 'land'")
+        self._watch_stop = threading.Event()
+
+        def loop() -> None:
+            while not self._watch_stop.is_set():
+                battery = self._read_battery()
+                if battery is not None and battery < min_pct:
+                    print(f"[watchdog] Bateria {battery}% < {min_pct}% - {action}")
+                    try:
+                        if action == "return_home":
+                            self.executor.stop()
+                            self.return_home()
+                    finally:
+                        self.safe_land()
+                    return
+                self._watch_stop.wait(max(interval_s, 0.1))
+
+        thread = threading.Thread(target=loop, name="dronemoves-watch-battery",
+                                  daemon=True)
+        thread.start()
+        return thread
 
 
     # ------------------------------------------------------- kontekst / awarie
@@ -407,6 +495,13 @@ class Pilot:
                 f"(limit {self.limits.max_radius_from_start_cm:.0f} cm)."
             )
 
+    def _check_geofence(self, traj: "Trajectory", label: str) -> None:
+        """Sprawdź cały plan manewru względem geofence (przed lotem)."""
+        if self.geofence is None:
+            return
+        for sample in traj.samples:
+            self.geofence.check(sample.x, sample.y, self._home_z + sample.z)
+
     # ------------------------------------------------------------- wykonanie
     def _execute(self, maneuver: "ManeuverLike", label: str) -> Trajectory:
         """Zaplanuj i wykonaj manewr, aktualizując pozycję; zwróć trajektorię."""
@@ -416,6 +511,7 @@ class Pilot:
             if not traj.samples:  # np. pusta sekwencja - nic do wykonania
                 return traj
             self._check_battery(label, traj.duration)
+            self._check_geofence(traj, label)
             self._check_radius(traj.samples[-1].x, traj.samples[-1].y, label)
             self._record_plan(traj)
             self.backend.annotate(f"start: {label}")

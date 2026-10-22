@@ -237,16 +237,48 @@ def plan_circle(radius_cm: float, *, direction: str = "right", face: str = "tang
 
     :param direction: ``right`` (zgodnie z ruchem wskazówek) lub ``left``
     :param face: ``tangent`` (nos wzdłuż toru), ``center`` (nos w środek),
-        ``fixed`` (nos bez zmian)
+        ``fixed`` (nos bez zmian - kurs startowy, czyli 0°)
+
+    Kurs liczymy w konwencji planera (CCW+, w lewo dodatni): dron startuje
+    w punkcie ``(0, 0)``, środek okręgu jest w ``(0, -r)`` przy skręcie w prawo
+    i ``(0, +r)`` przy skręcie w lewo, a nos obraca się o ``±angle``.
     """
     if direction not in ("right", "left"):
         raise PathError("direction musi być 'right' albo 'left'")
     if face not in ("tangent", "center", "fixed"):
         raise PathError("face musi być 'tangent', 'center' albo 'fixed'")
-    sign = 1 if direction == "left" else -1
-    text = label or f"circle r={radius_cm:.0f} {direction}"
-    return plan_turn(360.0, radius_cm, side=sign, limits=limits, profile=profile,
-                     speed=speed, label=text)
+    if face == "tangent":
+        sign = 1 if direction == "left" else -1
+        text = label or f"circle r={radius_cm:.0f} {direction}"
+        return plan_turn(360.0, radius_cm, side=sign, limits=limits, profile=profile,
+                         speed=speed, label=text)
+
+    radius = float(radius_cm)
+    if radius <= 0:
+        raise PathError("Promień okręgu musi być dodatni.")
+    turn = 1.0 if direction == "left" else -1.0
+    # układ: +X przód, +Y lewo. Przy skręcie w prawo środek leży po prawej
+    # stronie nosa, czyli w -Y (turn = -1 -> center_y = -r); przy skręcie w lewo w +Y.
+    center_y = radius * turn
+    text = label or f"circle r={radius:.0f} {direction} ({face})"
+    builder = TrajectoryBuilder(limits, profile)
+
+    def curve(s: float) -> Tuple[float, float, float, float]:
+        angle = turn * 2 * math.pi * s
+        cos_a, sin_a = math.cos(angle), math.sin(angle)
+        x = radius * sin_a
+        y = center_y * (1.0 - cos_a)
+        if face == "center":
+            yaw = math.degrees(math.atan2(center_y - y, 0.0 - x))
+        else:                                   # "fixed" - kurs bez zmian
+            yaw = 0.0
+        return (x, y, 0.0, yaw)
+
+    builder.curve(curve, 2 * math.pi * radius, speed, smooth_yaw=(face == "center"))
+    traj = builder.finish(text, meta={"radius": radius, "direction": direction,
+                                      "face": face})
+    _check_limits(traj, limits, check_height=True)
+    return traj
 
 
 # ------------------------------------------------------------------ walidacja
