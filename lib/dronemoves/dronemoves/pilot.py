@@ -236,7 +236,12 @@ class Pilot:
         self.x = 0.0
         self.y = 0.0
         self.z = 0.0
-        # kurs wewnętrzny (CCW+, planer) - API wystawia `yaw` w konwencji Tello (CW+)
+        # kurs wewnętrzny (CCW+, planer) - API wystawia `yaw` w konwencji Tello (CW+).
+        # Układ pilota: 0 = kurs w chwili utworzenia pilota. Bierzemy go z drona,
+        # bo przed `Pilot` mogło już polecieć `rotate_*`; różnica trafia do
+        # `_yaw_offset`, żeby przeliczać rzeczywisty kurs na układ pilota.
+        reported = self._read_raw_api_yaw()
+        self._yaw_offset = 0.0 if reported is None else reported
         self._yaw = 0.0
         self._home_z = self._read_height() or 0.0
         self._in_context = False
@@ -255,6 +260,38 @@ class Pilot:
         except Exception:
             return None
         return None if value is None else float(value)
+
+    def _read_raw_api_yaw(self) -> Optional[float]:
+        """Surowy kurs drona z backendu (konwencja API, CW+) albo ``None``."""
+        reader = getattr(self.backend, "get_yaw", None)
+        if not callable(reader):
+            return None
+        try:
+            api_yaw = reader()
+        except Exception:
+            return None
+        return None if api_yaw is None else float(api_yaw)
+
+    def _read_reported_yaw(self) -> Optional[float]:
+        """Rzeczywisty kurs drona z backendu, w układzie **pilota** (CCW+).
+
+        ``None``, gdy backend nie ma ``get_yaw`` (np. ``FakeDrone`` w testach) -
+        wtedy pilot pracuje w otwartej pętli, tak jak do 0.2.0.
+        """
+        reader = getattr(self.backend, "get_yaw", None)
+        if not callable(reader):
+            return None
+        try:
+            api_yaw = reader()
+        except Exception:
+            return None
+        if api_yaw is None:
+            return None
+        offset = getattr(self, "_yaw_offset", None)
+        if offset is None:
+            return None
+        delta = (-(float(api_yaw) - offset) + 180.0) % 360.0 - 180.0
+        return delta
 
     def _read_battery(self) -> Optional[int]:
         try:
@@ -526,7 +563,11 @@ class Pilot:
             finally:
                 self.backend.annotate(f"end: {label}")
             last = traj.samples[-1]
-            self.x, self.y, self.z, self._yaw = last.x, last.y, last.z, last.yaw % 360.0
+            # kurs bierzemy z drona (rzeczywisty), jeśli backend go udostępnia;
+            # plan bywa o kilka stopni optymistyczny (KI-1) - inaczej błąd narasta
+            actual = self._read_reported_yaw()
+            self.x, self.y, self.z = last.x, last.y, last.z
+            self._yaw = actual if actual is not None else last.yaw % 360.0
             self.flight_time += traj.duration
             return traj
 
@@ -703,16 +744,30 @@ class Pilot:
         return planner
 
     def _path_planner(self, points: Sequence[tuple], smooth: bool):
-        """Planer ``path``: punkty względne **wobec pozycji drona** (0, 0, 0).
+        """Planer ``path``: punkty **względne wobec pozycji i kursu drona**.
 
-        Punkt startu dopisujemy zawsze jako ``(0, 0, 0)`` - dron jest tam, gdzie
-        jest, a jego wysokość względna to 0. Doklejamy go, gdy pierwszy punkt nie
-        leży w początku układu w **całej trzech osiach** (także ``z``): inaczej
-        plan zaczynał się od razu na docelowej wysokości i dron nigdy się do niej
-        nie wznosił (0.1.4 brało ``start_z`` z pierwszego punktu).
-        Trasa jedno-punktowa też jest dozwolona - po doklejeniu startu ma 2 punkty.
+        ``path`` przyjmuje punkty w układzie nosa (``x`` = przód, ``y`` = lewo),
+        a planer liczy w układzie pilota (0 = kurs z chwili utworzenia pilota).
+        Dlatego punkty obracamy o bieżący kurs pilota (``_yaw``, CCW+), a obrót
+        w miejscu do kursu pierwszego odcinka robi ``plan_path`` (KI-1).
+
+        Punkt startu ``(0, 0, 0)`` dopisujemy, gdy pierwszy punkt nie leży
+        w początku układu w całej trzech osiach (także ``z``) - inaczej plan
+        zaczynałby się na docelowej wysokości (0.1.4). Jeden punkt jest dozwolony.
         """
-        route = [tuple(float(v) for v in p) for p in points]
+        turn = self._yaw                              # CCW+ w układzie pilota
+        reported = self._read_raw_api_yaw()
+        # Kurs drona względem układu pilota: 0 = kurs z chwili tworzenia pilota.
+        # To on wyznacza, jak obrócić punkty podane w układzie nosa.
+        if reported is not None:
+            turn = (-(reported - self._yaw_offset) + 180.0) % 360.0 - 180.0
+        cos_a, sin_a = math.cos(math.radians(turn)), math.sin(math.radians(turn))
+        route = []
+        for point in points:
+            x, y = float(point[0]), float(point[1])
+            z = float(point[2]) if len(point) > 2 else 0.0
+            # układ nosa -> układ pilota
+            route.append((x * cos_a - y * sin_a, x * sin_a + y * cos_a, z))
         starts_at_origin = all(abs(v) <= 0.5 for v in route[0][:3])
         if not starts_at_origin:
             route = [(0.0, 0.0, 0.0)] + route

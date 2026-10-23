@@ -78,4 +78,36 @@ końcu pliku (linia 235) maskowała błąd przed sprawdzaniem składni, a różn
 pliku; etykiety punktów zmniejszone do ~34 x 13 cm.
 **Test regresyjny:** `tests/test_route_planner_browser.py` (Playwright) -
 `createLayer` zwraca obiekt z metodami, klik na podłożu dodaje punkt, w scenie
+
+---
+
+## KI-4: `Pilot` utworzony po `rotate_*` traktuje bieżący kurs jako „0” (otwarte)
+
+**Stan po 0.2.1 (częściowa poprawka KI-1).** `plan_path` obraca w miejscu do kursu
+pierwszego odcinka, a `return_home` liczy wektor w układzie nosa - powrót
+**działa**, gdy pilot był utworzony przed obrotami:
+
+| Scenariusz | Wynik w symulatorze | Oczekiwane |
+|---|---|---|
+| forward(150) → turn(90,60) → forward(100) → return_home | **(-1.5, -1.2)** | (0, 0) ±10 cm |
+| forward(100) + return_home (kurs 0°) | (0, 0) | (0, 0) |
+| `path` w bok (wymaga obrotu 90°) - kurs nosa | 90° ±3° | - |
+
+**Pozostaje:** gdy `Pilot` powstaje **po** `rotate_clockwise(90)`/`rotate_*`,
+pilot uznaje bieżący kurs drona za swoje „0” (`_yaw_offset`), więc `path`
+w układzie nosa idzie w +X układu pilota. Zmierzone: `rotate_clockwise(90)` +
+`path([(100,0,0)])` kończy w `(100, 1)` zamiast `(0, -100)` ±10 cm.
+
+**Dwa możliwe kontrakty (do decyzji):**
+1. *Układ pilota = kurs przy tworzeniu* (dziś): `path` „przód” = tam, gdzie dron
+   patrzy w chwili utworzenia pilota, nawet po `rotate_*` przed pilotem.
+2. *Układ pilota = kurs 0 świata*: pilot czyta kurs i obraca punkty tak, że
+   `path([(100,0,0)])` zawsze znaczy „100 cm tam, gdzie dron patrzy teraz”.
+
+**Co sprawdziłem:** `_yaw_offset` = 90 po `rotate_clockwise(90)` (poprawnie),
+`_path_planner` obraca o `turn = 0` (pilot startuje w tym kursie), a `plan_path`
+dokłada obrót w miejscu (widoczne w planie: yaw 91° zamiast 90°).
+Testy `tests/test_dronemoves_heading.py`: 6 z 10 przechodzi, 4 czekają na
+decyzję o kontrakcie.
+
 jest grupa `route-planner` z markerami.

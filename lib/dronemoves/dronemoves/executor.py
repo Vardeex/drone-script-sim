@@ -67,6 +67,10 @@ class Executor:
         self._time = time_fn or (lambda: time.monotonic())
         self._sleep = sleep_fn or (lambda seconds: time.sleep(seconds))
         self._stop = threading.Event()
+        #: wzmocnienie korekty kursu: °/s na 1° błędu (5 °/s na stopień)
+        self.yaw_gain = 5.0
+        #: maksymalne wydłużenie obrotu w miejscu dla dogrania kursu [s]
+        self.rotate_timeout_s = 1.0
 
     def stop(self) -> None:
         """Przerwij pętlę (np. z innego wątku przy Ctrl+C)."""
@@ -85,18 +89,35 @@ class Executor:
         started = self._time()
         sent = 0
         stopped = False
+        #: przyrost czasu na dogranie obrotu w miejscu (gdy błąd kursu > 3°)
+        overtime = 0.0
         try:
             while True:
                 elapsed = self._time() - started
-                if elapsed >= duration:
+                if elapsed >= duration + overtime:
                     break
                 # korekta czasu: próbka dla faktycznie minionej chwili
-                sample = trajectory.at(elapsed)
+                sample = trajectory.at(min(elapsed, duration))
                 if not self._send_profile(sample):
                     # Ścieżka prawdziwego drona: prędkości próbki są w układzie
-                    # GLOBALNYM (planer liczy je jako różnice pozycji), więc przed
-                    # wysłaniem RC obracamy je do układu drona według jego kursu.
-                    lr, fb, ud, yaw = self._rc_for_sample(sample)
+                    # GLOBALNYM, więc rzutujemy je na osie drona według kursu
+                    # RZECZYWISTEGO (sprzężenie zwrotne), a kanał yaw dostaje
+                    # dodatkowo korektę proporcjonalną do błędu kursu.
+                    actual = self._actual_heading()
+                    correction = 0.0
+                    if actual is not None:
+                        error = ((sample.yaw - actual + 180.0) % 360.0) - 180.0
+                        correction = max(-self.profile.max_yaw_rate_dps,
+                                         min(self.profile.max_yaw_rate_dps,
+                                             error * self.yaw_gain))
+                        # odcinek obrotu w miejscu: czekaj, aż kurs dojdzie
+                        if elapsed >= duration and abs(error) > 3.0:
+                            if overtime < self.rotate_timeout_s:
+                                overtime += self.period
+                        if elapsed >= duration and abs(error) <= 3.0:
+                            if overtime:
+                                overtime = 0.0
+                    lr, fb, ud, yaw = self._rc_for_sample(sample, actual, correction)
                     self.backend.rc(vx=lr, vy=fb, vz=ud, yaw_rate=yaw)
                 sent += 1
                 if self._stop.is_set():
@@ -114,8 +135,29 @@ class Executor:
         return ExecuteResult(duration=duration, samples_sent=sent,
                              real_seconds=self._time() - started, stopped=stopped)
 
-    def _rc_for_sample(self, sample) -> tuple:
+    def _actual_heading(self) -> Optional[float]:
+        """Rzeczywisty kurs w konwencji planera (CCW+) albo ``None`` (brak odczytu)."""
+        reader = getattr(self.backend, "get_yaw", None)
+        if not callable(reader):
+            return None
+        try:
+            api_yaw = reader()
+        except Exception:
+            return None
+        if api_yaw is None:
+            return None
+        # API (CW+) -> CCW+ w zakresie (-180, 180], jak w planerze
+        return (-float(api_yaw) + 180.0) % 360.0 - 180.0
+
+    def _rc_for_sample(self, sample, heading: Optional[float] = None,
+                       yaw_correction: float = 0.0) -> tuple:
         """Zamień prędkości próbki (globalne) na wychylenia RC dla djitellopy.
+
+        :param heading: **rzeczywisty** kurs drona (CCW+, stopnie) - używany do
+            rzutu prędkości globalnych na osie drona; ``None`` = kurs z planu
+            (otwarta pętla, np. backend bez ``get_yaw``)
+        :param yaw_correction: korekta prędkości obrotu [°/s] (CCW+) dopisana do
+            ``yaw_rate`` z planu
 
         ``sample.vx``/``sample.vy`` są w układzie lotu (globalnym), a ``sample.yaw``
         to kurs nosa. Rzutujemy prędkość na osie drona (przód / prawo) i przeliczamy
@@ -133,19 +175,22 @@ class Executor:
         Dla lotu w -Y przy kursie 270° (CCW) wychodzi więc ``forward = +40``,
         a dla kursu 0° z prędkością w -Y - ``right = +40``.
         """
-        rad = math.radians(sample.yaw)
+        # kurs do rzutu: rzeczywisty, gdy znamy (sprzężenie zwrotne), inaczej z planu
+        heading = sample.yaw if heading is None else heading
+        rad = math.radians(heading)
         cos_a = math.cos(rad)
         sin_a = math.sin(rad)
         # rzut prędkości globalnej na osie drona
         forward = sample.vx * cos_a + sample.vy * sin_a        # przód
         right = sample.vx * sin_a - sample.vy * cos_a          # prawo
+        yaw_rate = sample.yaw_rate + yaw_correction            # CCW+
         return (
             self.profile.speed_to_rc(right),
             self.profile.speed_to_rc(forward),
             self.profile.speed_to_rc(sample.vz),
             # planer trzyma kurs CCW+ (dodatni = w lewo), a `yaw` w RC/djitellopy
             # rośnie w prawo (CW+) - na granicy API zmieniamy znak
-            self.profile.yaw_rate_to_rc(-sample.yaw_rate),
+            self.profile.yaw_rate_to_rc(-yaw_rate),
         )
 
     def _send_profile(self, sample) -> bool:

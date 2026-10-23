@@ -105,9 +105,20 @@ def test_path_zanegowane_punkty_planowane_symetrycznie() -> None:
     assert math.dist((left.samples[-1].x, left.samples[-1].y), (0, 120)) <= 1.0
 
 
-@pytest.mark.xfail(reason="KI-1 w KNOWN_ISSUES.md: symulator nie realizuje kursu "
-                          "zaplanowanego na starcie manewru (dron startuje z yaw 0)",
-                   strict=True)
-def test_path_w_symulatorze_leci_w_strone_punktu() -> None:
-    """Lot do punktu po prawej (-Y) kończy po prawej, po lewej (+Y) - po lewej."""
-    pytest.fail("wymaga symulatora - pokryte przez tests/test_dronemoves_integration.py")
+def test_path_w_planie_leci_w_strone_punktu() -> None:
+    """Plan ``path`` zawiera obrót w miejscu do kursu odcinka (KI-1).
+
+    Dla punktu w ``-Y`` (prawo od nosa) plan musi mieć na początku próbki
+    z obrotem w miejscu (yaw zmienia się, pozycja stoi), a na końcu pozycję
+    ``(0, -120)``. Wcześniej plan „przeskakiwał” kurs (yaw 0 od razu).
+    """
+    traj = plan([(0, -120, 0)])
+    first = traj.samples[0]
+    # obrót w miejscu: pierwsze próbki mają pozycję (0, 0) i zmieniający się yaw
+    rotating = [s for s in traj.samples[:20] if abs(s.x) < 0.5 and abs(s.y) < 0.5]
+    assert rotating, "brak odcinka obrotu w miejscu"
+    assert abs(first.x) < 0.5 and abs(first.y) < 0.5
+    turn = [s.yaw for s in rotating]
+    assert max(turn) - min(turn) > 20, turn        # obrót naprawdę się odbywa
+    last = traj.samples[-1]
+    assert math.dist((last.x, last.y), (0, -120)) <= 2.0

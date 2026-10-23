@@ -120,6 +120,13 @@ class TelloBackend(BackendAdapter):
         return hasattr(self.drone, "curve_xyz_speed") and hasattr(self.drone, "go_xyz_speed")
 
     # --------------------------------------------------------------- odczyty
+    def get_yaw(self) -> Optional[float]:
+        """Rzeczywisty kurs nosa (konwencja API: CW+, stopnie)."""
+        try:
+            return float(self.drone.get_yaw())
+        except Exception:
+            return None
+
     def get_battery(self) -> Optional[int]:
         try:
             return int(self.drone.get_battery())

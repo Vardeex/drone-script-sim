@@ -32,9 +32,11 @@ LIMITS = {"simple": 5.0, "smooth": 15.0}
 # przekraczają 15 cm z powodu KNOWN_ISSUES KI-1 (path nie realizuje kursu
 # zaplanowanego na starcie manewru). Test NIE zmienia oczekiwań - jest xfail
 # z odnośnikiem do KNOWN_ISSUES.md, a UI pokazuje ostrzeżenie z odchyleniem.
+# Tryb „płynna” (eksperymentalny) ma udokumentowane odchylenia; trasy poniżej
+# nie spełniają jeszcze oczekiwań (KNOWN_ISSUES.md). Test NIE zmienia oczekiwań -
+# jest xfail z odnośnikiem, a UI pokazuje ostrzeżenie z odchyleniem.
 SMOOTH_KNOWN_ISSUE = {
-    "za plecami": "KI-1: pierwszy punkt leży 90° w prawo od nosa (path leci prosto)",
-    "obroty": "KI-1: kurs nosa w punkcie 3 po obrocie nie zgadza się (96.6° zamiast 270°)",
+    "obroty": "KI-4: kurs nosa po obrocie w punkcie (94° zamiast 270°)",
     "dluga 600 cm": "tryb „płynna” nie obsługuje powrotu do startu (RouteError)",
 }
 

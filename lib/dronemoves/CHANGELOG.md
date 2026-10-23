@@ -3,6 +3,40 @@
 Forma zgodna z [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/),
 wersjonowanie zgodne z [SemVer](https://semver.org/lang/pl/).
 
+## [0.2.1] - 2026-10-22
+
+> ⚠️ **0.2.0: `return_home` mógł odlecieć od startu - nie używać tej wersji
+> bezpieczeństwa (`return_home`, `watch_battery(action="return_home")`)
+> na prawdziwym dronie.** `return_home` wysyłał wektor do startu w układzie
+> świata, a `path` interpretuje punkty w układzie nosa, więc powrót skręcał
+> w złą stronę (pomiar: koniec w `(216, -423)` zamiast `(0, 0)`).
+> **Zaktualizuj do 0.2.1.**
+
+### Naprawione
+
+- **`path` obraca drona w miejscu do kursu pierwszego odcinka** (`plan_path`).
+  Wcześniej plan „przeskakiwał” kurs: dron leciał przodem, choć plan zakładał
+  inny kierunek (KI-1). Obrót jest pomijany, gdy różnica < 2°.
+- **`return_home` liczy wektor do startu w układzie nosa** drona, a nie świata.
+  Po trasie `forward(150)`, `turn(90, radius=60)`, `forward(100)` powrót kończy
+  w `(-1.5, -1.2)` cm od startu (było `(216, -423)`).
+- **`path` interpretuje punkty względem aktualnego kursu** (`_path_planner`
+  obraca je z układu nosa do układu pilota).
+- **`Pilot` czyta kurs przy tworzeniu** i po każdym manewrze bierze kurs
+  **rzeczywisty** (`get_yaw`), a nie z planu - błąd kursu nie narasta.
+- **`Executor`: sprzężenie zwrotne kursu.** Co takt czyta rzeczywisty kurs
+  (`MotionBackend.get_yaw`), rzutuje prędkości planu na osie drona według tego
+  kursu i dokłada do kanału yaw korektę proporcjonalną do błędu
+  (`yaw_gain = 5 °/s` na 1°, ograniczoną do `max_yaw_rate_dps`). Odcinek obrotu
+  w miejscu czeka, aż błąd kursu ≤ 3° (maks. +1 s). Backend bez `get_yaw`
+  działa w otwartej pętli, jak wcześniej.
+
+### Znane problemy
+
+- `Pilot` utworzony **po** `rotate_*` traktuje bieżący kurs jako swoje „0”,
+  więc `path` z punktem „przód” leci wtedy tam, gdzie dron patrzył
+  w chwili utworzenia pilota - patrz `KNOWN_ISSUES.md` (KI-4).
+
 ## [0.2.0] - 2026-10-22
 
 ### Dodane

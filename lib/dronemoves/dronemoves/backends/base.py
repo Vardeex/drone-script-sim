@@ -54,6 +54,15 @@ class MotionBackend(ABC):
         """Czy backend potrafi wykonywać manewry trybem ``native``?"""
         return False
 
+    # --------------------------------------------------- sprzężenie zwrotne kursu
+    def get_yaw(self) -> Optional[float]:
+        """Rzeczywisty kurs nosa w konwencji **API** (CW+, stopnie) albo ``None``.
+
+        ``None`` = brak odczytu; ``Executor`` pracuje wtedy w otwartej pętli
+        (kurs z planu), tak jak do 0.2.0.
+        """
+        return None
+
     # ------------------------------------------------------ integracja/UI
     def send_profile(self, vx_cm_s: float, vy_cm_s: float, v_up_cm_s: float,
                      yaw_rate_dps: float, world: bool = False,
