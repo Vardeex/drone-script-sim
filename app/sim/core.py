@@ -144,6 +144,8 @@ class Settings:
     start_temperature_c: float = 40.0
     #: SNR Wi-Fi [dB] (odczyt `query_wifi_signal_noise_ratio`)
     wifi_snr_db: int = 60
+    #: mnożnik zużycia baterii (tylko do testów: przyspiesza rozładowanie)
+    battery_drain_scale: float = 1.0
 
 
 @dataclass
@@ -457,7 +459,7 @@ class Simulation:
         duration = max(span.t1 - span.t0, 0.0)
         rate = self.settings.battery_drain_flight if span.state == STATE_AIRBORNE \
             else self.settings.battery_drain_idle
-        rate += extra_rate
+        rate = rate * self.settings.battery_drain_scale + extra_rate
         new_level = max(0.0, self.battery - rate * duration)
         span.battery0 = self.battery
         span.battery1 = new_level

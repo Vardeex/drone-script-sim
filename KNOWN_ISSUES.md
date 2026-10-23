@@ -81,60 +81,72 @@ pliku; etykiety punktów zmniejszone do ~34 x 13 cm.
 
 ---
 
-## KI-4: `Pilot` utworzony po `rotate_*` traktuje bieżący kurs jako „0” (otwarte)
+## KI-4: `Pilot` utworzony po `rotate_*` traktuje bieżący kurs jako „0” - NAPRAWIONE w 0.2.2
 
-**Stan po 0.2.1 (częściowa poprawka KI-1).** `plan_path` obraca w miejscu do kursu
-pierwszego odcinka, a `return_home` liczy wektor w układzie nosa - powrót
-**działa**, gdy pilot był utworzony przed obrotami:
+**Kontrakt (decyzja):** układ pilota: 0 = kurs drona w chwili utworzenia pilota.
+Punkty `path` są względem nosa drona. Kontrakt zostaje - błąd był w implementacji.
 
-| Scenariusz | Wynik w symulatorze | Oczekiwane |
+**Przyczyna.** `Executor` porównywał kurs z planu (układ pilota) z surowym
+`get_yaw()` (układ świata), bez odejmowania `_yaw_offset`. Gdy pilot powstał po
+`rotate_clockwise(90)`, plan zakładał kurs 0 (pilot), a sprzężenie widziało 90°
+i obracało drona z powrotem do 0 - więc `path([(100, 0, 0)])` kończyło w
+świecie `(100, 0)` zamiast `(0, -100)`.
+
+**Poprawka.** `Pilot.heading_reader()` zwraca kurs rzeczywisty **w układzie
+pilota** (z odjętym `_yaw_offset`) i ten czytnik dostaje `Executor`
+(`heading_reader=...`). `_actual_heading` ma priorytet: czytnik od pilota,
+dopiero potem surowy `get_yaw` backendu.
+
+**Weryfikacja (symulator):**
+
+| Scenariusz | Wynik | Oczekiwane |
 |---|---|---|
-| forward(150) → turn(90,60) → forward(100) → return_home | **(-1.5, -1.2)** | (0, 0) ±10 cm |
-| forward(100) + return_home (kurs 0°) | (0, 0) | (0, 0) |
-| `path` w bok (wymaga obrotu 90°) - kurs nosa | 90° ±3° | - |
+| `rotate_clockwise(90)` → `Pilot` → `path([(100,0,0)])` | `(0, -100)` | `(0, -100)` |
+| `get_yaw()` po tym locie | 90 ±3° | bez zmiany |
+| `rotate_*` → `Pilot` → lot → `return_home` | ≤ 10 cm od startu | ≤ 10 cm |
+| Testy `tests/test_dronemoves_heading.py` | **11/11 zielonych** | - |
 
-**Pozostaje:** gdy `Pilot` powstaje **po** `rotate_clockwise(90)`/`rotate_*`,
-pilot uznaje bieżący kurs drona za swoje „0” (`_yaw_offset`), więc `path`
-w układzie nosa idzie w +X układu pilota. Zmierzone: `rotate_clockwise(90)` +
-`path([(100,0,0)])` kończy w `(100, 1)` zamiast `(0, -100)` ±10 cm.
-
-**Dwa możliwe kontrakty (do decyzji):**
-1. *Układ pilota = kurs przy tworzeniu* (dziś): `path` „przód” = tam, gdzie dron
-   patrzy w chwili utworzenia pilota, nawet po `rotate_*` przed pilotem.
-2. *Układ pilota = kurs 0 świata*: pilot czyta kurs i obraca punkty tak, że
-   `path([(100,0,0)])` zawsze znaczy „100 cm tam, gdzie dron patrzy teraz”.
-
-**Co sprawdziłem:** `_yaw_offset` = 90 po `rotate_clockwise(90)` (poprawnie),
-`_path_planner` obraca o `turn = 0` (pilot startuje w tym kursie), a `plan_path`
-dokłada obrót w miejscu (widoczne w planie: yaw 91° zamiast 90°).
-Testy `tests/test_dronemoves_heading.py`: 6 z 10 przechodzi, 4 czekają na
-decyzję o kontrakcie.
+`tests/test_route_conformance.py`: trasa `obroty` (stały kurs 270° w punkcie)
+przechodzi w trybie „płynna” - generator `codegen_smooth` liczył kurs po torze
+z `heading_after` (czyli z wartości docelowej), więc `turn_delta` był zerowy i
+obrót nie był generowany. Teraz kurs po `path` to kierunek ostatniego odcinka
+(`_track_yaw`), a `rotate_*` dociąga nos do kursu z trasy.
 
 
 ---
 
-## KI-5: `watch_battery(action="return_home")` nie daje się sprawdzić w symulatorze
+## KI-5: `watch_battery(action="return_home")` - NAPRAWIONE w 0.2.2
 
-**Objaw.** Nadzór baterii uruchamia się (wątek żyje, zegar wirtualny płynie -
-sonda pokazała `1.6 s → 6.1 s` w wątku tła), ale odczyty `get_battery()` w wątku
-zwracają **100** przez cały lot, a 99 dopiero po wylądowaniu. W efekcie watchdog
-z progiem 99% nie wyzwala powrotu w trakcie lotu.
+**Objaw (pierwotny).** Odczyty `get_battery()` w wątku nadzoru zwracały 100
+przez cały lot (99 dopiero po wylądowaniu), bo `get_battery` zwraca `int`,
+a symulator zużywa 0,05 %/s (1 % na 20 s).
 
-**Pomiary:**
-- `Pilot.forward(150)`, `turn(90,60)`, `forward(150)` (~11 s): `get_battery()`
-  w wątku = 100, po locie 99 (zużycie 0,05 %/s - zgadza się z ustawieniem),
-- watchdog z `min_pct=99`, `interval_s=0.5` nie zadziałał (pozycja końcowa
-  `(207, -210)` - trasa wykonana do końca),
-- test `test_watch_battery_triggers_land` (FakeDrone, `action="land"`) **przechodzi**.
+**Objaw głębszy (znaleziony przy weryfikacji).** Nawet gdy bateria spadała,
+`return_home` z wątku nadzoru **nigdy nie przejmował sterowania**: `Pilot._execute`
+trzyma `_lock` przez cały manewr, a wątek nadzoru czekał na ten lock do końca
+trasy; potem `safe_land()` lądował w bieżącym miejscu, a pętla główna leciała
+dalej (dron oddalał się o 15 cm od startu po „powrocie”).
 
-**Podejrzana przyczyna.** Symulator aktualizuje `sim.battery` w
-`_drain_battery` dopiero po zamknięciu przedziału ruchu (`_execute_motion`),
-a odczyt z innego wątku trafia na wartość sprzed bieżącego odcinka ruchu.
-Test z prawdziwym `Tello` nie jest w stanie tego pokazać.
+**Poprawki:**
+1. `Executor.stop()` przerywa bieżący manewr (flaga czyszczona dopiero na
+   starcie następnego `execute`), więc nadzór nie czeka na koniec trasy.
+2. `watch_battery` bierze `executor.stop()`, potem blokadę sterowania
+   (`_watch_owner`), wykonuje `return_home()` i ląduje. `_lock` to `RLock`,
+   więc manewr może wywołać nadzór trzymający blokadę sterowania.
+3. `_execute` odrzuca manewry pętli głównej, gdy sterowanie ma nadzór - trasa
+   nie „dogrywa się” po powrocie.
+4. `Pilot.watch_position` - pozycja zmierzona tuż po powrocie.
 
-**Status.** Funkcja działa na prawdziwym dronie (czyta prawdziwy `get_battery`)
-i w testach jednostkowych z `FakeDrone`; w symulatorze weryfikacja end-to-end
-wymaga poprawki mocka (`get_battery` liczone na bieżąco z zegara), co jest
-osobnym zadaniem w symulatorze, nie w bibliotece.
+**Weryfikacja w symulatorze** (`tests/test_dronemoves_safety_integration.py`):
+bateria 26 %, próg 25 %, `battery_drain_scale = 40` (tryb testowy: domyślnie
+0,05 %/s, tu ~2 %/s) - dron startuje, nadzór wyzwala po ~1 s lotu, wraca na
+**(0, 0)** ±15 cm i ląduje. Mnożnik zużycia (`SimSettings.battery_drain_scale`)
+dodano wyłącznie dla testów (0.2.2, domyślnie `1.0`).
+
+**Wcześniejsze pomiary (0.2.1, dla historii):** przy normalnym zużyciu odczyty
+w wątku nadzoru zwracały 100 przez cały lot, a watchdog z `min_pct=99` nie
+wyzwalał powrotu. Test `test_watch_battery_triggers_land` (FakeDrone,
+`action="land"`) przechodził już wtedy - dlatego błąd przejęcia sterowania
+ujawniał się dopiero z prawdziwym `Tello` w symulatorze.
 
 jest grupa `route-planner` z markerami.

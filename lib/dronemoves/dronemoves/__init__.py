@@ -24,7 +24,7 @@ from .safety import (Check, Geofence, PreflightError, PreflightReport, preflight
                      safe_start)
 from .trajectory import Trajectory
 
-__version__ = "0.2.0"
+__version__ = "0.2.2"
 
 __all__ = [
     "CalibrationProfile", "TELLO_PROFILE", "load_profile", "save_profile",

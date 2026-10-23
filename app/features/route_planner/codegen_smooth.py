@@ -74,6 +74,21 @@ def turn_lines(yaw: float, target: float, indent: str,
             (yaw + delta) % 360.0)
 
 
+def _track_yaw(route: Route, segment: List[int]) -> float:
+    """Kurs nosa po przeleceniu ``segment`` (konwencja API, + = w prawo).
+
+    ``Pilot.path`` ustawia nos zgodnie z kierunkiem **ostatniego odcinka**
+    segmentu (niezależnie od ``heading`` punktu). Dla segmentu jednopunktowego
+    nos się nie zmienia, więc bierzemy kierunek odcinka poprzedzającego.
+    """
+    if len(segment) >= 2:
+        start = route.points[segment[-2]].position
+        end = route.points[segment[-1]].position
+        return math.degrees(math.atan2(-(end[1] - start[1]), end[0] - start[0])) % 360.0
+    # jeden punkt: kurs nieznany z samego segmentu - zostaje ostatni znany
+    return 0.0
+
+
 def _path_segments(route: Route) -> List[List[int]]:
     """Podziel punkty na segmenty ``path`` - granica przed punktem ze stałym kursem."""
     segments: List[List[int]] = []
@@ -162,21 +177,26 @@ def generate(route: Route) -> str:
         # więc z trasy jest bezwzględne i trzeba je przeliczyć na różnicę).
         points = _to_pilot_frame([route.points[i].position for i in segment], offset, yaw)
         lines.append(f"        pilot.path({_pairs(points)}, smooth=True)")
-        yaw = heading_after(route, segment[-1])      # nos po torze (spline)
+        # ``Pilot.path`` obraca nos do kursu ostatniego odcinka (sprawdzone:
+        # segment 90° -> 180° kończy na 176°), więc kurs po torze to kierunek
+        # ostatniego odcinka w konwencji API (get_yaw: + = w prawo).
+        track_yaw = _track_yaw(route, segment)
         offset = route.points[segment[-1]].position
         for i in segment:
             point = route.points[i]
             if point.hover_s > 0:
                 lines.append(f"        pilot.hover({num(point.hover_s)})"
                              f"   # punkt {i + 1}: zawis {num(point.hover_s)} s")
-        if route.points[segment[-1]].heading in ("fixed", "point", "start"):
+        # kurs „stały”/„na punkt”/„jak na starcie” ustawiamy obrotem w miejscu
+        last_point = route.points[segment[-1]]
+        if last_point.heading in ("fixed", "point", "start"):
             target = heading_after(route, segment[-1])
-            turn, yaw = turn_lines(
-                yaw, target, "        ",
-                f"punkt {segment[-1] + 1}: {HEADING_LABELS[route.points[segment[-1]].heading]}"
+            turn, track_yaw = turn_lines(
+                track_yaw, target, "        ",
+                f"punkt {segment[-1] + 1}: {HEADING_LABELS[last_point.heading]}"
                 f" {num(target)}°")
             lines.extend(turn)
-            offset = route.points[segment[-1]].position
+        yaw = track_yaw
 
     lines.extend([
         "    finally:",

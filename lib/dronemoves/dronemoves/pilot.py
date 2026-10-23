@@ -229,8 +229,6 @@ class Pilot:
         )
         self.min_battery = int(min_battery)
         self.land_on_exit = land_on_exit
-        self.executor = Executor(backend, frequency_hz=frequency_hz, profile=self.profile,
-                                 sim_exact=sim_exact)
 
         # szacowana pozycja/yaw w układzie startu lotu (metryka lokalna)
         self.x = 0.0
@@ -240,12 +238,15 @@ class Pilot:
         # Układ pilota: 0 = kurs w chwili utworzenia pilota. Bierzemy go z drona,
         # bo przed `Pilot` mogło już polecieć `rotate_*`; różnica trafia do
         # `_yaw_offset`, żeby przeliczać rzeczywisty kurs na układ pilota.
+        # MUSI być przed Executorem: on dostaje `heading_reader` z tym offsetem.
         reported = self._read_raw_api_yaw()
         self._yaw_offset = 0.0 if reported is None else reported
         self._yaw = 0.0
+        self.executor = Executor(backend, frequency_hz=frequency_hz, profile=self.profile,
+                                 sim_exact=sim_exact, heading_reader=self.heading_reader)
         self._home_z = self._read_height() or 0.0
         self._in_context = False
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         #: czas lotu zrealizowany przez pilota [s] (do planu w symulatorze)
         self.flight_time = 0.0
         #: geofence (None = brak; sprawdzany przed każdym manewrem)
@@ -260,6 +261,15 @@ class Pilot:
         except Exception:
             return None
         return None if value is None else float(value)
+
+    def heading_reader(self) -> Optional[float]:
+        """Rzeczywisty kurs drona w układzie **pilota** (CCW+), do Executora.
+
+        Executor porównuje kurs z planu (układ pilota) z rzeczywistym - musi
+        dostać tę samą wartość z odjętym ``_yaw_offset``, inaczej po
+        ``rotate_*`` przed utworzeniem pilota porównuje różne układy (KI-4).
+        """
+        return self._read_reported_yaw()
 
     def _read_raw_api_yaw(self) -> Optional[float]:
         """Surowy kurs drona z backendu (konwencja API, CW+) albo ``None``."""
@@ -302,6 +312,15 @@ class Pilot:
     def position(self) -> tuple:
         """Szacowana pozycja (x, y, z) w układzie startu [cm]."""
         return (self.x, self.y, self.z)
+
+    @property
+    def watch_position(self) -> Optional[tuple]:
+        """Pozycja zaraz po powrocie nadzoru baterii (``None`` = nie zadziałał).
+
+        Mierzona **w wątku nadzoru**, tuż po ``return_home``, bo po wylądowaniu
+        i wyjściu z kontekstu pilot nie jest już aktualizowany przez pętlę główną.
+        """
+        return self._watch_position
 
     def ground_height(self) -> float:
         """Wysokość nad ziemią [cm] (wysokość drona odczytana przy starcie + zmiana)."""
@@ -373,18 +392,33 @@ class Pilot:
         if action not in ("return_home", "land"):
             raise ValueError("action musi być 'return_home' albo 'land'")
         self._watch_stop = threading.Event()
+        #: przytrzymanie na czas akcji nadzoru - blokuje nowe manewry pętli głównej
+        self._watch_owner = threading.Lock()
+        self._watch_owner_thread: Optional[int] = None
+        #: pozycja (x, y, z) zmierzona tuż po powrocie nadzoru baterii
+        self._watch_position: Optional[tuple] = None
 
         def loop() -> None:
             while not self._watch_stop.is_set():
                 battery = self._read_battery()
                 if battery is not None and battery < min_pct:
-                    print(f"[watchdog] Bateria {battery}% < {min_pct}% - {action}")
-                    try:
-                        if action == "return_home":
-                            self.executor.stop()
-                            self.return_home()
-                    finally:
-                        self.safe_land()
+                    print(f"[watchdog] Bateria {battery}% < {min_pct}% - {action}",
+                          flush=True)
+                    # 1) przerwij bieżący manewr pętli głównej (inaczej czekalibyśmy
+                    #    na zwolnienie _lock do końca całej trasy)
+                    self.executor.stop()
+                    # 2) przejmij sterowanie i poczekaj, aż pętla główna odda lock
+                    # 2) przejmij sterowanie; pętla główna dostaje odrzucenia
+                    #    manewrów (guard w _execute), więc nie odjedzie z powrotem
+                    with self._watch_owner:
+                        self._watch_owner_thread = threading.get_ident()
+                        try:
+                            if action == "return_home":
+                                self.return_home()
+                        finally:
+                            self._watch_position = self.position()
+                            self._safe_land()
+                    return
                     return
                 self._watch_stop.wait(max(interval_s, 0.1))
 
@@ -544,7 +578,16 @@ class Pilot:
 
     # ------------------------------------------------------------- wykonanie
     def _execute(self, maneuver: "ManeuverLike", label: str) -> Trajectory:
-        """Zaplanuj i wykonaj manewr, aktualizując pozycję; zwróć trajektorię."""
+        """Zaplanuj i wykonaj manewr, aktualizując pozycję; zwróć trajektorię.
+
+        Gdy nadzór (``watch_battery``) przejął sterowanie, manewry pętli głównej
+        są odrzucane bez ruchu - inaczej trasa „dogrywała” się po powrocie do
+        startu i dron oddalał się od punktu startu (KI-5).
+        """
+        if (getattr(self, "_watch_owner", None) is not None
+                and self._watch_owner.locked()
+                and self._watch_owner_thread != threading.get_ident()):
+            return Trajectory(label=label)
         with self._lock:
             self._check_floor()
             traj = self._plan(maneuver)
@@ -746,28 +789,18 @@ class Pilot:
     def _path_planner(self, points: Sequence[tuple], smooth: bool):
         """Planer ``path``: punkty **względne wobec pozycji i kursu drona**.
 
-        ``path`` przyjmuje punkty w układzie nosa (``x`` = przód, ``y`` = lewo),
-        a planer liczy w układzie pilota (0 = kurs z chwili utworzenia pilota).
-        Dlatego punkty obracamy o bieżący kurs pilota (``_yaw``, CCW+), a obrót
-        w miejscu do kursu pierwszego odcinka robi ``plan_path`` (KI-1).
+        ``path`` przyjmuje punkty w układzie nosa (``x`` = przód, ``y`` = lewo).
+        Punkty przekazujemy **bez obrotu**: plan liczy się w układzie pilota
+        (0 = kurs przy utworzeniu pilota), a obrót o bieżący kurs robi
+        ``_transform`` w ``_plan`` - tylko raz. Obracanie ich tutaj dawało
+        podwójny obrót i ``return_home`` odlatywał (zmierzone: 3,7 m od startu).
 
         Punkt startu ``(0, 0, 0)`` dopisujemy, gdy pierwszy punkt nie leży
         w początku układu w całej trzech osiach (także ``z``) - inaczej plan
-        zaczynałby się na docelowej wysokości (0.1.4). Jeden punkt jest dozwolony.
+        zaczynałby się na docelowej wysokości (0.1.4). Jeden punkt dozwolony.
         """
-        turn = self._yaw                              # CCW+ w układzie pilota
-        reported = self._read_raw_api_yaw()
-        # Kurs drona względem układu pilota: 0 = kurs z chwili tworzenia pilota.
-        # To on wyznacza, jak obrócić punkty podane w układzie nosa.
-        if reported is not None:
-            turn = (-(reported - self._yaw_offset) + 180.0) % 360.0 - 180.0
-        cos_a, sin_a = math.cos(math.radians(turn)), math.sin(math.radians(turn))
-        route = []
-        for point in points:
-            x, y = float(point[0]), float(point[1])
-            z = float(point[2]) if len(point) > 2 else 0.0
-            # układ nosa -> układ pilota
-            route.append((x * cos_a - y * sin_a, x * sin_a + y * cos_a, z))
+        route = [(float(point[0]), float(point[1]),
+                  float(point[2]) if len(point) > 2 else 0.0) for point in points]
         starts_at_origin = all(abs(v) <= 0.5 for v in route[0][:3])
         if not starts_at_origin:
             route = [(0.0, 0.0, 0.0)] + route

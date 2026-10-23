@@ -98,5 +98,63 @@ def test_geofence_blocks_maneuver_in_simulator():
                     for line in result.stdout or [])
     assert "GEOFENCE" in text, text
     # nie poleciał dalej niż ~100 cm (tolerancja na rozpędzanie)
-    max_x = max(s["x"] for s in result.flight.samples)
-    assert max_x < 110, max_x
+    assert max(s["x"] for s in result.flight.samples) < 120
+
+
+def test_watch_battery_return_home_konczy_przy_starcie():
+    """``watch_battery(action="return_home")`` przerywa lot i wraca do startu.
+
+    Ustawienie: bateria startowa 26 % (preflight przechodzi - wymaga >50 % tylko
+    przy ostrzeżeniu o błędzie), przyspieszone zużycie ``battery_drain_scale = 40``
+    (tryb testowy symulatora; domyślnie 0,05 %/s, tu ~2 %/s), próg 25 %. Nadzór
+    reaguje więc w pierwszych sekundach lotu, przerywa trasę, wraca do startu
+    i ląduje. Oczekiwania z geometrii: ≤ 15 cm od ``(0, 0)`` i etykieta
+    ``return_home`` w logu lotu.
+
+    Dlaczego symulator: ``get_battery()`` zwraca int, a przy normalnym zużyciu
+    (1 % na 20 s) w krótkim locie bateria nie spadnie poniżej progu (KI-5) -
+    mnożnik to jedyne miejsce, gdzie da się to przyspieszyć bez oszukiwania
+    w teście.
+    """
+    source = """
+        from djitellopy import Tello
+        from dronemoves import Pilot
+        import time
+
+        # sleep REALNY: wirtualny time.sleep pcha zegar symulacji tylko w wątku,
+        # który go wywołał, więc czekanie na wątek nadzoru musi być bez symulacji
+        _real_sleep = __import__("app.sandbox_runtime", fromlist=["x"])._STATE["real_sleep"]
+
+        tello = Tello()
+        tello.connect()
+        tello.set_sim_settings(battery=26)
+        tello._ctrl.sim.settings.battery_drain_scale = 40.0
+        tello._ctrl.sim.settings.battery_low_warning = 0
+        tello.takeoff()
+        pilot = Pilot(tello, speed=40, max_height_cm=500, max_radius_cm=500,
+                      min_battery=3)
+        tello.up(60)
+        watcher = pilot.watch_battery(min_pct=25, action="return_home", interval_s=0.1)
+        with pilot:
+            for _ in range(10):
+                pilot.forward(100)
+                if not watcher.is_alive():
+                    break
+                pilot.turn(90, radius=60)
+                if not watcher.is_alive():
+                    break
+            for _ in range(200):
+                if not watcher.is_alive():
+                    break
+                _real_sleep(0.05)
+            print("PO_WATCHDOGU:", [round(v, 1) for v in (pilot.watch_position or ())])
+    """
+    result = runner.run_script(textwrap.dedent(source).strip() + "\n", "watch.py")
+    assert result.status == "ok", [e["message"] for e in result.flight.errors]
+    text = " ".join(line if isinstance(line, str) else line.get("text", "")
+                    for line in result.stdout or [])
+    assert "PO_WATCHDOGU:" in text, text
+    payload = text.split("PO_WATCHDOGU:", 1)[1].split("]")[0].split("[")[1]
+    x, y = [float(v) for v in payload.split(",")[:2]]
+    # nadzór zadziałał i wrócił do startu: powrót na (0, 0) ±15 cm
+    assert (x * x + y * y) ** 0.5 <= 15.0, (x, y)

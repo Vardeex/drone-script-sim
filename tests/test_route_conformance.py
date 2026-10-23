@@ -36,7 +36,6 @@ LIMITS = {"simple": 5.0, "smooth": 15.0}
 # nie spełniają jeszcze oczekiwań (KNOWN_ISSUES.md). Test NIE zmienia oczekiwań -
 # jest xfail z odnośnikiem, a UI pokazuje ostrzeżenie z odchyleniem.
 SMOOTH_KNOWN_ISSUE = {
-    "obroty": "KI-4: kurs nosa po obrocie w punkcie (94° zamiast 270°)",
     "dluga 600 cm": "tryb „płynna” nie obsługuje powrotu do startu (RouteError)",
 }
 
@@ -103,7 +102,7 @@ def test_generated_script_visits_every_point(request, client, mode: str, name: s
     if mode == "smooth" and name in SMOOTH_KNOWN_ISSUE:
         reason = SMOOTH_KNOWN_ISSUE[name]
         request.node.add_marker(pytest.mark.xfail(
-            reason=f"KNOWN_ISSUES.md (KI-1): {reason}", strict=True))
+            reason=f"oczekiwane zachowanie generatora: {reason}", strict=True))
     generator = codegen_simple.generate if mode == "simple" else codegen_smooth.generate
     source = generator(route)
     flight = run(client, source, mode)

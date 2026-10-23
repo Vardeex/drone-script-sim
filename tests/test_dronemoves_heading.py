@@ -62,14 +62,10 @@ def landing_position(flight):
 
 
 @pytest.mark.parametrize("final_heading,pre", [
-    pytest.param("90", "tello.rotate_clockwise(90)", marks=pytest.mark.xfail(
-        reason="KNOWN_ISSUES.md KI-4: Pilot utworzony po rotate_* uznaje bieżący "
-               "kurs za 0 (kontrakt układu pilota)", strict=True)),
-    pytest.param("180", "tello.rotate_clockwise(180)", marks=pytest.mark.xfail(
-        reason="KNOWN_ISSUES.md KI-4 (jak wyżej)", strict=True)),
-    pytest.param("270", "tello.rotate_counter_clockwise(90)", marks=pytest.mark.xfail(
-        reason="KNOWN_ISSUES.md KI-4 (jak wyżej)", strict=True)),
-    pytest.param("0", "", id="0"),
+    ("0", ""),                                # trasa prosta - kurs 0°
+    ("90", "tello.rotate_clockwise(90)"),     # nos na -Y (prawo)
+    ("180", "tello.rotate_clockwise(180)"),   # nos na -X
+    ("270", "tello.rotate_counter_clockwise(90)"),   # nos na +Y (lewo)
 ])
 def test_return_home_wraca_do_startu_dla_kazdego_kursu(final_heading, pre):
     """Trasa 100 cm w przód + ``return_home`` wraca do (0, 0) ±10 cm."""
@@ -123,13 +119,13 @@ def test_path_wzgledem_nosa_przy_kursie_zero(points, expected):
 
 
 def test_path_po_obrocie_w_prawo():
-    """Po ``rotate_clockwise(90)`` nos patrzy w -Y: „przód” = -Y, „lewo” = -X.
+    """Po ``rotate_clockwise(90)`` nos patrzy w -Y: „przód” = -Y, „lewo” = +X.
 
-    Punkt ``(100, 0, 0)`` (100 cm przed nosem) musi dać świat ``(0, -100)``,
-    a punkt ``(0, 100, 0)`` (100 cm w lewo) - świat ``(-100, 0)``.
+    Geometria: nos ``(0, -1)``; oś „lewo” to nos obrócony o +90° (CCW),
+    czyli ``(+1, 0)``. Dlatego punkt ``(100, 0, 0)`` daje świat ``(0, -100)``,
+    a punkt ``(0, 100, 0)`` - świat ``(100, 0)``. ``get_yaw()`` zostaje 90°:
+    dron nie musi się obracać, bo plan zgadza się z kursem pilota.
     """
-    pytest.xfail("KNOWN_ISSUES.md KI-4: Pilot utworzony po rotate_* przyjmuje "
-                 "bieżący kurs jako 0")
     body = """
         pilot.path([(100, 0, 0)])
         print("PRZOD:", [round(v, 1) for v in pilot.position()])
@@ -138,6 +134,8 @@ def test_path_po_obrocie_w_prawo():
     assert result.status == "ok", [e["message"] for e in flight.errors]
     x, y = landing_position(flight)
     assert abs(x) <= 10 and abs(y + 100) <= 10, (x, y)
+    yaw = float([line for line in lines if line.startswith("KONIEC")][0].split(":")[1])
+    assert abs(((yaw - 90.0 + 180.0) % 360.0) - 180.0) <= 3.0, yaw
 
     body = """
         pilot.path([(0, 100, 0)])
@@ -146,7 +144,29 @@ def test_path_po_obrocie_w_prawo():
     result, lines, flight = fly("tello.rotate_clockwise(90)", body)
     assert result.status == "ok", [e["message"] for e in flight.errors]
     x, y = landing_position(flight)
-    assert abs(x + 100) <= 10 and abs(y) <= 10, (x, y)
+    assert abs(x - 100) <= 10 and abs(y) <= 10, (x, y)
+
+
+def test_return_home_z_pilota_utworzonego_po_obrocie():
+    """``rotate_*`` → ``Pilot`` → lot → ``return_home`` wraca do miejsca utworzenia.
+
+    Układ pilota: 0 = kurs w chwili utworzenia (kontrakt KI-4). Powrót ma wrócić
+    do ``(0, 0)`` tego układu, czyli do punktu startu ±10 cm, niezależnie od
+    kursu początkowego.
+    """
+    for pre in ("tello.rotate_clockwise(90)", "tello.rotate_clockwise(180)",
+                "tello.rotate_counter_clockwise(90)"):
+        body = """
+            pilot.path([(100, 0, 0)])
+            pilot.turn(90, radius=60)
+            pilot.forward(60)
+            pilot.return_home()
+            print("PO_POWROCIE:", [round(v, 1) for v in pilot.position()])
+        """
+        result, lines, flight = fly(pre, body)
+        assert result.status == "ok", [e["message"] for e in flight.errors]
+        after = numbers(lines, "PO_POWROCIE")
+        assert (after[0] ** 2 + after[1] ** 2) ** 0.5 <= 10.0, (pre, after)
 
 
 def test_kurs_po_manewrze_zgodny_z_planem():

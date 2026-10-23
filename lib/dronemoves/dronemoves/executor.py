@@ -51,11 +51,14 @@ class Executor:
                  time_fn: Optional[Callable[[], float]] = None,
                  sleep_fn: Optional[Callable[[float], None]] = None,
                  profile: Optional[CalibrationProfile] = None,
-                 sim_exact: bool = False) -> None:
+                 sim_exact: bool = False,
+                 heading_reader: Optional[Callable[[], Optional[float]]] = None) -> None:
         if frequency_hz <= 0:
             raise ValueError("frequency_hz musi być dodatnie")
         self.backend = backend
         self.period = 1.0 / frequency_hz
+        #: czytnik kursu w układzie PILOTA (None = otwarta pętla / kurs z planu)
+        self.heading_reader = heading_reader
         #: profil kalibracji - ten sam, którym planer liczy wychylenia RC
         self.profile = profile or CalibrationProfile()
         #: diagnostyczny kanał dokładnych prędkości (mock symulatora); domyślnie OFF
@@ -73,7 +76,12 @@ class Executor:
         self.rotate_timeout_s = 1.0
 
     def stop(self) -> None:
-        """Przerwij pętlę (np. z innego wątku przy Ctrl+C)."""
+        """Zatrzymaj bieżącą trajektorię (bezpieczne ``rc`` zerowe).
+
+        Flaga jest czyszczona na początku ``execute``, więc jedno ``stop()``
+        przerywa najwyżej jeden manewr - i tylko ten, który trwa w chwili
+        wywołania. Dzięki temu nadzór baterii może przerwać lot w połowie.
+        """
         self._stop.set()
 
     @property
@@ -136,7 +144,19 @@ class Executor:
                              real_seconds=self._time() - started, stopped=stopped)
 
     def _actual_heading(self) -> Optional[float]:
-        """Rzeczywisty kurs w konwencji planera (CCW+) albo ``None`` (brak odczytu)."""
+        """Rzeczywisty kurs w układzie **pilota** (CCW+) albo ``None``.
+
+        Priorytet ma ``heading_reader`` od pilota: on odejmuje ``_yaw_offset``,
+        więc kurs jest w tym samym układzie co plan (KI-4). Bez niego czytamy
+        backend bezpośrednio (surowy ``get_yaw``, CW+ -> CCW+).
+        """
+        if self.heading_reader is not None:
+            try:
+                value = self.heading_reader()
+            except Exception:
+                value = None
+            if value is not None:
+                return value
         reader = getattr(self.backend, "get_yaw", None)
         if not callable(reader):
             return None

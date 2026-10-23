@@ -13,6 +13,7 @@ Rodzaje wyjątków (jak w djitellopy / SDK 2.0):
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence, Tuple
 
@@ -57,6 +58,7 @@ class TelloController:
         self.rc: Dict[str, int] = {"lr": 0, "fb": 0, "ud": 0, "yaw": 0}
         #: profil ruchu RC przesłany przez bibliotekę dronemoves (cm/s, °/s) albo None
         self._dronemoves_rc: Optional[Tuple[float, float, float, float, bool]] = None
+        self._dronemoves_rc_thread: Optional[int] = None
         #: kurs nosa z planu biblioteki (°, konwencja symulatora) albo None
         self._dronemoves_yaw: Optional[float] = None
         self.speed = LIMITS.default_speed
@@ -273,6 +275,11 @@ class TelloController:
         """
         self._dronemoves_rc = (float(vx), float(vy), float(v_up), float(yaw_rate), bool(world))
         self._dronemoves_yaw = None if yaw is None else float(yaw) % 360.0
+        # Ruch z profilu wykonuje tylko wątek, który go ustawił (pętla sterująca
+        # biblioteki). Inne wątki (np. nadzór baterii śpiący w ``time.sleep``)
+        # tylko przesuwają zegar - inaczej każdy ``sleep`` w dowolnym wątku
+        # powtarzał ruch i dron „odjeżdżał” zamiast wracać do domu (KI-5).
+        self._dronemoves_rc_thread = threading.get_ident()
 
     def rc_tick(self, seconds: float) -> None:
         """Upływ ``seconds`` czasu symulacji: ruch RC, jeśli aktywne wejścia RC.
@@ -283,6 +290,11 @@ class TelloController:
         """
         sim = self.sim
         profile = self._dronemoves_rc
+        if profile is not None and self._dronemoves_rc_thread != threading.get_ident():
+            # ``time.sleep`` z innego wątku (np. nadzór baterii) nie odtwarza
+            # ruchu ustawionego przez pętlę sterującą - tylko biegnie zegar.
+            sim.advance(seconds)
+            return
         if profile is not None:
             if sim.airborne:
                 vx, vy, v_up, yaw_rate, world = profile
@@ -310,6 +322,7 @@ class TelloController:
         """Zatrzymaj ruch RC (wywoływane na land/emergency)."""
         self.rc = {"lr": 0, "fb": 0, "ud": 0, "yaw": 0}
         self._dronemoves_rc = None
+        self._dronemoves_rc_thread = None
 
     # ---------------------------------------------------------------- odczyt
     def _read(self, command: str, value: Any) -> Any:

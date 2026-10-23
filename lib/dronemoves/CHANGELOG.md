@@ -3,6 +3,39 @@
 Forma zgodna z [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/),
 wersjonowanie zgodne z [SemVer](https://semver.org/lang/pl/).
 
+## [0.2.2] - 2026-10-23
+
+> ⚠️ **0.2.1: `return_home` po zakręcie odlatywał - nie używać tej wersji.**
+> `_path_planner` obracał punkty z układu nosa do układu pilota, a `_plan`
+> robił to ponownie (`_transform`), więc po każdej trasie z kursem ≠ 0°
+> powrót leciał w złą stronę (pomiar: 3,7-6,2 m od startu). Przy kursie 0°
+> błąd był niewidoczny. **Zaktualizuj do 0.2.2.**
+
+### Naprawione
+
+- **`return_home` wraca do startu po każdej trasie** (KI-1, część 4):
+  podwójny obrót w `_path_planner` usunięty - punkty idą bez zmian, a obrót
+  do układu pilota robi wyłącznie `_transform`. Powrót kończy ≤ 2 cm od
+  startu po trasach z kursem 90°, 180°, 270°, mieszanym i po slalomie.
+- **`watch_battery` przejmuje sterowanie** (KI-5): nadzór wywołuje
+  `executor.stop()` (przerywa bieżący manewr), czeka na `_lock` i wykonuje
+  `return_home`. Manewry pętli głównej są wtedy odrzucane, więc trasa nie
+  „dogrywa się” po powrocie. `Pilot.watch_position` podaje pozycję zmierzoną
+  po powrocie. Wcześniej `return_home` z wątku czekał na zwolnienie `_lock`
+  do końca całej trasy, a potem `safe_land()` lądował w miejscu.
+- **`Executor` dostaje kurs w układzie pilota** (`heading_reader`), a nie
+  surowy `get_yaw`. Po `rotate_*` przed utworzeniem pilota sprzężenie zwrotne
+  porównywało kursy w różnych układach i obracało drona z powrotem (KI-4).
+- **`Pilot._lock` to `RLock`**, żeby nadzór mógł wywołać manewr trzymając
+  blokadę sterowania.
+
+### Dodane
+
+- `Pilot.heading_reader()` - kurs rzeczywisty w układzie pilota (CCW+, z
+  odjętym `_yaw_offset`), używany przez `Executor`.
+- `Executor(heading_reader=...)` - opcjonalny czytnik kursu w układzie pilota.
+- `Pilot.watch_position` - pozycja tuż po powrocie nadzoru baterii.
+
 ## [0.2.1] - 2026-10-22
 
 > ⚠️ **0.2.0: `return_home` mógł odlecieć od startu - nie używać tej wersji
