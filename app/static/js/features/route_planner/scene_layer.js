@@ -43,7 +43,7 @@ function labelSprite(text) {
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
     map: new THREE.CanvasTexture(canvas), transparent: true, depthTest: false,
   }));
-  sprite.scale.set(0.85, 0.32, 1);
+  sprite.scale.set(0.34, 0.13, 1);          // ~34 x 13 cm - czytelne, nie zasłania sceny
   return sprite;
 }
 
@@ -109,6 +109,7 @@ export function createLayer({ scene: droneScene } = {}) {
       new THREE.BufferGeometry().setFromPoints(points.map((p) => toVec(p.x, p.y, p.z))),
       new THREE.LineBasicMaterial({ color: LINE_COLOR }),
     ));
+  }
 
   function redraw() {
     drawLine();
@@ -231,5 +232,4 @@ export function createLayer({ scene: droneScene } = {}) {
       clear(root);
     },
   };
-}
 }

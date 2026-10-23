@@ -60,77 +60,22 @@ ani teorii sterowania biblioteki — to wymaga decyzji o architekturze
 
 ---
 
-## KI-3: warstwa 3D planera trasy nie jest podłączana do sceny (frontend)
+## KI-3: warstwa 3D planera trasy nie jest podłączana do sceny (frontend) - NAPRAWIONE w 0.2.1
 
 **Objaw.** Panel „Planer” ładuje się i działa (dodawanie punktów listą, kod,
 podgląd), ale **klik na podłożu w scenie 3D nie dodaje punktu** i markery trasy
 się nie rysują.
 
-**Pomiary (Playwright, Chromium):**
-- `window.__featureErrors` = `{obstacles: [], route_planner: []}` (brak błędów),
-- `boot.sceneLayers` = `['obstacles', 'route_planner']` (fabryki zarejestrowane),
-- log dodany tymczasowo w `attachSceneLayers`:
-  `obstacles: instance = object true` / **`route_planner: instance = undefined false`**,
-- `featureState.layers` = `{}` (pusta), `sceneLayers` rośnie do 4 wpisów przy
-  kolejnym wywołaniu (aplikacja inicjalizuje funkcje dwa razy),
-- moduł `scene_layer.js` importuje się bez błędu i eksportuje `createLayer`,
-- ten sam moduł wywołany z atrapą sceny zwraca `undefined` (bez wyjątku),
-- plik jest serwowany poprawnie (`200`, 8891 znaków), a `node` potwierdza
-  poprawną składnię po podmianie importu `three`.
+**Przyczyna (potwierdzona).** W `app/static/js/features/route_planner/scene_layer.js`
+w funkcji `drawLine()` brakowało zamykającej klamry po
+`lines.add(new THREE.Line(...));`. Przez to `redraw`, `rayAt`, `markerAt`,
+`groundAt`, `onDown`, `onMove`, `onUp` i `return { ... }` znalazły się
+**wewnątrz** `drawLine`, a `createLayer` nic nie zwracało. Nadmiarowa `}` na
+końcu pliku (linia 235) maskowała błąd przed sprawdzaniem składni, a różnica
+7585/7589 znaków to końce linii CRLF, nie cache.
 
-**Co sprawdziłem:**
-1. Rdzeń (`boot.js`, `app.js`) przekazuje `scene` do fabryki
-   (`layer.factory({ scene, ...context })`) i ma `try/catch` z
-   `console.error` — konsola nie pokazuje żadnego błędu.
-2. Kolejność: `registerFeatures` (panele) biegnie **przed**
-   `attachSceneLayers` (warstwy) — panel dostaje `getLayer` zwracające `null`
-   w chwili rejestracji; dodałem `waitForLayer()` z ponawianiem.
-3. Przeszkody (ta sama ścieżka rdzenia) działają poprawnie — więc to nie jest
-   ogólna regresja rdzenia.
-
-**Podejrzana przyczyna.** `createLayer` w `scene_layer.js` kończy się w taki
-sposób, że przeglądarka nie widzi `return` (zwraca `undefined` bez wyjątku),
-mimo że `node` przyjmuje składnię. Plik był składany w kilku krokach
-(wstawki edytora) i `return { ... }` (linia 216) może znajdować się w innym
-zasięgu niż się wydaje — dokładna analiza zasięgów: **do zrobienia**.
-
-**Obejście:** punkty dodaje się przyciskiem „✚ Dodaj punkt” w panelu (działa),
-a współrzędne edytuje w liście. Zaznaczanie punktów klikiem i rysowanie
-markerów w 3D będą dostępne po naprawie KI-3.
-
-**Naprawa (plan).** Zamiast pliku składanego wstawkami: napisać
-`scene_layer.js` od zera jednym zapisem (< 6000 znaków) i sprawdzić zwrot
-`createLayer` testem Playwright (`instance = object`). Wersja robocza tego
-pliku jest zapisana w gałęzi `backup-przed-sesja` (tam też jest punkt wyjścia).
-
-**Aktualizacja po przepisaniu pliku.** `scene_layer.js` został przepisany od
-zera (236 linii, `node` potwierdza poprawną składnię, struktura klamer
-domyka się do `depth=0`), a mimo to `createLayer` nadal zwraca `undefined`
-bez wyjątku w przeglądarce. Dodatkowy trop: serwer oddaje plik o długości
-**7585 znaków**, gdy na dysku jest **7589** (i `tail` pokazuje o jedną `}`
-więcej) — wygląda na to, że przeglądarka/serwer widzi inną wersję niż
-zapisana (cache `?v=25` albo bufor `StaticFiles`). Sprawdziłem: `?q=<timestamp>`
-nie pomógł; zrzut treści przez `fetch(..., {cache:'no-store'})` pokazał treść
-z nadmiarową `}`, której w pliku już nie ma. **Kolejny krok:** zrestartować
-serwer i wyczyścić cache przeglądarki w teście (`page.route` / nowy kontekst),
-albo podbić `ASSET_VERSION` w `app.js`.
-
-
-
----
-
-## KI-2: tryb „płynna” planera — odchylenie > 15 cm na 1 z 4 tras
-
-Po poprawce 0.1.5 (wysokość startowa `(0, 0, 0)`) odchylenia w symulatorze:
-
-| Trasa | Odchylenie od punktów | Limit 15 cm |
-|---|---|---|
-| kwadrat | 3.6 cm | ✅ |
-| wokół przeszkody | 13.7 cm | ✅ |
-| obroty | 10.3 cm | ✅ |
-| za plecami | 120.0 cm | ❌ — przyczyna: **KI-1** |
-
-Trasa „za plecami” zaczyna się punktem w −Y przy kursie 0°, więc wymaga kursu
-270° na starcie manewru — dokładnie przypadek KI-1. Test jest `xfail`, a UI
-pokazuje ostrzeżenie „tryb płynny: odchylenie do N cm od punktów” (nie blokuje
-generowania).
+**Naprawa.** Dodana `}` zamykająca `drawLine()`, usunięta nadmiarowa `}` z końca
+pliku; etykiety punktów zmniejszone do ~34 x 13 cm.
+**Test regresyjny:** `tests/test_route_planner_browser.py` (Playwright) -
+`createLayer` zwraca obiekt z metodami, klik na podłożu dodaje punkt, w scenie
+jest grupa `route-planner` z markerami.
