@@ -110,4 +110,31 @@ dokłada obrót w miejscu (widoczne w planie: yaw 91° zamiast 90°).
 Testy `tests/test_dronemoves_heading.py`: 6 z 10 przechodzi, 4 czekają na
 decyzję o kontrakcie.
 
+
+---
+
+## KI-5: `watch_battery(action="return_home")` nie daje się sprawdzić w symulatorze
+
+**Objaw.** Nadzór baterii uruchamia się (wątek żyje, zegar wirtualny płynie -
+sonda pokazała `1.6 s → 6.1 s` w wątku tła), ale odczyty `get_battery()` w wątku
+zwracają **100** przez cały lot, a 99 dopiero po wylądowaniu. W efekcie watchdog
+z progiem 99% nie wyzwala powrotu w trakcie lotu.
+
+**Pomiary:**
+- `Pilot.forward(150)`, `turn(90,60)`, `forward(150)` (~11 s): `get_battery()`
+  w wątku = 100, po locie 99 (zużycie 0,05 %/s - zgadza się z ustawieniem),
+- watchdog z `min_pct=99`, `interval_s=0.5` nie zadziałał (pozycja końcowa
+  `(207, -210)` - trasa wykonana do końca),
+- test `test_watch_battery_triggers_land` (FakeDrone, `action="land"`) **przechodzi**.
+
+**Podejrzana przyczyna.** Symulator aktualizuje `sim.battery` w
+`_drain_battery` dopiero po zamknięciu przedziału ruchu (`_execute_motion`),
+a odczyt z innego wątku trafia na wartość sprzed bieżącego odcinka ruchu.
+Test z prawdziwym `Tello` nie jest w stanie tego pokazać.
+
+**Status.** Funkcja działa na prawdziwym dronie (czyta prawdziwy `get_battery`)
+i w testach jednostkowych z `FakeDrone`; w symulatorze weryfikacja end-to-end
+wymaga poprawki mocka (`get_battery` liczone na bieżąco z zegara), co jest
+osobnym zadaniem w symulatorze, nie w bibliotece.
+
 jest grupa `route-planner` z markerami.
