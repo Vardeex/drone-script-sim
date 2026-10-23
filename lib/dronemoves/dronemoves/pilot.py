@@ -301,7 +301,10 @@ class Pilot:
         Lot odbywa się przez ``path`` (relatywne punkty), więc działa też na
         prawdziwym Tello; kurs nosa ustawiany przez ``path`` (po torze).
         """
-        target = (-self.x, -self.y, -self.z)
+        wx, wy = -self.x, -self.y
+        rad = math.radians(self._yaw)
+        target = (wx * math.cos(rad) + wy * math.sin(rad),
+                  -wx * math.sin(rad) + wy * math.cos(rad), -self.z)
         distance = (target[0] ** 2 + target[1] ** 2) ** 0.5
         if distance < 5.0 and abs(target[2]) < 5.0:
             return Trajectory(label="return_home")

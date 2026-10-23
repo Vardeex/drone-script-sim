@@ -530,6 +530,15 @@ def plan_path(points: Sequence[Point], *, limits: PlanLimits,
         return (x, y, z, yaw)
 
     text = label or f"path {len(points)} pkt"
+    # Kurs pierwszego odcinka: manewr startuje z kursem 0 (układ manewru),
+    # więc najpierw obrót w miejscu - inaczej plan "przeskakuje" yaw (KI-1).
+    for a, b in zip(sampled, sampled[1:]):
+        if math.hypot(b[0] - a[0], b[1] - a[1]) > 1e-6:
+            heading = math.degrees(math.atan2(b[1] - a[1], b[0] - a[0]))
+            heading = (heading + 180.0) % 360.0 - 180.0
+            if abs(heading) > 2.0:
+                builder.rotate(heading)
+            break
     builder.curve(curve, max(length, 1.0), speed, smooth_yaw=True, yaw_window=11)
     traj = builder.finish(text, meta={"points": pts, "smooth": smooth})
     _check_limits(traj, limits, check_height=True)
