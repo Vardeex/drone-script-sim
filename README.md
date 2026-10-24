@@ -248,12 +248,22 @@ setup.bat
 ```
 
 `setup.bat` tworzy środowisko wirtualne `.venv` w katalogu projektu i instaluje
-zależności z `requirements.txt` (wersje przypięte). Jeśli `python` nie jest
-w `PATH`, wskaż interpreter:
+zależności z `requirements.txt` (wersje przypięte). Instalowana jest też
+**biblioteka `dronemoves` z `lib/dronemoves`** (edycyjnie, `-e ./lib/dronemoves`),
+więc skrypty w symulatorze mają `from dronemoves import Pilot`. Prawdziwe
+`djitellopy` **nie** jest instalowane - sandbox podstawia własny mock.
+
+Jeśli `python` nie jest w `PATH`, wskaż interpreter:
 
 ```bat
 set PYTHON_EXE=C:\Python311\python.exe
 setup.bat
+```
+
+Aktualizacja po `git pull` (nowe zależności):
+
+```bat
+.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
 Testy:

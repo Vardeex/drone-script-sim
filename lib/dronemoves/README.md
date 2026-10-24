@@ -40,6 +40,20 @@ biblioteki daje czytelny komunikat z poleceniem, co doinstalować.
 
 Wymagania: Python 3.9+, zależności zewnętrzne: **brak**.
 
+### Instalacja ze źródeł (w tym repozytorium)
+
+Symulator instaluje bibliotekę sam: `requirements.txt` w katalogu głównym repo
+ma `-e ./lib/dronemoves` (bez `[tello]`). Ręcznie:
+
+```bash
+# z katalogu głównego repozytorium (ścieżka w requirements.txt jest względna)
+pip install -r requirements.txt
+
+# albo wprost - instalacja edytowalna, zmiany w kodzie widoczne od razu
+pip install -e ./lib/dronemoves          # rdzeń
+pip install -e "./lib/dronemoves[tello]" # + djitellopy (tylko prawdziwy dron)
+```
+
 ## Szybki start na prawdziwym Tello
 
 ```python

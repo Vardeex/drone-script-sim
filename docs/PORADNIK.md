@@ -74,7 +74,10 @@ Skrypt robi trzy rzeczy:
 1. sprawdza Pythona (wymaga 3.11+),
 2. tworzy środowisko wirtualne `.venv` w katalogu projektu
    (wszystko zostaje **na dysku projektu**, nic nie idzie do systemu),
-3. instaluje zależności z `requirements.txt`.
+3. instaluje zależności z `requirements.txt` - **w tym bibliotekę `dronemoves`
+   z katalogu `lib/dronemoves`** (instalacja edytowalna, więc skrypty w symulatorze
+   mają `from dronemoves import Pilot`; prawdziwe `djitellopy` **nie** jest
+   instalowane - sandbox podstawia własny mock).
 
 Na końcu zobaczysz `Gotowe. Uruchom start.bat`.
 
@@ -94,6 +97,7 @@ Gdy serwer już działa, drugie `start.bat` tylko otworzy przeglądarkę
 | `python` nie jest rozpoznawany | Python bez PATH | Zainstaluj ponownie z „Add python.exe to PATH” albo `set PYTHON_EXE=C:\Users\<Ty>\AppData\Local\Programs\Python\Python311\python.exe` i `setup.bat` |
 | `BLAD: Nie znaleziono Pythona 3.11+` | masz 3.9/3.10 albo inny `python` w PATH | Ustaw `PYTHON_EXE` jak wyżej (wskazując 3.11+/3.12+) |
 | `BLAD: instalacja zaleznosci nie powiodla sie` | brak internetu, firewall, antywirus | Sprawdź internet, wyłącz na chwilę antywirus, ponów `setup.bat` |
+| `ModuleNotFoundError: No module named 'dronemoves'` w skrypcie | środowisko powstało bez biblioteki z `lib/dronemoves` (starsze `setup.bat`) | Uruchom `setup.bat` ponownie albo `.venv\Scripts\python.exe -m pip install -r requirements.txt` |
 | Konsola miga i znika | błąd przed `pause` | Uruchom `setup.bat` z wiersza polecenia (`cmd`), nie kliknięciem |
 | `Serwer juz dziala` za każdym razem, a strona się nie otwiera | inny program na porcie 8765 | Zamknij program albo zmień `set "PORT=8765"` w `start.bat` na np. `8766` |
 | Strona biała, w konsoli F12 błąd WebGL | karta graficzna/stery w przeglądarce | Włącz akcelerację sprzętową w przeglądarce, zaktualizuj sterownik GPU, spróbuj innej przeglądarki |
@@ -334,8 +338,10 @@ pip install dronemoves           # samo API
 pip install "dronemoves[tello]"  # + djitellopy dla prawdziwego Tello
 ```
 
-W aplikacji **nie musisz jej instalować** - skrypty w sandboxie mają ją
-podstawioną.
+W aplikacji **nie musisz jej instalować** - `setup.bat` robi to za Ciebie
+(`requirements.txt` zawiera `-e ./lib/dronemoves`), a skrypty w sandboxie ją widzą.
+Powyższe polecenia przydają się, gdy używasz biblioteki w **własnym** projekcie,
+poza symulatorem.
 
 ### 5.2. Podstawy
 
