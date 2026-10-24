@@ -1,0 +1,12 @@
+/* Style przykładowej wtyczki (punkt rozszerzeń ``ui.styles``).
+   Rdzeń doładowuje ten plik przy starcie - wtyczka nie rusza głównego CSS. */
+
+[data-feature="example_hello"] .hello-text {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(90, 160, 255, 0.12);
+  border: 1px solid rgba(90, 160, 255, 0.35);
+  font-size: 14px;
+  line-height: 1.45;
+}

@@ -36,3 +36,12 @@ desktop.ini
 # Raport sesji bez nadzoru (dokument roboczy, nie publikujemy)
 RAPORT_SESJI.md
 
+# Wtyczki zewnętrzne użytkownika (poza wzorem example_hello i opisem)
+plugins/*
+!plugins/README.md
+!plugins/example_hello/
+
+# Paczki dystrybucyjne biblioteki
+lib/dronemoves/dist/
+lib/dronemoves/build/
+

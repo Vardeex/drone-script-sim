@@ -1,0 +1,18 @@
+{
+  "id": "example_hello",
+  "name": "Przykładowa wtyczka: Hello",
+  "version": "1.0.0",
+  "description": "Panel z tekstem i endpoint API - wzór do napisania własnej wtyczki",
+  "author": "Vardeex",
+  "requires_app": ">=1.0.0",
+  "requires": [],
+  "extension_points": ["api", "ui.panel", "ui.styles"],
+  "api_prefix": "/api/example_hello",
+  "static": "static",
+  "ui": {
+    "panel": "static/panel.js",
+    "styles": ["static/panel.css"],
+    "tab": "tab-example_hello",
+    "tab_button": "tab-btn-example_hello"
+  }
+}

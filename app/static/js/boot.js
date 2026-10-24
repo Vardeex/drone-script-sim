@@ -34,6 +34,55 @@ function moduleUrl(feature, path, version = '') {
 }
 
 /**
+ * Zapewnij sekcję zakładki i przycisk w pasku (dla wtyczek spoza index.html).
+ * Wtyczki wbudowane mają swoje sekcje w HTML - tu nic się nie zmienia.
+ */
+function ensureTab(feature) {
+  const ui = feature.ui || {};
+  const tabId = ui.tab || `tab-${feature.id}`;
+  const buttonId = ui.tab_button || `tab-btn-${feature.id}`;
+  const tabs = document.getElementById('tabs');
+  const right = document.querySelector('#right');
+  let section = document.getElementById(tabId);
+  if (!section && right) {
+    section = document.createElement('section');
+    section.className = 'tab-content';
+    section.id = tabId;
+    section.hidden = true;
+    section.dataset.feature = feature.id;
+    right.append(section);
+  }
+  let button = document.getElementById(buttonId);
+  if (!button && tabs) {
+    button = document.createElement('button');
+    button.id = buttonId;
+    button.dataset.tab = tabId;
+    button.textContent = feature.name || feature.id;
+    button.hidden = true;
+    tabs.append(button);
+    button.addEventListener('click', () => {
+      tabs.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b === button));
+      document.querySelectorAll('.tab-content').forEach((c) => { c.hidden = c.id !== tabId; });
+    });
+  }
+  return { section, button };
+}
+
+/** Zamontuj treść panelu w sekcji zakładki (jeśli wtyczka podała `mount`). */
+function mountPanel(feature, section) {
+  const api = panels.featurePanels[feature.id];
+  if (!api || typeof api.mount !== 'function' || !section) return;
+  try {
+    api.mount(section, { feature });
+  } catch (err) {
+    console.error(`Wtyczka ${feature.id} - mount panelu nieudany:`, err);
+    section.append(Object.assign(document.createElement('div'), {
+      className: 'plugin-error', textContent: `Błąd panelu wtyczki: ${err && err.message}`,
+    }));
+  }
+}
+
+/**
  * Wczytaj i zarejestruj wszystkie włączone funkcje.
  * @param {{scene: object, player: object, timeline: object}} context
  * @returns {Promise<Array<object>>} opis wczytanych funkcji
@@ -51,6 +100,8 @@ export async function registerFeatures(context = {}) {
   for (const feature of features) {
     const ui = feature.ui || {};
     const errors = [];
+    // wtyczki zewnętrzne nie mają sekcji w index.html - tworzymy ją tutaj
+    const { section, button: tabButton } = ensureTab(feature);
     loadStyles(ui.styles);
     if (ui.panel) {
       try {
@@ -63,9 +114,8 @@ export async function registerFeatures(context = {}) {
           });
         }
         // przycisk zakładki pokazujemy dopiero, gdy panel istnieje
-        const button = document.getElementById(ui.tab_button || `tab-btn-${feature.id}`);
-        const content = document.getElementById(ui.tab || `tab-${feature.id}`);
-      if (button) button.hidden = false;
+        if (tabButton) tabButton.hidden = false;
+        mountPanel(feature, section);
       } catch (err) {
         errors.push(`panel: ${err && err.message}`);
         console.error(`Funkcja ${feature.id} - panel nie został wczytany:`, err);

@@ -35,8 +35,18 @@ def analyse_flight(samples: Any, events: Any, scene: Dict[str, Any],
 
 
 def available(features: Optional[list] = None) -> bool:
-    """Czy kontrola kolizji jest dostępna (funkcja przeszkód włączona i działa)."""
-    if not _obstacles_enabled(features):
+    """Czy kontrola kolizji jest dostępna (wtyczka przeszkód włączona i działa).
+
+    Gdy ``features`` nie podano, pytamy rejestr wtyczek o stan ``obstacles``:
+    wtyczka wyłączona albo z błędem = brak kontroli kolizji (planer działa dalej).
+    """
+    if features is None:
+        from app.features import registry
+
+        state = registry.resolve_state("obstacles")
+        if state != registry.STATE_ENABLED:
+            return False
+    elif not _obstacles_enabled(features):
         return False
     try:
         import importlib

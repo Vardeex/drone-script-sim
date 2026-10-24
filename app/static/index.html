@@ -6,6 +6,7 @@
   <title>Drone Script Simulator</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/css/style.css">
+<link rel="stylesheet" href="/static/css/plugins.css">
   <script type="importmap">
     {
       "imports": {
@@ -90,6 +91,7 @@
       <button data-tab="tab-console">Konsola</button>
       <button data-tab="tab-issues">Problemy <span class="count" id="badge-issues" hidden>0</span></button>
       <button data-tab="tab-history">Historia</button>
+      <button data-tab="tab-plugins">Wtyczki</button>
       <button data-tab="tab-obstacles" id="tab-btn-obstacles" hidden>Przeszkody</button>
       <button data-tab="tab-route" id="tab-btn-route" hidden>Planer</button>
     </nav>
@@ -236,6 +238,27 @@
           <button id="btn-refresh-history" class="ghost">↻ Odśwież</button>
         </div>
         <div id="history-list"><div class="empty">Brak zapisanych lotów.</div></div>
+      </div>
+    </section>
+
+    <section class="tab-content" id="tab-plugins" hidden>
+      <div class="section">
+        <div class="row between">
+          <h2 style="margin:0">Wtyczki</h2>
+          <button id="btn-refresh-plugins" class="ghost" title="Odśwież listę wtyczek">↻ Odśwież</button>
+        </div>
+        <div class="hint" id="plugins-meta"></div>
+        <div class="hint warn-text" style="margin-top:6px">
+          ⚠️ Zmiana włącz/wyłącz zapisuje się w <code>config.json</code> i zadziała
+          <strong>po restarcie serwera</strong> (zamknij okno konsoli i uruchom
+          <code>start.bat</code> ponownie).
+        </div>
+        <div id="plugins-list"><div class="empty">Wczytuję listę wtyczek…</div></div>
+      </div>
+      <div class="section">
+        <h2>Punkty rozszerzeń</h2>
+        <div class="hint">Wtyczka deklaruje w <code>plugin.json</code>, z których punktów korzysta.</div>
+        <div id="plugins-points" class="hint"></div>
       </div>
     </section>
 

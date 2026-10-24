@@ -54,3 +54,32 @@ def feature_settings(feature_id: str) -> Dict[str, Any]:
     """Ustawienia jednej funkcji (pusty słownik, gdy brak)."""
     value = features().get(feature_id)
     return value if isinstance(value, dict) else {}
+
+
+def save(data: Dict[str, Any]) -> None:
+    """Zapisz konfigurację do pliku (UTF-8, z wcięciem - czytelna dla człowieka)."""
+    path = config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8")
+
+
+def set_feature_enabled(feature_id: str, enabled: bool) -> Dict[str, Any]:
+    """Zapisz stan wtyczki w ``config.json`` (reszta konfiguracji bez zmian).
+
+    Zwraca całą konfigurację po zmianie. Pozostałe klucze ustawień wtyczki
+    (np. ``scene``) zostają - nadpisujemy tylko ``enabled``.
+    """
+    data = load()
+    section = data.get("features")
+    if not isinstance(section, dict):
+        section = {}
+        data["features"] = section
+    current = section.get(feature_id)
+    if isinstance(current, dict):
+        current = {**current, "enabled": bool(enabled)}
+    else:
+        current = {"enabled": bool(enabled)}
+    section[feature_id] = current
+    save(data)
+    return data

@@ -6,6 +6,7 @@ import { api, waitForRun } from './api.js';
 import { showTooltip, hideTooltip } from './tooltip.js';
 import * as panels from './panels.js';
 import { registerFeatures, attachSceneLayers } from './boot.js';
+import { renderPlugins } from './plugins_tab.js';
 
 //: wersja modułów funkcji (cache-busting lokalnego serwera statyków)
 export const ASSET_VERSION = 'v25';
@@ -120,6 +121,8 @@ function setScriptName(name) {
 function switchTab(id) {
   $$('#tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === id));
   $$('.tab-content').forEach((c) => { c.hidden = c.id !== id; });
+  // zakładka wtyczek pobiera świeżą listę przy każdym otwarciu
+  if (id === 'tab-plugins') renderPlugins();
 }
 
 function onFrame(t) {
@@ -473,6 +476,8 @@ async function importFlightFile(file) {
 
 function bindUi() {
   $$('#tabs button').forEach((btn) => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
+  const refreshPlugins = $('#btn-refresh-plugins');
+  if (refreshPlugins) refreshPlugins.addEventListener('click', () => renderPlugins());
 
   $('#btn-run').addEventListener('click', runSimulation);
   $('#btn-stop').addEventListener('click', async () => {

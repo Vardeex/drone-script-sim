@@ -201,26 +201,32 @@ tello.land()
 
 ## Punkty rozszerzeń
 
-Funkcje dodatkowe (wtyczki) nie są wkompilowane w rdzeń - rdzeń łączy się
-z nimi **tylko w tych punktach**:
+Funkcje dodatkowe (**wtyczki**) nie są wkompilowane w rdzeń - rdzeń odkrywa je
+przy starcie i łączy się z nimi **tylko w tych punktach**:
 
 | # | Punkt | Miejsce w kodzie |
 |---|---|---|
-| 1 | **Rejestr funkcji**: manifest `app/features/<id>/feature.json` + `router.py` (APIRouter) i `hooks.py`; rdzeń odkrywa funkcje, montuje router pod `api_prefix`, statyki pod `/static/features/<id>` i rejestruje hook | `app/features/registry.py`, wywołanie `_install_features()` w `app/server.py` |
-| 2 | **„Po symulacji przeanalizuj lot”**: jeden hook `register_post_save_hook(fn)`; rdzeń woła go po zapisaniu lotu, dostając zapis lotu i opcje uruchomienia | `app/features/<id>/hooks.py` → `app/storage.py` |
+| 1 | **Rejestr wtyczek**: manifest `plugin.json` + `router.py` (APIRouter) i `hooks.py`; rdzeń odkrywa wtyczki z `app/features/<id>/` (wbudowane) i `plugins/<id>/` (zewnętrzne), montuje router pod `api_prefix`, statyki pod `/static/features/<id>` i rejestruje hook | `app/features/registry.py`, `app/features/plugin_model.py`, wywołanie `_install_features()` w `app/server.py` |
+| 2 | **„Po symulacji przeanalizuj lot”**: jeden hook `register_post_save_hook(fn)`; rdzeń woła go po zapisaniu lotu, dostając zapis lotu i opcje uruchomienia | `src/hooks.py` wtyczki → `app/storage.py` |
 | 3 | **Opcje uruchomienia**: pole `options` w `POST /api/run` (i formularz `options` w `/api/upload`) trafia do `storage.save(..., options=...)` i do hooków | `app/server.py` |
-| 4 | **UI**: `GET /api/features` zwraca manifesty włączonych funkcji; `boot.js` doładowuje panel (`ui.panel`, rejestracja przez `panels.registerFeaturePanel`), warstwę sceny 3D (`ui.scene_layer`, `scene.addOverlayLayer`) i style (`ui.styles`) | `app/static/js/boot.js`, `app/static/js/panels.js`, `app/static/js/scene.js` |
+| 4 | **UI**: `GET /api/features` zwraca włączone wtyczki; `boot.js` doładowuje panel (`ui.panel`, rejestracja przez `panels.registerFeaturePanel`), warstwę sceny 3D (`ui.scene_layer`, `scene.addOverlayLayer`) i style (`ui.styles`); zakładkę i przycisk rdzeń tworzy sam, jeśli ich nie ma w HTML | `app/static/js/boot.js`, `app/static/js/panels.js`, `app/static/js/scene.js` |
 | 5 | **Kamera na trasę**: `scene.frameFlight()` (kadr na całą trasę bez zmiany kierunku patrzenia) i `scene.topDownFlight()` (widok z góry); przycisk „Dopasuj” używa ich, gdy kamera jest swobodna | `app/static/js/scene.js`, `app/static/js/app.js` |
 
-Rdzeń nie importuje niczego z `app/features/*` poza rejestrem. Funkcję można
-**wyłączyć jednym ustawieniem** w `config.json`:
+Rdzeń nie importuje niczego z wtyczek poza rejestrem. Wtyczkę można
+**wyłączyć jednym ustawieniem** w `config.json` (albo przełącznikiem
+w zakładce **Wtyczki** - zmiana działa po restarcie serwera):
 
 ```json
 { "features": { "obstacles": { "enabled": false } } }
 ```
 
 Wtedy znikają jej endpointy (`/api/obstacles/*` → 404), pliki UI nie są
-serwowane, a aplikacja działa normalnie (test: `tests/test_obstacles_feature_off.py`).
+serwowane, a aplikacja działa normalnie. Błąd jednej wtyczki (zły manifest,
+błąd składni, wyjątek przy wczytaniu) **nie wywraca aplikacji** - wtyczka
+trafia do stanu „błąd” z komunikatem w zakładce **Wtyczki**.
+
+Gotowy wzór: [`plugins/example_hello/`](plugins/example_hello/).
+Opis krok po kroku: **[docs/plugins.md](docs/plugins.md)**.
 
 ## Wymagania
 

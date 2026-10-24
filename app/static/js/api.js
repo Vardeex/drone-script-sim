@@ -17,6 +17,12 @@ async function request(url, options = {}) {
 
 export const api = {
   adapters: () => request('/api/adapters'),
+  plugins: () => request('/api/plugins'),
+  setPluginEnabled: (id, enabled) => request(`/api/plugins/${encodeURIComponent(id)}/enabled`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  }),
   examples: () => request('/api/examples'),
   example: (name) => request(`/api/examples/${encodeURIComponent(name)}`),
   run: (payload) => request('/api/run', {

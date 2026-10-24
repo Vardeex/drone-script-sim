@@ -1,0 +1,44 @@
+/* Zakładka „Wtyczki” - karty wtyczek ze stanem i przełącznikiem. */
+
+.plugin-card {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.plugin-card.state-enabled { border-left: 3px solid #3fb950; }
+.plugin-card.state-disabled { border-left: 3px solid #8b949e; opacity: 0.8; }
+.plugin-card.state-error { border-left: 3px solid #f85149; }
+
+.plugin-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.plugin-name { font-weight: 600; }
+.plugin-meta { font-size: 11px; }
+.plugin-desc { font-size: 12px; margin: 6px 0; line-height: 1.4; }
+.plugin-actions { margin-top: 6px; }
+
+.plugin-error {
+  margin: 6px 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(248, 81, 73, 0.12);
+  border: 1px solid rgba(248, 81, 73, 0.4);
+  font-size: 12px;
+  font-family: monospace;
+  word-break: break-word;
+}
+
+.tag.plugin-state.enabled { background: rgba(63, 185, 80, 0.2); color: #3fb950; }
+.tag.plugin-state.disabled { background: rgba(139, 148, 158, 0.2); color: #8b949e; }
+.tag.plugin-state.error { background: rgba(248, 81, 73, 0.2); color: #f85149; }
+
+.plugin-point { font-size: 12px; margin-bottom: 3px; }
+.warn-text { color: #d29922; }

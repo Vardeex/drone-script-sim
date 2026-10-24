@@ -27,6 +27,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import sys
 import threading
 import time
 import uuid
@@ -40,40 +41,35 @@ from pydantic import BaseModel, Field
 
 from . import paths, runner, storage
 from .adapters.base import detect_adapter, get_adapter, list_adapters
-from .features import registry
+from .features import plugin_model, registry
 
 app = FastAPI(title="Drone Script Simulator", version="1.0.0")
 
 
-# ------------------------------------------- punkt rozszerzeń nr 1: funkcje (wtyczki)
-def _install_features() -> List[Dict[str, Any]]:
-    """Zamontuj włączone funkcje: router API + statyki + hook po zapisie lotu.
+# ------------------------------------------- punkt rozszerzeń nr 1: wtyczki
+def _install_features() -> List[registry.PluginRecord]:
+    """Odkryj i zamontuj wtyczki (wbudowane z ``app/features`` + ``plugins/``).
 
-    Statyki funkcji montujemy **przed** ``/static`` - inaczej główny mount
-    ``StaticFiles`` przechwyciłby ``/static/features/...``.
+    Wtyczka z błędem nie przerywa startu aplikacji - trafia do stanu ``error``
+    z komunikatem (widocznym w UI, zakładka „Wtyczki”). Montowanie statyków
+    odbywa się wewnątrz rejestru, **przed** głównym ``/static``.
     """
-    installed: List[Dict[str, Any]] = []
-    for manifest in registry.enabled_features():
-        try:
-            static_dir = manifest.get("static")
-            if static_dir:
-                folder = paths.APP_DIR / static_dir
-                if folder.exists():
-                    app.mount(f"/static/features/{manifest['id']}",
-                              StaticFiles(directory=str(folder)), name=f"feature-{manifest['id']}")
-            app.include_router(registry.load_router(manifest),
-                               prefix=manifest.get("api_prefix") or f"/api/{manifest['id']}")
-            hooks = __import__(f"{manifest['package']}.hooks", fromlist=["register"])
-            hooks.register(storage)
-        except Exception as exc:   # pragma: no cover - uszkodzona funkcja nie blokuje aplikacji
-            print(f"[features] nie udało się włączyć '{manifest['id']}': "
-                  f"{type(exc).__name__}: {exc}")
-            continue
-        installed.append(manifest)
-    return installed
+    records = registry.load_all(app, storage)
+    for record in records:
+        if record.state == registry.STATE_ERROR:
+            print(f"[plugins] '{record.id}' wyłączona: {record.error}", file=sys.stderr)
+    return records
 
 
-FEATURES: List[Dict[str, Any]] = _install_features()
+PLUGINS: List[registry.PluginRecord] = _install_features()
+#: wtyczki włączone i zamontowane (kontrakt ``GET /api/features``)
+FEATURES: List[Dict[str, Any]] = [record for record in PLUGINS if record.enabled]
+
+
+class PluginToggle(BaseModel):
+    """Treść żądania włączenia/wyłączenia wtyczki."""
+
+    enabled: bool = Field(..., description="True = włącz, False = wyłącz")
 
 # statyki aplikacji (montowane po statykach funkcji)
 app.mount("/static", StaticFiles(directory=str(paths.STATIC_DIR)), name="static")
@@ -113,12 +109,49 @@ class RunRequest(BaseModel):
 
 @app.get("/api/features")
 def api_features() -> List[Dict[str, Any]]:
-    """Włączone funkcje (wtyczki) i ich pliki UI (punkt rozszerzeń nr 4).
+    """Włączone wtyczki i ich pliki UI (punkt rozszerzeń nr 4).
 
-    Funkcja wyłączona w ``config.json`` nie pojawia się tutaj, a jej router i
+    Wtyczka wyłączona w ``config.json`` nie pojawia się tutaj, a jej router i
     statyki nie istnieją - aplikacja działa normalnie bez niej.
     """
-    return [registry.public_descriptor(manifest) for manifest in FEATURES]
+    return [registry.public_descriptor(record) for record in FEATURES]
+
+
+@app.get("/api/plugins")
+def api_plugins() -> Dict[str, Any]:
+    """Wszystkie wtyczki (także wyłączone i z błędem) - zakładka „Wtyczki”.
+
+    Zwraca też listę znanych punktów rozszerzeń (do podpowiedzi w UI) oraz
+    informację, że zmiana stanu działa po restarcie serwera.
+    """
+    return {
+        "app_version": registry.app_version(),
+        "restart_required": True,
+        "extension_points": [
+            {"id": key, "description": value}
+            for key, value in sorted(plugin_model.EXTENSION_POINTS.items())
+        ],
+        "plugins": [registry.public_descriptor(record) for record in PLUGINS],
+    }
+
+
+@app.post("/api/plugins/{plugin_id}/enabled")
+def api_plugin_set_enabled(plugin_id: str, body: PluginToggle) -> Dict[str, Any]:
+    """Włącz lub wyłącz wtyczkę (zapis w ``config.json``, działa po restarcie).
+
+    Nie przeładowujemy aplikacji w locie - montowanie routerów i statyków
+    wymaga restartu procesu. Odpowiedź zawiera aktualny stan z konfiguracji.
+    """
+    known = {record.id for record in PLUGINS}
+    if plugin_id not in known:
+        raise HTTPException(status_code=404, detail=f"nie ma wtyczki '{plugin_id}'")
+    registry.set_enabled(plugin_id, body.enabled)
+    return {
+        "id": plugin_id,
+        "enabled": bool(body.enabled),
+        "restart_required": True,
+        "message": "Zmiana zadziała po restarcie serwera.",
+    }
 
 
 @app.get("/", include_in_schema=False)
