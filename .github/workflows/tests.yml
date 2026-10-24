@@ -1,0 +1,87 @@
+name: Testy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Anuluj poprzedni przebieg dla tego samego brancha/PR (oszczędza minuty)
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------- testy główne
+  tests:
+    name: Testy (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Zależności aplikacji
+        run: python -m pip install --upgrade pip -r requirements.txt pyflakes
+
+      - name: pyflakes
+        run: python -m pyflakes app tests lib/dronemoves
+
+      - name: Testy aplikacji (bez przeglądarki)
+        run: python -m pytest -p no:cacheprovider -m "not browser"
+
+      - name: Testy biblioteki dronemoves
+        working-directory: lib/dronemoves
+        run: python -m pytest -p no:cacheprovider
+
+  # ------------------------------------------------------- przeglądarka (Playwright)
+  browser:
+    name: Testy w przeglądarce (ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Zależności aplikacji + Playwright
+        run: python -m pip install --upgrade pip -r requirements.txt playwright
+
+      - name: Chromium
+        run: python -m playwright install --with-deps chromium
+
+      - name: Testy przeglądarkowe
+        run: python -m pytest -p no:cacheprovider -m browser
+
+  # ------------------------------------------------------------- paczka biblioteki
+  package:
+    name: Paczka dronemoves (build + twine check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: build + twine
+        run: python -m pip install --upgrade pip build twine
+
+      - name: Zbuduj paczkę i sprawdź metadane
+        working-directory: lib/dronemoves
+        run: |
+          python -m build
+          python -m twine check --strict dist/*

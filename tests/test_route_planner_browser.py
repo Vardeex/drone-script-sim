@@ -10,6 +10,7 @@ zainstalowany, jest pomijany (``skip``), a nie wywala całego zestawu.
 
 from __future__ import annotations
 
+import socket
 import subprocess
 import sys
 import time
@@ -20,11 +21,21 @@ import pytest
 playwright = pytest.importorskip("playwright.sync_api")
 sync_playwright = playwright.sync_playwright
 
+#: testy wymagają przeglądarki (Chromium) - w CI osobny job, lokalnie domyślnie
+pytestmark = pytest.mark.browser
+
+
+def _free_port() -> int:
+    """Wolny port lokalny (w CI porty bywają zajęte przez inne procesy)."""
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
 
 @pytest.fixture(scope="module")
 def server():
     """Serwer aplikacji na wolnym porcie (zatrzymywany po testach)."""
-    port = 8833
+    port = _free_port()
     process = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "app.server:app", "--host", "127.0.0.1",
          "--port", str(port)],

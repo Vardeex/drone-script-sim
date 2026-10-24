@@ -1,8 +1,13 @@
 # Drone Script Simulator
 
+[![Testy](https://github.com/Vardeex/drone-script-sim/actions/workflows/tests.yml/badge.svg)](https://github.com/Vardeex/drone-script-sim/actions/workflows/tests.yml)
+
 > **Status: prototyp / wersja rozwojowa.** Model 3D drona jest w trakcie dopracowania,
 > biblioteka `dronemoves` była testowana tylko w symulacji, a parametry sterowania RC
 > to założenia, nie pomiary z prawdziwego drona.
+
+> **Nowy tutaj?** Zacznij od **[docs/PORADNIK.md](docs/PORADNIK.md)** - krok po kroku
+> od instalacji do pierwszego lotu i przejścia na prawdziwego Tello.
 
 Lokalna aplikacja do **testowania skryptów sterujących dronem bez drona**.
 Wgrywasz skrypt Pythona (na razie dla DJI Tello przez `djitellopy`), aplikacja
@@ -256,6 +261,30 @@ Testy:
 ```bat
 .venv\Scripts\python.exe -m pytest
 ```
+
+Testy w przeglądarce (Playwright + Chromium, oznaczone markerem `browser`) są
+pomijane, gdy Playwright nie jest zainstalowany:
+
+```bat
+.venv\Scripts\python.exe -m pip install playwright
+.venv\Scripts\python.exe -m playwright install chromium
+.venv\Scripts\python.exe -m pytest -m browser
+```
+
+### Testy automatyczne (GitHub Actions)
+
+Plik [`.github/workflows/tests.yml`](.github/workflows/tests.yml) uruchamia się
+przy każdym pushu i pull requeście na `main`:
+
+| Job | Platforma | Co robi |
+|---|---|---|
+| `Testy` | `ubuntu-latest`, `windows-latest` | Python 3.11, `pyflakes`, testy aplikacji `-m "not browser"`, testy biblioteki `lib/dronemoves` |
+| `Testy w przeglądarce` | `ubuntu-latest` | `playwright install --with-deps chromium`, testy `-m browser` |
+| `Paczka dronemoves` | `ubuntu-latest` | `python -m build` + `twine check --strict` |
+
+Status: plakietka na górze README. Testy nie zależą od ścieżek lokalnych ani od
+działającego serwera - każdy test sam uruchamia aplikację (`TestClient`) albo
+serwer na wolnym porcie.
 
 
 ## Uruchomienie
