@@ -1,8 +1,7 @@
-"""Testy sandboxu runnera: wirtualny zegar, blokada sieci, timeout, izolacja."""
+﻿"""Testy sandboxu runnera: wirtualny zegar, blokada sieci, timeout, izolacja."""
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import subprocess
@@ -15,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from app import runner
+from tests.proc_helpers import pid_alive
 
 SQUARE = """
 from djitellopy import Tello
@@ -204,47 +204,55 @@ def test_cleanup_work_dirs_removes_old_only(tmp_path, monkeypatch):
     assert fresh.exists()
 
 
+
+
 def test_watchdog_kills_script_when_parent_dies():
-    """Watchdog w sandboxie: gdy proces uruchamiający skrypt zginie, skrypt też ginie."""
+    """Watchdog w sandboxie: gdy proces uruchamiający skrypt zginie, skrypt też ginie.
+
+    Wersja wieloplatformowa: helper (proces „rodzic") wypisuje PID uruchomionego
+    skryptu na stdout, więc test nie potrzebuje PowerShella ani ``tasklist``.
+    Życie procesu sprawdzamy przez ``_pid_alive`` (``os.kill(pid, 0)`` na POSIX,
+    ``OpenProcess`` na Windows).
+    """
     helper = (
-        "import json, os, sys, time\n"
+        "import sys, threading, time\n"
         "from app import runner\n"
-        "runner.run_script('while True:\\n    pass\\n', 'w.py', run_id='watch', timeout=60)\n"
+        "def run():\n"
+        "    runner.run_script('while True:\\n    pass\\n', 'w.py', run_id='watch', timeout=60)\n"
+        "threading.Thread(target=run, daemon=True).start()\n"
+        "for _ in range(300):\n"
+        "    pids = runner.running_script_pids()\n"
+        "    if pids:\n"
+        "        print(next(iter(pids)), flush=True)\n"
+        "        break\n"
+        "    time.sleep(0.1)\n"
+        "while True:\n"
+        "    time.sleep(1)\n"
     )
     env = dict(os.environ)
     env["PYTHONPATH"] = str(Path(__file__).resolve().parent.parent)
     parent = subprocess.Popen([sys.executable, "-c", helper], env=env,
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     try:
-        deadline = time.time() + 15
         script_pid = None
+        deadline = time.time() + 25
         while time.time() < deadline and script_pid is None:
-            procs = subprocess.run(
-                ["powershell", "-NoProfile", "-Command",
-                 "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
-                 "Select-Object ProcessId,ParentProcessId | ConvertTo-Json -Compress"],
-                capture_output=True, text=True).stdout.strip()
-            items = json.loads(procs) if procs else []
-            items = items if isinstance(items, list) else [items]
-            for item in items:
-                if item["ParentProcessId"] == parent.pid:
-                    script_pid = item["ProcessId"]
-                    break
-            time.sleep(0.2)
-        assert script_pid, "proces skryptu nie wystartował"
-        # zabij proces uruchamiający skrypt (twardo, bez sprzątania)
-        parent.kill()
+            line = (parent.stdout.readline() or "").strip()
+            if line.isdigit():
+                script_pid = int(line)
+        assert script_pid, "proces skryptu nie wystartował (helper nie wypisał PID)"
+        assert pid_alive(script_pid), "skrypt nie żyje mimo uruchomienia"
+
+        parent.kill()                     # rodzic ginie twardo, bez sprzątania
         parent.wait(timeout=10)
-        # watchdog powinien zakończyć skrypt w ciągu ~2 s
-        deadline = time.time() + 10
+
+        deadline = time.time() + 15       # watchdog reaguje w ~1-2 s
         alive = True
         while time.time() < deadline:
-            out = subprocess.run(["tasklist", "/FI", f"PID eq {script_pid}"],
-                                 capture_output=True, text=True).stdout
-            alive = str(script_pid) in out
+            alive = pid_alive(script_pid)
             if not alive:
                 break
-            time.sleep(0.3)
+            time.sleep(0.2)
         assert not alive, f"skrypt {script_pid} przeżył śmierć rodzica (brak watchdoga)"
     finally:
         if parent.poll() is None:
@@ -348,11 +356,11 @@ def test_stop_all_leaves_no_orphans():
     thread.join(timeout=15)
     assert not thread.is_alive()
     assert not runner.active_processes()
-    # proces potomny nie żyje (na Windows sprawdzamy przez tasklist)
-    if os.name == "nt":
-        output = subprocess.run(["tasklist", "/FI", f"PID eq {pid}"],
-                                capture_output=True, text=True).stdout
-        assert str(pid) not in output
+    # proces potomny nie żyje (sprawdzenie przenośne: POSIX i Windows)
+    assert not pid_alive(pid), f"proces skryptu {pid} przeżył stop_all()"
+
+
+def test_flight_over_500cm_warns_but_continues():
     """Przekroczenie 500 cm = ostrzeżenie (skrypt trwa), z linią komendy."""
     source = (
         "from djitellopy import Tello\n"

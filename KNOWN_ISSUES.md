@@ -149,4 +149,44 @@ wyzwalał powrotu. Test `test_watch_battery_triggers_land` (FakeDrone,
 `action="land"`) przechodził już wtedy - dlatego błąd przejęcia sterowania
 ujawniał się dopiero z prawdziwym `Tello` w symulatorze.
 
+---
+
+## KI-6: sanityzacja ścieżek psuła ścieżki na Linuksie/macOS - NAPRAWIONE
+
+**Objaw (CI, ubuntu-latest).** `tests/test_runner_sandbox.py::test_mock_djitellopy_used_not_real_library`
+padał z `AssertionError`: oczekiwano `.../app/adapters/tello/djitellopy/__init__.py`,
+a było `app__init__.py`. Na Windows test przechodził.
+
+**Przyczyna.** `_PATH_OUTSIDE` w `app/runner.py` (i to samo w `app/sandbox_runtime.py`)
+było jednym wyrażeniem regularnym pisanym pod Windows. Na POSIX literał `/`
+w środku ścieżki był traktowany jak początek nowej ścieżki absolutnej, więc
+kolejne segmenty wewnątrz projektu były „zjadane” i zostawała ostatnia nazwa
+zlepiona z pierwszym segmentem (stąd `app__init__.py`). Dodatkowo ścieżki
+wewnątrz projektu nie były pokazywane względnie, tylko sprowadzane do nazwy pliku.
+
+**Pomiar przed naprawą** (`sanitize` na ścieżce POSIX):
+
+| Wejście | Wynik (błędny) |
+|---|---|
+| `/home/x/proj/app/adapters/tello/djitellopy/__init__.py` | `__init__.py` |
+| `app/adapters/tello/djitellopy/__init__.py` | `app__init__.py` |
+
+**Poprawka.** Nowy moduł `app/path_sanitize.py` z jawnymi regułami:
+ścieżka **wewnątrz projektu** → **względna** (`app/adapters/...`), **spoza
+projektu** → **sama nazwa pliku**. Regex wymaga początku ścieżki (`C:\`, `C:/`,
+`\\serwer\`, `/` na początku albo po białym znaku/znaku interpunkcyjnym), więc
+ukośniki w ścieżkach względnych nie są już traktowane jak absolutne.
+Używają go: `runner._sanitize_output`, `sandbox_runtime._sanitize_traceback`.
+
+**Weryfikacja.** `tests/test_path_sanitize.py` (24 testy): przykłady Windows
+(`C:\Users\x\AppData\Local\Temp\...`, UNC) i POSIX (`/home/x/...`, `/tmp/...`,
+`/Users/x/...`, `/usr/lib/...`), zarówno wewnątrz, jak i spoza projektu, brak
+wycieku nazwy użytkownika, interpunkcja i cudzysłowy, tekst bez ścieżek bez zmian.
+Ten sam traceback daje identyczny wynik dla projektu POSIX i Windows.
+
+**Uwaga.** Przy okazji tego samego przeglądu usunięto zależność testów od
+PowerShella i `tasklist` (patrz `tests/proc_helpers.py`) - watchdog w sandboxie
+działał na POSIX już wcześniej (`os.kill(pid, 0)`, `killpg`, `start_new_session`),
+ale test tego nie sprawdzał.
+
 jest grupa `route-planner` z markerami.

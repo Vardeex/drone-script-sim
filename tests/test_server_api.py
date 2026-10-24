@@ -1,9 +1,7 @@
-"""Testy API serwera FastAPI (uruchamianie skryptów, loty, CSV, import)."""
+﻿"""Testy API serwera FastAPI (uruchamianie skryptów, loty, CSV, import)."""
 
 from __future__ import annotations
 
-import os
-import subprocess
 import time
 
 import pytest
@@ -11,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from app import runner
 from app.server import app
+from tests.proc_helpers import pid_alive
 
 
 @pytest.fixture(scope="module")
@@ -240,8 +239,6 @@ def test_shutdown_kills_running_scripts():
     # po wyjściu z bloku TestClient wysyła zdarzenie shutdown
     time.sleep(1.0)
     assert not runner.running_script_pids()
-    if os.name == "nt":
-        for pid in pids:
-            out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}"],
-                                 capture_output=True, text=True).stdout
-            assert str(pid) not in out
+    for pid in pids:                      # sprawdzenie przenośne (POSIX i Windows)
+        assert not pid_alive(pid), f"proces skryptu {pid} przeżył zamknięcie serwera"
+
