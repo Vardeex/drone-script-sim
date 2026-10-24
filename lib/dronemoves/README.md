@@ -288,4 +288,5 @@ wywoływane.
 
 ## Licencja
 
-MIT — patrz [LICENSE](LICENSE).
+MIT — patrz
+[LICENSE](https://github.com/Vardeex/drone-script-sim/blob/main/lib/dronemoves/LICENSE).

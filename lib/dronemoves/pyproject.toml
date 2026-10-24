@@ -8,14 +8,14 @@ version = "0.2.2"
 description = "Płynne manewry (forward, turn, arc, circle, slalom, spirala...) dla dronów sterowanych z Pythona"
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Vardeex" }]
 keywords = ["drone", "tello", "djitellopy", "uav", "flight", "maneuvers", "robotics"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Intended Audience :: Education",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
