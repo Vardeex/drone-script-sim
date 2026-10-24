@@ -146,6 +146,9 @@ class Settings:
     wifi_snr_db: int = 60
     #: mnożnik zużycia baterii (tylko do testów: przyspiesza rozładowanie)
     battery_drain_scale: float = 1.0
+    #: scena przeszkód (``Scene.as_dict()``) - maty Mission Pad i przeszkody;
+    #: ``None`` = brak sceny. Mock Tello czyta z niej maty do wykrywania.
+    scene: Optional[Dict[str, Any]] = None
 
 
 @dataclass

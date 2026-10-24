@@ -13,7 +13,10 @@
 import * as THREE from 'three';
 
 const M = 100;                       // 1 m = 100 cm
-const KIND_COLOR = { box: 0x60a5fa, cylinder: 0x34d399, gate: 0xfbbf24, plane: 0x94a3b8 };
+const KIND_COLOR = {
+  box: 0x60a5fa, cylinder: 0x34d399, gate: 0xfbbf24, plane: 0x94a3b8,
+  mission_pad: 0x22d3ee,
+};
 const LEVEL_COLOR = { collision: 0xef4444, warning: 0xf59e0b, gate: 0x22c55e };
 const LEVEL_LABEL = { collision: 'Kolizja', warning: 'Zbliżenie', gate: 'Bramka' };
 
@@ -133,8 +136,24 @@ export function createLayer({ scene: droneScene } = {}) {
     return group;
   }
 
+  // Mata Tello EDU: cienka płytka na podłodze + numer maty (m1-m8) na środku.
+  // Model nie ma tekstury kodu ArUco, więc numer jest etykietą tekstową.
+  function buildMissionPad(obstacle, material) {
+    const [w, d] = obstacle.size;
+    const thickness = Math.max(obstacle.size[2] || 1, 0.5);
+    const group = new THREE.Group();
+    group.add(new THREE.Mesh(new THREE.BoxGeometry(w / M, thickness / M, d / M), material));
+    const label = makeTextSprite(`m${obstacle.pad_id || 1}`, '#f0fdff', 1.2);
+    label.position.set(0, thickness / M + 0.06, 0);
+    // etykieta nie może przechwytywać kliknięć - inaczej nie da się chwycić maty
+    label.userData.pickable = false;
+    group.add(label);
+    return group;
+  }
+
   function buildMesh(obstacle, material) {
     const [w, d, h] = obstacle.size;
+    if (obstacle.kind === 'mission_pad') return buildMissionPad(obstacle, material);
     if (obstacle.kind === 'cylinder') {
       return wrap(new THREE.Mesh(
         new THREE.CylinderGeometry(w / 2 / M, w / 2 / M, h / M, 24), material));
@@ -216,6 +235,7 @@ export function createLayer({ scene: droneScene } = {}) {
       -((clientY - rect.top) / rect.height) * 2 + 1);
     raycaster.setFromCamera(ndc, droneScene.camera);
     for (const hit of raycaster.intersectObjects(pickGroup.children, true)) {
+      if (hit.object.userData?.pickable === false) continue;   // etykiety (np. numer maty)
       let node = hit.object;
       while (node && !node.userData?.obstacleId) node = node.parent;
       if (node?.userData?.obstacleId) return node;
@@ -240,6 +260,7 @@ export function createLayer({ scene: droneScene } = {}) {
     const obstacle = target.userData.obstacle;
     state.callbacks.onSelect?.(obstacle.id);
     if (obstacle.kind === 'plane') return;      // sufitu nie przesuwamy po podłożu
+    // matę przesuwamy po podłodze (z zawsze 0 - mata leży na ziemi)
     drag.id = obstacle.id;
     drag.active = true;
     const point = pointerRay(event.clientX, event.clientY);

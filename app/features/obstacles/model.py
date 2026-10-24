@@ -13,10 +13,14 @@ Typy przeszkód:
 * ``cylinder`` - walec (słup, drzewo) o promieniu ``size[0] / 2``,
 * ``gate`` - rama do przelotu (prostopadłościenna rama z otworem),
 * ``plane`` - płaszczyzna (sufit / podłoga) - tylko do wyświetlania,
-  nie bierze udziału w kolizjach ani w pomiarze odległości.
+  nie bierze udziału w kolizjach ani w pomiarze odległości,
+* ``mission_pad`` - mata Tello EDU (Mission Pad 1-8) leżąca na podłodze;
+  nie jest przeszkodą (brak kolizji), służy symulacji wykrywania maty.
 
 Pozycja to **środek bryły** ``(x, y, z)``; dla ``gate`` płaszczyzna ramy leży
-w punkcie ``(x, y)`` i jest prostopadła do kierunku ``yaw_deg``.
+w punkcie ``(x, y)`` i jest prostopadła do kierunku ``yaw_deg``. Dla
+``mission_pad`` ``position`` to środek maty (``z`` zwykle 0), ``size`` to
+``[szerokość, głębokość, 1]``, a numer maty (1-8) jest w polu ``pad_id``.
 """
 
 from __future__ import annotations
@@ -27,15 +31,18 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 Vec2 = Tuple[float, float]
 
-KINDS = ("box", "cylinder", "gate", "plane")
+KINDS = ("box", "cylinder", "gate", "plane", "mission_pad")
 KIND_LABELS = {
     "box": "prostopadłościan",
     "cylinder": "walec",
     "gate": "bramka",
     "plane": "płaszczyzna",
+    "mission_pad": "mata (Mission Pad)",
 }
 #: gatunki z ``plane`` nie mają objętości - pomijane w kolizjach
 SOLID_KINDS = ("box", "cylinder", "gate")
+#: numery mat Tello EDU (``m1``-``m8``)
+PAD_IDS = (1, 2, 3, 4, 5, 6, 7, 8)
 
 
 class SceneError(ValueError):
@@ -77,6 +84,8 @@ class Obstacle:
     opening: Tuple[float, float] = (50.0, 50.0)
     #: grubość ramy bramki / płaszczyzny (cm)
     thickness: float = 5.0
+    #: numer maty Tello EDU (1-8), tylko dla ``kind == "mission_pad"``
+    pad_id: int = 1
     id: str = ""
 
     def __post_init__(self) -> None:
@@ -95,6 +104,12 @@ class Obstacle:
         self.thickness = _as_float(self.thickness, "thickness")
         if self.thickness <= 0:
             raise SceneError("Grubość musi być dodatnia.")
+        try:
+            self.pad_id = int(self.pad_id)
+        except (TypeError, ValueError) as exc:
+            raise SceneError("Pole 'pad_id' musi być liczbą 1-8.") from exc
+        if self.kind == "mission_pad" and self.pad_id not in PAD_IDS:
+            raise SceneError(f"Numer maty musi być w zakresie 1-8 (jest {self.pad_id}).")
         if not self.name:
             self.name = KIND_LABELS[self.kind]
 
@@ -171,6 +186,8 @@ class Obstacle:
             data["thickness"] = round(self.thickness, 3)
         elif self.kind == "plane":
             data["thickness"] = round(self.thickness, 3)
+        elif self.kind == "mission_pad":
+            data["pad_id"] = self.pad_id
         return data
 
     @classmethod
@@ -186,6 +203,7 @@ class Obstacle:
             yaw_deg=data.get("yaw_deg", 0),
             opening=data.get("opening", (50, 50)),
             thickness=data.get("thickness", 5),
+            pad_id=data.get("pad_id", 1),
             id=str(data.get("id") or ""),
         )
 

@@ -129,6 +129,7 @@ def api_preset(kind: str, x: float = 0.0, y: float = 0.0, z: float = 0.0,
         "cylinder": {"size": [30, 30, 150], "name": "słup"},
         "gate": {"size": [100, 5, 100], "opening": [60, 60], "thickness": 5, "name": "bramka"},
         "plane": {"size": [400, 400, 5], "thickness": 5, "name": "sufit"},
+        "mission_pad": {"size": [30, 30, 1], "name": "mata"},
     }
     if kind not in presets:
         raise HTTPException(404, f"Nieznany typ przeszkody: {kind}")

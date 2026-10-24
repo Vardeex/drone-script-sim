@@ -62,6 +62,10 @@ class TelloController:
         #: kurs nosa z planu biblioteki (°, konwencja symulatora) albo None
         self._dronemoves_yaw: Optional[float] = None
         self.speed = LIMITS.default_speed
+        #: czy wykrywanie mat (Mission Pad) jest włączone (``enable_mission_pads``)
+        self.mission_pads = False
+        #: kierunek wykrywania mat: 0 = dół, 1 = przód, 2 = oba (SDK 2.0)
+        self.mission_pad_direction = 0
 
     # ---------------------------------------------------------- pomocnicze
     def _event(self, command: str, args: Sequence[Any]) -> Event:
@@ -323,6 +327,189 @@ class TelloController:
         self.rc = {"lr": 0, "fb": 0, "ud": 0, "yaw": 0}
         self._dronemoves_rc = None
         self._dronemoves_rc_thread = None
+
+    # --------------------------------------------------------------- mission pady
+    def _pads(self):
+        """Maty ze sceny w symulacji (pusta lista, gdy brak sceny)."""
+        from ...features.obstacles import mission_pads
+
+        return mission_pads.scene_pads(self.sim.settings.scene)
+
+    def _visible_pad(self) -> Optional[Dict[str, Any]]:
+        """Mata widziana w bieżącym położeniu (albo ``None``)."""
+        from ...features.obstacles import mission_pads
+
+        if not self.mission_pads or not self.sim.airborne:
+            return None
+        return mission_pads.visible_pad(self.sim.position, self._pads(),
+                                        self.mission_pad_direction)
+
+    def enable_mission_pads(self) -> None:
+        event = self._event("enable_mission_pads", [])
+        self.mission_pads = True
+        self.sim.commit(event)
+
+    def disable_mission_pads(self) -> None:
+        event = self._event("disable_mission_pads", [])
+        self.mission_pads = False
+        self.sim.commit(event)
+
+    def set_mission_pad_direction(self, direction: Any) -> None:
+        """Kierunek wykrywania mat (0 = dół, 1 = przód, 2 = oba)."""
+        direction = _as_int(direction, "x")
+        event = self._event("set_mission_pad_detection_direction", [direction])
+        if direction not in (0, 1, 2):
+            exc = ValueError(f"Kierunek wykrywania mat musi być 0, 1 lub 2 "
+                             f"(jest {direction}).")
+            self._fail(event, exc, self.sim)
+            raise exc
+        self.mission_pad_direction = direction
+        self.sim.commit(event)
+
+    def get_mission_pad_id(self) -> int:
+        pad = self._visible_pad()
+        return self._read("get_mission_pad_id", -1 if pad is None else int(pad["pad_id"]))
+
+    def mission_pad_distance(self, axis: int) -> int:
+        """Odległość od widzianej maty w układzie maty (``0`` = x, ``1`` = y, ``2`` = z).
+
+        Gdy mata nie jest widziana, SDK zwraca ``0`` dla wszystkich osi
+        (``get_mission_pad_id()`` daje wtedy ``-1``).
+        """
+        from ...features.obstacles import mission_pads
+
+        name = ("get_mission_pad_distance_x", "get_mission_pad_distance_y",
+                "get_mission_pad_distance_z")[axis]
+        pad = self._visible_pad()
+        if pad is None:
+            return self._read(name, 0)
+        offset = mission_pads.pad_offset(self.sim.position, -self.sim.yaw, pad)
+        return self._read(name, int(round(offset[axis])))
+
+    def _require_visible_pad(self, mid: int) -> Dict[str, Any]:
+        """Mata ``mid`` musi być widziana - inaczej błąd jak na prawdziwym Tello."""
+        from ...features.obstacles import mission_pads
+
+        if not self.mission_pads:
+            raise mission_pads.PadError(
+                "Wykrywanie mat nie jest włączone - najpierw enable_mission_pads().")
+        pad = mission_pads.find_pad(self._pads(), mid)
+        if pad is None:
+            raise mission_pads.PadError(f"W scenie nie ma maty o numerze m{mid}.")
+        visible = self._visible_pad()
+        if visible is None or int(visible.get("pad_id") or 0) != int(mid):
+            seen = -1 if visible is None else int(visible.get("pad_id") or -1)
+            raise mission_pads.PadError(
+                f"Mata m{mid} nie jest widziana (widziana: {seen}) - "
+                "dron musi być nad matą w zasięgu kamery.")
+        return pad
+
+    def go_xyz_speed_mid(self, x: Any, y: Any, z: Any, speed: Any, mid: Any) -> None:
+        """Lot do punktu w układzie maty ``mid`` (``go x y z speed mID``)."""
+        from ...features.obstacles import mission_pads
+
+        command = "go_xyz_speed_mid"
+        mid = _as_int(mid, "mid")
+        x, y, z, speed = (_as_int(x, "x"), _as_int(y, "y"), _as_int(z, "z"),
+                          _as_int(speed, "speed"))
+        event = self._event(command, [x, y, z, speed, mid])
+        try:
+            for name, value in (("x", x), ("y", y), ("z", z)):
+                if abs(value) > LIMITS.move_max_cm:
+                    raise ValueError(f"Parametr '{name}' = {value} cm przekracza limit "
+                                     f"{LIMITS.move_max_cm} cm (djitellopy rzuca ValueError).")
+            _range(speed, LIMITS.speed_min, LIMITS.speed_max, "speed", " cm/s", event.line)
+            if mid not in mission_pads.PAD_IDS:
+                raise mission_pads.PadError(f"Numer maty musi być 1-8 (jest {mid}).")
+            self.sim.require_airborne(command)
+            pad = self._require_visible_pad(mid)
+        except core.SimulationError as exc:
+            self._fail(event, exc, self.sim)
+            if isinstance(exc, ValueError):
+                raise
+            raise core.SimulationError(str(exc)) from None
+        self._fly_to_pad_point(command, pad, (x, y, z), speed, event,
+                              [x, y, z, speed, mid])
+
+    def _fly_to_pad_point(self, command: str, pad: Dict[str, Any], point: Sequence[float],
+                          speed: int, event: Event, args: Sequence[Any]) -> None:
+        """Przelot do ``point`` w układzie maty ``pad`` (wspólne dla ``*_mid``)."""
+        from ...features.obstacles import mission_pads
+
+        target = mission_pads.pad_target_world(pad, point)
+        dx = target[0] - self.sim.position[0]
+        dy = target[1] - self.sim.position[1]
+        dz = target[2] - self.sim.position[2]
+        self.sim.move_relative(command, args, dx, dy, dz, speed, event)
+
+    def curve_xyz_speed_mid(self, x1: Any, y1: Any, z1: Any, x2: Any, y2: Any,
+                            z2: Any, speed: Any, mid: Any) -> None:
+        """Lot łukiem do ``(x2, y2, z2)`` w układzie maty ``mid`` (przez punkt 1)."""
+        from ...features.obstacles import mission_pads
+
+        command = "curve_xyz_speed_mid"
+        mid = _as_int(mid, "mid")
+        vals = [_as_int(v, n) for v, n in ((x1, "x1"), (y1, "y1"), (z1, "z1"),
+                                           (x2, "x2"), (y2, "y2"), (z2, "z2"),
+                                           (speed, "speed"))]
+        event = self._event(command, vals + [mid])
+        try:
+            for name, value in zip(("x1", "y1", "z1", "x2", "y2", "z2"), vals[:6]):
+                if abs(value) > LIMITS.move_max_cm:
+                    raise ValueError(f"Parametr '{name}' = {value} cm przekracza limit "
+                                     f"{LIMITS.move_max_cm} cm (djitellopy rzuca ValueError).")
+            _range(vals[6], LIMITS.speed_min, LIMITS.speed_max, "speed", " cm/s", event.line)
+            if mid not in mission_pads.PAD_IDS:
+                raise mission_pads.PadError(f"Numer maty musi być 1-8 (jest {mid}).")
+            self.sim.require_airborne(command)
+            pad = self._require_visible_pad(mid)
+        except core.SimulationError as exc:
+            self._fail(event, exc, self.sim)
+            if isinstance(exc, ValueError):
+                raise
+            raise core.SimulationError(str(exc)) from None
+        self._fly_to_pad_point(command, pad, vals[3:6], vals[6], event, vals + [mid])
+
+    def go_xyz_speed_yaw_mid(self, x: Any, y: Any, z: Any, speed: Any, yaw: Any,
+                             mid1: Any, mid2: Any) -> None:
+        """Przelot nad ``mid2`` i obrót do kursu ``yaw`` względem ``mid2``.
+
+        Model (``jump x y z speed yaw m1 m2`` z SDK 2.0): dron leci do
+        ``(x, y, z)`` w układzie ``mid1``, potem nad ``mid2`` na wysokości ``z``
+        i obraca się. Symulator wykonuje **drugi etap** jako ruch - telemetria
+        pokazuje przelot do punktu nad ``mid2``; obrót jest tylko sprawdzany
+        (wynikowy kurs nie jest zmieniany, bo ruch i obrót to w silniku osobne
+        operacje).
+        """
+        from ...features.obstacles import mission_pads
+
+        command = "go_xyz_speed_yaw_mid"
+        mid1, mid2 = _as_int(mid1, "mid1"), _as_int(mid2, "mid2")
+        x, y, z, speed = (_as_int(x, "x"), _as_int(y, "y"), _as_int(z, "z"),
+                          _as_int(speed, "speed"))
+        yaw = _as_int(yaw, "yaw")
+        event = self._event(command, [x, y, z, speed, yaw, mid1, mid2])
+        try:
+            for name, value in (("x", x), ("y", y), ("z", z)):
+                if abs(value) > LIMITS.move_max_cm:
+                    raise ValueError(f"Parametr '{name}' = {value} cm przekracza limit "
+                                     f"{LIMITS.move_max_cm} cm (djitellopy rzuca ValueError).")
+            _range(speed, LIMITS.speed_min, LIMITS.speed_max, "speed", " cm/s", event.line)
+            _range(yaw, -360, 360, "yaw", " deg", event.line)
+            for name, mid in (("mid1", mid1), ("mid2", mid2)):
+                if mid not in mission_pads.PAD_IDS:
+                    raise mission_pads.PadError(f"Numer maty ({name}) musi być 1-8 "
+                                                f"(jest {mid}).")
+            self.sim.require_airborne(command)
+            self._require_visible_pad(mid1)
+            pad2 = self._require_visible_pad(mid2)
+        except core.SimulationError as exc:
+            self._fail(event, exc, self.sim)
+            if isinstance(exc, ValueError):
+                raise
+            raise core.SimulationError(str(exc)) from None
+        self._fly_to_pad_point(command, pad2, (0, 0, z), speed, event,
+                               [x, y, z, speed, yaw, mid1, mid2])
 
     # ---------------------------------------------------------------- odczyt
     def _read(self, command: str, value: Any) -> Any:

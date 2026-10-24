@@ -56,7 +56,8 @@ def _scene_with_wall() -> dict:
 
 def test_info_and_empty_scene(client):
     info = client.get("/api/obstacles/info").json()
-    assert [k["id"] for k in info["kinds"]] == ["box", "cylinder", "gate", "plane"]
+    assert [k["id"] for k in info["kinds"]] == ["box", "cylinder", "gate", "plane",
+                                                "mission_pad"]
     assert info["drone_size_cm"] == [10.0, 10.0, 5.0]
     empty = client.post("/api/obstacles/scene/empty").json()
     assert empty["obstacles"] == []

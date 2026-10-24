@@ -101,7 +101,7 @@ class Tello:
         self._ctrl.go_xyz_speed(x, y, z, speed)
 
     def go_xyz_speed_mid(self, x: int, y: int, z: int, speed: int, mid: int) -> None:
-        self._ctrl.unknown("go_xyz_speed_mid", [x, y, z, speed, mid])
+        self._ctrl.go_xyz_speed_mid(x, y, z, speed, mid)
 
     def curve_xyz_speed(self, x1: int, y1: int, z1: int, x2: int, y2: int, z2: int,
                         speed: int) -> None:
@@ -109,7 +109,7 @@ class Tello:
 
     def curve_xyz_speed_mid(self, x1: int, y1: int, z1: int, x2: int, y2: int, z2: int,
                             speed: int, mid: int) -> None:
-        self._ctrl.unknown("curve_xyz_speed_mid", [x1, y1, z1, x2, y2, z2, speed, mid])
+        self._ctrl.curve_xyz_speed_mid(x1, y1, z1, x2, y2, z2, speed, mid)
 
     def flip(self, direction: str) -> None:
         self._ctrl.flip(direction)
@@ -284,16 +284,30 @@ class Tello:
         self._ctrl.unknown("set_wifi_credentials", [ssid, "***"])
 
     def get_mission_pad_id(self) -> int:
-        return -1
+        """Numer widzianej maty (1-8) albo -1 (Tello EDU, po ``enable_mission_pads``)."""
+        return self._ctrl.get_mission_pad_id()
+
+    def get_mission_pad_distance_x(self) -> int:
+        return self._ctrl.mission_pad_distance(0)
+
+    def get_mission_pad_distance_y(self) -> int:
+        return self._ctrl.mission_pad_distance(1)
+
+    def get_mission_pad_distance_z(self) -> int:
+        return self._ctrl.mission_pad_distance(2)
 
     def enable_mission_pads(self) -> None:
-        self._ctrl.unknown("enable_mission_pads", [])
+        self._ctrl.enable_mission_pads()
 
     def disable_mission_pads(self) -> None:
-        self._ctrl.unknown("disable_mission_pads", [])
+        self._ctrl.disable_mission_pads()
 
     def set_mission_pad_detection_direction(self, x: int) -> None:
-        self._ctrl.unknown("set_mission_pad_detection_direction", [x])
+        self._ctrl.set_mission_pad_direction(x)
+
+    def go_xyz_speed_yaw_mid(self, x: int, y: int, z: int, speed: int, yaw: int,
+                             mid1: int, mid2: int) -> None:
+        self._ctrl.go_xyz_speed_yaw_mid(x, y, z, speed, yaw, mid1, mid2)
 
     def __getattr__(self, name: str) -> Any:
         """Dowolna nieznana metoda: ostrzeżenie, bez wywalania skryptu."""

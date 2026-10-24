@@ -1,0 +1,45 @@
+{
+  "format": "dronesim-scene",
+  "version": 1,
+  "name": "Mission Pady (Tello EDU)",
+  "description": "Cztery maty Tello EDU (Mission Pad) na podłodze w narożnikach kwadratu 120 x 120 cm, mata 1 na starcie drona. Numery mat: 1 (start), 2, 3, 4. Wykrywanie działa, gdy dron jest nad matą w promieniu 30 cm od środka i na wysokości 30-120 cm (założenia modelu - patrz README i app/features/obstacles/mission_pads.py).",
+  "room": [500, 500, 250],
+  "obstacles": [
+    {
+      "id": "pad-1",
+      "kind": "mission_pad",
+      "name": "Mata 1 (start)",
+      "position": [0, 0, 0],
+      "size": [30, 30, 1],
+      "yaw_deg": 0,
+      "pad_id": 1
+    },
+    {
+      "id": "pad-2",
+      "kind": "mission_pad",
+      "name": "Mata 2 (przód)",
+      "position": [120, 0, 0],
+      "size": [30, 30, 1],
+      "yaw_deg": 0,
+      "pad_id": 2
+    },
+    {
+      "id": "pad-3",
+      "kind": "mission_pad",
+      "name": "Mata 3 (lewo)",
+      "position": [0, 120, 0],
+      "size": [30, 30, 1],
+      "yaw_deg": 0,
+      "pad_id": 3
+    },
+    {
+      "id": "pad-4",
+      "kind": "mission_pad",
+      "name": "Mata 4 (przód-lewo, obrócona 90°)",
+      "position": [120, 120, 0],
+      "size": [30, 30, 1],
+      "yaw_deg": 90,
+      "pad_id": 4
+    }
+  ]
+}

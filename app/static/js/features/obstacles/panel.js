@@ -10,12 +10,16 @@
 import { $, el, fmt } from '../../js/util.js';
 
 
-const KIND_LABELS = { box: 'prostopadłościan', cylinder: 'walec', gate: 'bramka', plane: 'płaszczyzna' };
+const KIND_LABELS = {
+  box: 'prostopadłościan', cylinder: 'walec', gate: 'bramka', plane: 'płaszczyzna',
+  mission_pad: 'mata (Mission Pad)',
+};
 const PRESETS = {
   box: { size: [20, 200, 200], name: 'ściana' },
   cylinder: { size: [30, 30, 150], name: 'słup' },
   gate: { size: [120, 5, 120], opening: [90, 90], thickness: 5, name: 'bramka' },
   plane: { size: [400, 400, 5], thickness: 5, name: 'sufit' },
+  mission_pad: { size: [30, 30, 1], name: 'mata' },
 };
 const STORAGE_KEY = 'dronesim.obstacles.settings';
 
@@ -113,10 +117,17 @@ export function registerPanel(ctx) {
       id: newId(kind),
       kind,
       name: `${preset.name} ${store.scene.obstacles.filter((o) => o.kind === kind).length + 1}`,
-      position: [0, 0, kind === 'plane' ? 250 : 80],
+      position: [0, 0, kind === 'plane' ? 250 : kind === 'mission_pad' ? 0 : 80],
       size: [...preset.size],
       yaw_deg: 0,
     };
+    if (kind === 'mission_pad') {
+      // kolejny wolny numer maty 1-8 (po zajętych); przy 8-matowej scenie powtarza
+      const used = new Set(store.scene.obstacles
+        .filter((o) => o.kind === 'mission_pad').map((o) => o.pad_id));
+      obstacle.pad_id = [1, 2, 3, 4, 5, 6, 7, 8].find((n) => !used.has(n)) || 1;
+      obstacle.name = `mata ${obstacle.pad_id}`;
+    }
     if (preset.opening) obstacle.opening = [...preset.opening];
     if (preset.thickness) obstacle.thickness = preset.thickness;
     store.scene.obstacles.push(obstacle);
@@ -200,6 +211,24 @@ export function registerPanel(ctx) {
         numberField('grubość', obstacle.thickness || 5,
           (v) => { obstacle.thickness = Math.max(1, v); }, { min: 1 }),
       ]));
+    }
+
+    if (obstacle.kind === 'mission_pad') {
+      // numer maty = numer kodu, który czyta Tello EDU (m1-m8)
+      const padInput = el('input', { type: 'number', min: '1', max: '8', step: '1',
+        value: String(obstacle.pad_id || 1) });
+      padInput.addEventListener('change', () => {
+        const value = Math.min(8, Math.max(1, Math.round(Number(padInput.value) || 1)));
+        padInput.value = String(value);
+        obstacle.pad_id = value;
+        markDirty();
+        applyToScene();
+      });
+      box.append(el('label', { class: 'obs-field wide' }, [
+        el('span', { text: 'numer maty (1-8)' }), padInput,
+      ]));
+      box.append(el('div', { class: 'hint',
+        text: 'Dron widzi matę z wysokości 30-120 cm, gdy jest nie dalej niż 30 cm od jej środka.' }));
     }
 
     const yawInput = el('input', { type: 'range', min: '0', max: '359', step: '1',
@@ -537,6 +566,7 @@ export function registerPanel(ctx) {
     $('#obs-add-cylinder')?.addEventListener('click', () => addObstacle('cylinder'));
     $('#obs-add-gate')?.addEventListener('click', () => addObstacle('gate'));
     $('#obs-add-plane')?.addEventListener('click', () => addObstacle('plane'));
+    $('#obs-add-mission-pad')?.addEventListener('click', () => addObstacle('mission_pad'));
     $('#obs-new')?.addEventListener('click', newScene);
     $('#obs-save')?.addEventListener('click', () => saveScene());
     $('#obs-save-as')?.addEventListener('click', () => {
