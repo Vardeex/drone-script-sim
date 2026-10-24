@@ -146,6 +146,8 @@ export async function registerFeatures(context = {}) {
 /** Dodaj warstwy funkcji do sceny (wywoływane po jej utworzeniu). */
 export function attachSceneLayers(scene, context = {}) {
   const statuses = [];
+  // scena dostępna dla diagnostyki i testów przeglądarkowych (np. kamera FPV)
+  window.__scene = scene;
   for (const layer of sceneLayers) {
     try {
       const instance = layer.factory({ scene, ...context });

@@ -6,6 +6,12 @@ import { toScene } from './timeline.js';
 import { createDroneModel } from './drone_model.js';
 
 const M = 100; // 1 skala sceny = 100 cm (1 m)
+//: pole widzenia kamery drona - Tello: 82,6° (specyfikacja DJI); scena używa 50°
+const FPV_FOV_DEG = 82.6;
+const DEFAULT_FOV_DEG = 50;
+//: kamera drona siedzi w nosie, 2 cm nad środkiem korpusu (model: 45 x 26 x 20 mm)
+const FPV_CAMERA_FORWARD_M = 0.045;
+const FPV_CAMERA_HEIGHT_M = 0.02;
 
 export class DroneScene {
   constructor(container) {
@@ -470,6 +476,19 @@ export class DroneScene {
   /** Ustaw tryb kamery śledzącej z odległością dopasowaną do skali modelu. */
   setCameraMode(mode) {
     this.cameraMode = mode;
+    // pole widzenia kamery drona: Tello ma 82,6° (specyfikacja DJI), scena 50°
+    const fov = mode === 'fpv' ? FPV_FOV_DEG : DEFAULT_FOV_DEG;
+    if (this.camera.fov !== fov) {
+      this.camera.fov = fov;
+      this.camera.updateProjectionMatrix();
+    }
+    this.controls.enabled = mode !== 'fpv';   // w FPV steruje dron, nie mysz
+    if (mode === 'fpv') {
+      this.camera.up.set(0, 1, 0);
+      this._updateFpvCamera();
+      return;
+    }
+    this.controls.enabled = true;
     if (mode === 'top') {
       const target = this.controls.target;
       const yaw = this._lastSample ? THREE.MathUtils.degToRad(this._lastSample.yaw) : 0;
@@ -489,6 +508,26 @@ export class DroneScene {
         }
       }
     }
+  }
+
+  /** Kamera FPV: w nosie drona, patrzy tam, gdzie dziób (yaw 0 = +X). */
+  _updateFpvCamera() {
+    const sample = this._lastSample;
+    const p = toScene(sample || { x: 0, y: 0, z: 0 });
+    const yaw = THREE.MathUtils.degToRad(sample ? sample.yaw : 0);
+    const base = new THREE.Vector3(p.x / M, Math.max(p.y, 0) / M, p.z / M);
+    this.camera.position.set(
+      base.x + Math.cos(yaw) * FPV_CAMERA_FORWARD_M,
+      base.y + FPV_CAMERA_HEIGHT_M,
+      base.z - Math.sin(yaw) * FPV_CAMERA_FORWARD_M,
+    );
+    // nos w układzie sceny: x = +cos(yaw), z = -sin(yaw); lekko w dół (-6°)
+    const pitch = THREE.MathUtils.degToRad(-6);
+    this.camera.lookAt(
+      this.camera.position.x + Math.cos(yaw) * Math.cos(pitch),
+      this.camera.position.y + Math.sin(pitch),
+      this.camera.position.z - Math.sin(yaw) * Math.cos(pitch),
+    );
   }
 
   fitView() {
@@ -624,6 +663,9 @@ export class DroneScene {
       this.camera.position.add(shift);
       const yaw = THREE.MathUtils.degToRad(this._lastSample.yaw);
       this.camera.up.set(Math.cos(yaw), 0, Math.sin(yaw));
+    } else if (this.cameraMode === 'fpv') {
+      // kamera jedzie z dronem w każdej klatce (odtwarzanie i przewijanie)
+      this._updateFpvCamera();
     }
     this.controls.update();
     this.renderer.render(this.scene, this.camera);

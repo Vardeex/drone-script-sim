@@ -164,6 +164,17 @@ się błędem `PadError` (tak zachowuje się prawdziwe Tello).
 Przykład: [`examples/mission_pads_demo.py`](examples/mission_pads_demo.py) - przelot
 kolejno nad matami 1 → 2 → 1 → 3 → 4 (scena `mission_pads`).
 
+### Kamera „Z drona (FPV)”
+
+Lista **Kamera** ma tryb **Z drona (FPV)**: obraz z kamery umieszczonej w nosie
+modelu, z polem widzenia **82,6°** (tyle podaje specyfikacja DJI Tello; pozostałe
+tryby używają 50°) i lekkim pochyleniem w dół. Kamera jedzie z dronem w każdej
+klatce, więc działa zarówno przy odtwarzaniu, jak i przy przewijaniu suwakiem
+czasu. W tym trybie obrót myszą jest wyłączony (kamerą steruje dron) - wróć do
+„Swobodna”, żeby znów rozglądać się po scenie. Test przeglądarkowy:
+`test_fpv_camera_follows_drone` (pole widzenia, zgodność z pozycją drona,
+brak błędów w konsoli).
+
 ### Tryb realistyczny (domyślnie wyłączony)
 
 Przełącznik w nagłówku edytora: **Realizm: idealny / realistyczny** + pole
@@ -486,6 +497,7 @@ wybrano rozsądne wartości):
 | Skala modelu | przełącznik „Rozmiar”: **Prawdziwy (×1)** / ×3 / ×5 / ×10; domyślnie ×5, bo trasy mają kilka metrów. Skalowanie dotyczy tylko modelu - trasa, telemetria i statystyki pozostają w rzeczywistej skali |
 | Kierunek przodu | kamera z przodu + subtelny akcent (kolor) na przednich osłonach; opcjonalna strzałka na cieniu drona („Cień”) |
 | Maty Mission Pad | wykrywanie w promieniu 30 cm od środka maty i na wysokości 30-120 cm, 10 Hz; `get_mission_pad_distance_*` w układzie maty (x przód maty, y lewo, z góra) z uwzględnieniem jej obrotu (szczegóły: sekcja „Maty Tello EDU”) |
+| Kamera „Z drona (FPV)” | kamera three.js w nosie modelu (4,5 cm przed środkiem, 2 cm nad nim), pole widzenia **82,6°** (specyfikacja DJI Tello), pochylenie 6° w dół; model nie ma tekstur terenu, więc FPV pokazuje geometrię sceny |
 | `go_xyz_speed_yaw_mid` | symulator wykonuje przelot do punktu nad `mid2`; obrót do zadanego kursu tylko sprawdzany (brak osobnego obrotu w tym ruchu) |
 | Tryb realistyczny | domyślnie wyłączony; parametry (dryf 2-6 cm/s, szum ±2 cm i ±1,5°, opóźnienie RC 100 ms, `move_*` ±5 %) to założenia, nie pomiary - `app/sim/realism.py` |
 

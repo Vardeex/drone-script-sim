@@ -539,10 +539,12 @@ function bindUi() {
     scene.setPlaybackRate(player.speed);
   });
   $('#camera-select').addEventListener('change', (e) => {
-    scene.setCameraMode(e.target.value);
-    if (e.target.value !== 'orbit') {
+    const mode = e.target.value;
+    scene.setCameraMode(mode);
+    // FPV patrzy z drona - kadrowanie trasy nie ma sensu
+    if (mode !== 'orbit' && mode !== 'fpv') {
       scene.fitView();
-      scene.setCameraMode(e.target.value);
+      scene.setCameraMode(mode);
     }
   });
   $('#btn-fit').addEventListener('click', () => {

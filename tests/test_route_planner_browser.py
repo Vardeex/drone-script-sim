@@ -35,6 +35,18 @@ pytestmark = pytest.mark.browser
 #: limit czekania na stan strony (start aplikacji, podgląd trasy)
 TIMEOUT_MS = 20000
 
+#: minimalny lot do testu kamery FPV (krótki i szybki w symulacji)
+MINI_FLIGHT = """from djitellopy import Tello
+
+tello = Tello()
+tello.connect()
+tello.takeoff()
+tello.move_forward(60)
+tello.rotate_clockwise(90)
+tello.move_forward(40)
+tello.land()
+"""
+
 
 def _free_port() -> int:
     """Wolny port lokalny (w CI porty bywają zajęte przez inne procesy)."""
@@ -212,3 +224,89 @@ def test_slow_preview_shows_pending_state(server):
     assert errors == [], errors
     assert "Brak podglądu" not in pending, pending
     assert "Punkty:" in final, final
+
+
+def test_fpv_camera_follows_drone(server):
+    """Kamera „Z drona (FPV)”: bez błędów w konsoli, jedzie razem z dronem.
+
+    Sprawdzamy stan sceny (bez stałych opóźnień): po włączeniu FPV kamera jest
+    **w miejscu drona** (odległość pozioma < 5 cm, bo obiektyw siedzi w nosie),
+    a pole widzenia to 82,6° zamiast 50°. Po przewinięciu lotu pozycja kamery
+    zmienia się razem z dronem — czyli FPV działa przy odtwarzaniu i przewijaniu.
+    """
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page(viewport={"width": 1600, "height": 950})
+        errors = []
+        page.on("pageerror", lambda exc: errors.append(str(exc)))
+        page.goto(server, wait_until="domcontentloaded")
+        page.wait_for_function(
+            "() => Boolean(window.__featuresReady) && window.__featuresReady.layers.length > 0",
+            timeout=TIMEOUT_MS)
+        # uruchom krótki lot w UI (deterministyczny, bez zależności od przykładów)
+        page.fill("#editor-area", MINI_FLIGHT)
+        page.click("#btn-run")
+        page.wait_for_function(
+            "() => { const el = document.querySelector('#status-text');"
+            "  return Boolean(el) && /Gotowe/.test(el.textContent)"
+            "    && window.__scene && window.__scene.samples"
+            "    && window.__scene.samples.length > 10; }",
+            timeout=TIMEOUT_MS)
+        # pierwsza klatka po włączeniu FPV: kamera musi już być w miejscu drona
+        page.select_option("#camera-select", "fpv")
+        page.wait_for_function(
+            "() => document.querySelector('#camera-select').value === 'fpv'",
+            timeout=TIMEOUT_MS)
+        first = page.evaluate("""() => {
+          const scene = window.__scene;
+          return scene ? {fov: scene.camera.fov, pos: scene.camera.position.toArray()} : null;
+        }""")
+        # przewiń na środek lotu (na końcu dron wylądował - kamera byłaby przy podłodze)
+        page.evaluate("""() => {
+          const slider = document.querySelector('#scrub');
+          if (!slider) return;
+          slider.value = String(Number(slider.max) * 0.5);
+          slider.dispatchEvent(new Event('input', {bubbles: true}));
+          slider.dispatchEvent(new Event('change', {bubbles: true}));
+        }""")
+        page.wait_for_function(
+            "() => Boolean(window.__scene) && window.__scene.cameraMode === 'fpv'"
+            " && window.__scene._lastSample && window.__scene._lastSample.t > 1"
+            " && window.__scene._lastSample.state === 'airborne'",
+            timeout=TIMEOUT_MS)
+        second = page.evaluate("""() => {
+          const scene = window.__scene;
+          return scene ? {fov: scene.camera.fov, pos: scene.camera.position.toArray(),
+                          sample: scene._lastSample || null} : null;
+        }""")
+        # ... i wróć na początek: kamera znowu przy ziemi (pozycja zależy od próbki)
+        page.evaluate("""() => {
+          const slider = document.querySelector('#scrub');
+          slider.value = '0';
+          slider.dispatchEvent(new Event('input', {bubbles: true}));
+          slider.dispatchEvent(new Event('change', {bubbles: true}));
+        }""")
+        page.wait_for_function(
+            "() => window.__scene && window.__scene._lastSample"
+            " && window.__scene._lastSample.t === 0",
+            timeout=TIMEOUT_MS)
+        third = page.evaluate("() => window.__scene.camera.position.toArray()")
+        browser.close()
+    assert errors == [], errors
+    assert first and second, (first, second)
+    # pole widzenia kamery drona (Tello: 82,6°) zamiast 50° sceny
+    assert first["fov"] == pytest.approx(82.6, abs=0.01), first["fov"]
+    assert second["fov"] == pytest.approx(82.6, abs=0.01), second["fov"]
+    # kamera jest w miejscu drona (1 skala sceny = 1 m, więc /100 -> metry);
+    # obiektyw siedzi 4,5 cm w nosie, stąd tolerancja 10 cm
+    sample = second["sample"]
+    assert sample["state"] == "airborne", sample
+    camera = second["pos"]
+    distance = ((camera[0] - sample["x"] / 100) ** 2
+                + (camera[2] + sample["y"] / 100) ** 2) ** 0.5
+    assert distance < 0.10, (camera, sample)
+    # wysokość kamery = wysokość drona + 2 cm (obiektyw nad środkiem korpusu)
+    assert camera[1] == pytest.approx(sample["z"] / 100 + 0.02, abs=0.01), (camera, sample)
+    # przewinięcie zmieniło pozycję kamery (kamera jedzie razem z dronem)
+    moved = sum((a - b) ** 2 for a, b in zip(camera, third)) ** 0.5
+    assert moved > 0.3, (camera, third)
