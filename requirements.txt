@@ -31,3 +31,9 @@ iniconfig==2.3.1
 packaging==26.3
 pluggy==1.7.0
 Pygments==2.21.0
+
+# Biblioteka płynnych manewrów z tego repozytorium (edytowalna instalacja).
+# Ścieżka jest względna wobec katalogu projektu - setup.bat robi `cd /d "%~dp0"`,
+# CI uruchamia pip w katalogu głównym repo. BEZ extra [tello]: w środowisku
+# symulatora nie może być prawdziwego djitellopy - sandbox podstawia mock.
+-e ./lib/dronemoves
