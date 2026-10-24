@@ -10,10 +10,10 @@ a na końcu przejście na prawdziwego drona Tello.
 
 1. [Instalacja na czystym Windows](#1-instalacja-na-czystym-windows)
 2. [Pierwszy lot w symulatorze](#2-pierwszy-lot-w-symulatorze)
-3. [Przeszkody: edytor, sceny, kolizje i bramki](#3-przeszkody-edytor-sceny-kolizje-i-bramki)
+3. [Przeszkody: edytor, sceny, kolizje i bramki](#3-przeszkody-edytor-sceny-kolizje-i-bramki) · [maty Mission Pad](#36-maty-tello-edu-mission-pads)
 4. [Planer trasy](#4-planer-trasy)
 5. [Biblioteka dronemoves](#5-biblioteka-dronemoves)
-6. [Przejście na prawdziwego Tello](#6-przejście-na-prawdziwego-tello)
+6. [Przejście na prawdziwego Tello](#6-przejście-na-prawdziwego-tello) · [tryb realistyczny](#66-tryb-realistyczny---po-co-i-czego-się-spodziewać)
 7. [Wtyczki](#7-wtyczki)
 8. [Słowniczek](#słowniczek)
 
@@ -265,6 +265,19 @@ Wgraj `examples/obstacles_demo.py` i uruchom - slalom przez 3 bramki:
 3/3 bramki, 0 kolizji. Potem `examples/obstacles_crash.py` - za mały zjazd
 w bok przed bramką 2 daje kolizję z ramą.
 
+### 3.6. Maty Tello EDU (Mission Pads)
+
+Przycisk **▦ Mata** dodaje matę, którą Tello EDU rozpoznaje kamerą dolną.
+Ustaw **numer 1-8**, pozycję (mata leży na podłodze) i obrót - obrót ma
+znaczenie, bo komendy `*_mid` liczą pozycję w układzie maty. Gotowy zestaw
+czterech mat to scena **`mission_pads`**.
+
+W skrypcie: `tello.enable_mission_pads()`, potem `tello.get_mission_pad_id()`
+(numer albo **-1**) i `tello.go_xyz_speed_mid(x, y, z, speed, mid)`.
+Dron widzi matę, gdy jest nie dalej niż 30 cm od jej środka i na 30-120 cm
+nad nią - to **założenia modelu**, nie zmierzone wartości z drona.
+Przykład: `examples/mission_pads_demo.py` (przelot 1 → 2 → 1 → 3 → 4).
+
 ## 4. Planer trasy
 
 Zakładka **Planer** (wtyczka `route_planner`) buduje trasę z punktów
@@ -514,6 +527,28 @@ sens, czy nie przekraczasz limitów), a nie gwarancję toru lotu.
 - [ ] geofence ustawiony
 - [ ] wiesz, jak przerwać (`Ctrl+C`, `Stop`, wyłączenie drona przyciskiem)
 - [ ] dłoń nad „Stop”, oczy na dronie (nie na ekranie)
+- [ ] w symulatorze włączony tryb **realistyczny** i skrypt nadal bezpieczny
+
+### 6.6. Tryb realistyczny - po co i czego się spodziewać
+
+Idealny symulator pokazuje, że `return_home()` wraca dokładnie w miejsce startu.
+Prawdziwy Tello dryfuje (kilka cm/s), a jego czujniki kłamią o kilka cm i stopni.
+Przełącznik **Realizm: realistyczny** w nagłówku edytora włącza:
+
+* dryf poziomy 2-6 cm/s (losowy kierunek zmieniany co sekundę),
+* szum `get_height()` ±2 cm i `get_yaw()` ±1,5°,
+* opóźnienie reakcji na RC 100 ms,
+* niedokładność `move_*` ±5 % odległości.
+
+**To założenia modelu, nie pomiary.** Pole **seed** daje powtarzalność - ten sam
+seed = ten sam lot, więc błąd można odtworzyć. Zmierzone w symulatorze: przy
+trybie realistycznym `return_home` kończy 2,9-11,3 cm od startu (średnio 7,8 cm),
+podczas gdy w trybie idealnym jest to poniżej 1 cm. Wniosek praktyczny: zapas
+bezpieczeństwa przy prawdziwym dronie licz na kilkanaście centymetrów, nie na
+centymetry. Spotkanie z matą Mission Pad również wymaga poprawki - realnie
+dolot w promień 30 cm nie zawsze się udaje.
+
+Tryb idealny (domyślny) liczy lot dokładnie tak jak wcześniej.
 
 ---
 

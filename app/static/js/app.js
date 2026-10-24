@@ -67,6 +67,19 @@ function activeScene() {
   return panel && typeof panel.getScene === 'function' ? panel.getScene() : null;
 }
 
+/** Klucz ustawień symulatora (tryb realistyczny) w localStorage. */
+const SIM_SETTINGS_KEY = 'dronesim.sim';
+
+/** Tryb realistyczny z zapisu w przeglądarce (domyślnie idealny). */
+function simSettings() {
+  try {
+    return { realism: false, realism_seed: 1,
+      ...JSON.parse(localStorage.getItem(SIM_SETTINGS_KEY) || '{}') };
+  } catch (_) {
+    return { realism: false, realism_seed: 1 };
+  }
+}
+
 /** Opcje uruchomienia od funkcji (łączy `getRunOptions` wszystkich paneli). */
 function runOptions() {
   let options = {};
@@ -75,7 +88,28 @@ function runOptions() {
       options = { ...options, ...panel.getRunOptions() };
     }
   }
+  // tryb realistyczny: silnik czyta `options.sim` (domyślnie wyłączony)
+  const sim = simSettings();
+  options.sim = { realism: sim.realism, realism_seed: sim.realism_seed };
   return options;
+}
+
+/** Podłącz przełącznik realizmu i seed (zapis w locie do localStorage). */
+function bindSimSettings() {
+  const select = $('#opt-realism');
+  const seed = $('#opt-realism-seed');
+  const current = simSettings();
+  if (select) select.value = current.realism ? 'real' : 'ideal';
+  if (seed) seed.value = String(current.realism_seed);
+  const store = () => {
+    const settings = {
+      realism: select ? select.value === 'real' : false,
+      realism_seed: seed ? Math.max(0, Math.round(Number(seed.value) || 0)) : 1,
+    };
+    try { localStorage.setItem(SIM_SETTINGS_KEY, JSON.stringify(settings)); } catch (_) { /* tryb prywatny */ }
+  };
+  select?.addEventListener('change', store);
+  seed?.addEventListener('change', store);
 }
 
 /** Pierwsza kolizja z raportu funkcji do chwili t (lub null). */
@@ -671,6 +705,7 @@ async function init() {
     });
     $('#legend-bar').style.background = legendGradient();
     bindUi();
+    bindSimSettings();
     bindCanvasPicking();
     bindKeyboard();
     // punkt rozszerzeń nr 4: funkcje (wtyczki) - panel UI + warstwa sceny 3D

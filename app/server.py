@@ -207,9 +207,16 @@ def _start_run(source: str, script_name: str, adapter: Optional[str], timeout: f
 
     def _task() -> None:
         try:
+            settings: Dict[str, Any] = {"accel": accel}
+            # tryb realistyczny (domyślnie wyłączony): {"realism": true, "realism_seed": 7}
+            realism_opts = options.get("sim") or {}
+            if "realism" in realism_opts:
+                settings["realism"] = bool(realism_opts["realism"])
+            if "realism_seed" in realism_opts:
+                settings["realism_seed"] = int(realism_opts["realism_seed"])
             result = runner.run_script(
                 source, script_name=script_name, adapter_id=adapter_obj.id,
-                timeout=timeout, log_path=log_path, extra_settings={"accel": accel},
+                timeout=timeout, log_path=log_path, extra_settings=settings,
                 run_id=run_id,
             )
             info["stdout"] = result.flight.stdout

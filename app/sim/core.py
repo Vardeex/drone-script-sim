@@ -16,10 +16,12 @@ from __future__ import annotations
 import inspect
 import math
 import os
+import random
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from . import physics
+from . import realism
 
 #: Interwał próbkowania telemetrii (s czasu symulacji).
 TELEMETRY_DT = 0.05
@@ -149,6 +151,11 @@ class Settings:
     #: scena przeszkód (``Scene.as_dict()``) - maty Mission Pad i przeszkody;
     #: ``None`` = brak sceny. Mock Tello czyta z niej maty do wykrywania.
     scene: Optional[Dict[str, Any]] = None
+    #: tryb realistyczny (dryf, szum, opóźnienie RC, niedokładność ``move_*``);
+    #: domyślnie wyłączony - silnik liczy wtedy dokładnie jak dotąd
+    realism: bool = False
+    #: ziarno losowości trybu realistycznego (ten sam seed = ten sam lot)
+    realism_seed: int = 1
 
 
 @dataclass
@@ -378,6 +385,12 @@ class Simulation:
 
         self._record_sample(0.0, self.position, (0.0, 0.0, 0.0), 0.0, self.state, self.battery)
 
+        # tryb realistyczny (domyślnie wyłączony - patrz app/sim/realism.py)
+        self.realism = realism.RealismParams(enabled=bool(self.settings.realism),
+                                             seed=int(self.settings.realism_seed))
+        self._rng = random.Random(self.realism.seed)
+        self._drift = realism.Drift(self.realism, random.Random(self.realism.seed + 1))
+
     # ------------------------------------------------------------------ stan
     @property
     def airborne(self) -> bool:
@@ -428,6 +441,9 @@ class Simulation:
         self.recorder.spans.append(span)
 
         duration = max(t1 - t0, 0.0)
+        # tryb realistyczny: dryf drona odkłada się na pozycji po każdym przedziale.
+        # W trybie idealnym ta gałąź nie wykonuje nic (drift = 0).
+        drift_delta = self._apply_drift(t0, t1)
         if motion is None and duration > 1.0:
             # długie oczekiwanie (np. sleep w pętli): nie potrzebujemy próbek co 50 ms
             step = min(1.0, max(TELEMETRY_DT, duration / 600.0))
@@ -450,12 +466,30 @@ class Simulation:
         t = self._next_sample_t
         while t < t1 - 1e-9:
             pos, vel, yaw = span.state_at(t)
+            # dryf w próbkach: proporcjonalnie do czasu od początku przedziału
+            fraction = (t - t0) / duration
+            pos = (pos[0] + drift_delta[0] * fraction,
+                   pos[1] + drift_delta[1] * fraction, pos[2])
             self._record_sample(t, pos, vel, yaw, span.state, self.battery)
             nxt = round(t + TELEMETRY_DT, 6)
             t = nxt if nxt > t else t1   # zabezpieczenie przed brakiem postępu
         self._next_sample_t = max(self._next_sample_t, t)
         self.now = t1
         return span
+
+    def _apply_drift(self, t0: float, t1: float) -> Tuple[float, float]:
+        """Tryb realistyczny: przesuń drona o dryf z przedziału [t0, t1].
+
+        Dryf działa tylko w powietrzu; na ziemi dron stoi. Zwraca przemieszczenie
+        ``(dx, dy)`` (w trybie idealnym ``(0, 0)``).
+        """
+        if not self.realism.enabled or self.state != STATE_AIRBORNE:
+            return (0.0, 0.0)
+        dx, dy = self._drift.displacement(t0, t1)
+        if dx or dy:
+            x, y, z = self.position
+            self.position = (x + dx, y + dy, z)
+        return (dx, dy)
 
     def _drain_battery(self, span: "SampleSpan", extra_rate: float = 0.0) -> float:
         """Zmniejsz baterię o zużycie w przedziale i popraw baterię w próbkach."""

@@ -19,6 +19,7 @@ from typing import Any, Dict, Optional, Sequence, Tuple
 
 from ...paths import ADAPTERS_DIR
 from ...sim import core
+from ...sim import realism
 from ...sim.core import CommandError, Event, Simulation
 from ..base import DroneAdapter, register_adapter
 from .limits import LIMITS
@@ -66,6 +67,8 @@ class TelloController:
         self.mission_pads = False
         #: kierunek wykrywania mat: 0 = dół, 1 = przód, 2 = oba (SDK 2.0)
         self.mission_pad_direction = 0
+        #: kolejka opóźnionych wychyleń RC (tryb realistyczny): (czas, rc)
+        self._rc_queue: list = []
 
     # ---------------------------------------------------------- pomocnicze
     def _event(self, command: str, args: Sequence[Any]) -> Event:
@@ -164,7 +167,10 @@ class TelloController:
             "up": (0.0, 0.0, distance),
             "down": (0.0, 0.0, -distance),
         }
-        dx, dy, dz = vectors[direction]
+        # tryb realistyczny: dron pokonuje 1 ± move_error odległości (tryb
+        # idealny: mnożnik 1.0, więc wynik jest identyczny jak dotąd)
+        scale = self._move_scale()
+        dx, dy, dz = (value * scale for value in vectors[direction])
         speed = LIMITS.vertical_speed_cm_s if direction in ("up", "down") else self.speed
         self.sim.move_relative(command, [distance], dx, dy, dz, speed, event)
 
@@ -250,7 +256,13 @@ class TelloController:
         vals = [_as_int(v, n) for v, n in ((lr, "lr"), (fb, "fb"), (ud, "ud"), (yaw, "yaw"))]
         for name, value in zip(("lr", "fb", "ud", "yaw"), vals):
             _range(value, -LIMITS.rc_range, LIMITS.rc_range, name, "", None)
-        self.rc = {"lr": vals[0], "fb": vals[1], "ud": vals[2], "yaw": vals[3]}
+        if self.sim.realism.enabled and self.sim.realism.rc_delay_s > 0:
+            # tryb realistyczny: dron reaguje na RC ze zwłoką - nowe wychylenia
+            # wchodzą w życie po ``rc_delay_s``; wcześniej leci jeszcze starymi
+            self._rc_queue.append((self.sim.now + self.sim.realism.rc_delay_s,
+                                   dict(zip(("lr", "fb", "ud", "yaw"), vals))))
+        else:
+            self.rc = {"lr": vals[0], "fb": vals[1], "ud": vals[2], "yaw": vals[3]}
         self._dronemoves_rc = None      # nowa komenda RC = koniec trybu biblioteki
 
     def annotate(self, label: str) -> None:
@@ -291,7 +303,11 @@ class TelloController:
         Wywoływane przez ``time.sleep`` w sandboxie (tak działają przykłady
         djitellopy: ``send_rc_control`` + ``time.sleep``). Ruch jest całkowany
         krokami <= 50 ms w układzie drona obracanym w trakcie.
+
+        W trybie realistycznym nowe wychylenia RC wchodzą w życie po
+        ``rc_delay_s`` - do tego czasu dron leci jeszcze poprzednimi.
         """
+        self._apply_rc_delay()
         sim = self.sim
         profile = self._dronemoves_rc
         if profile is not None and self._dronemoves_rc_thread != threading.get_ident():
@@ -322,9 +338,21 @@ class TelloController:
             sim.warn("Polecenia RC zignorowane - dron nie jest w powietrzu.", command="send_rc_control")
         sim.advance(seconds)
 
+    def _apply_rc_delay(self) -> None:
+        """Tryb realistyczny: włącz wychylenia RC, których opóźnienie już minęło."""
+        if not self._rc_queue:
+            return
+        now = self.sim.now
+        due = [item for item in self._rc_queue if item[0] <= now]
+        if not due:
+            return
+        self._rc_queue = [item for item in self._rc_queue if item[0] > now]
+        self.rc = due[-1][1]
+
     def rc_stop(self) -> None:
         """Zatrzymaj ruch RC (wywoływane na land/emergency)."""
         self.rc = {"lr": 0, "fb": 0, "ud": 0, "yaw": 0}
+        self._rc_queue = []
         self._dronemoves_rc = None
         self._dronemoves_rc_thread = None
 
@@ -517,14 +545,28 @@ class TelloController:
         self.sim.commit(event)
         return value
 
+    def _move_scale(self) -> float:
+        """Mnożnik odległości ``move_*`` (tryb realistyczny: 1 ± ``move_error``)."""
+        if not self.sim.realism.enabled:
+            return 1.0
+        return realism.move_scale(self.sim.realism, self.sim._rng)
+
+    def _noisy(self, value: float, sigma: float) -> float:
+        """Odczyt z szumem w trybie realistycznym (tryb idealny: bez zmian)."""
+        if not self.sim.realism.enabled or sigma <= 0:
+            return value
+        return realism.noisy(value, sigma, self.sim._rng)
+
     def get_battery(self) -> int:
         return self._read("get_battery", int(round(self.sim.battery)))
 
     def get_height(self) -> int:
-        return self._read("get_height", int(round(self.sim.position[2])))
+        return self._read("get_height", int(round(self._noisy(
+            self.sim.position[2], self.sim.realism.height_noise_cm))))
 
     def get_distance_tof(self) -> int:
-        return self._read("get_distance_tof", int(round(self.sim.position[2])))
+        return self._read("get_distance_tof", int(round(self._noisy(
+            self.sim.position[2], self.sim.realism.height_noise_cm))))
 
     def get_speed_x(self) -> int:
         return self._read("get_speed_x", int(round(self.sim.velocity[0])))
@@ -543,6 +585,7 @@ class TelloController:
         zamieniamy znak na konwencję Tello.
         """
         yaw = (-self.sim.yaw) % 360.0
+        yaw = self._noisy(yaw, self.sim.realism.yaw_noise_deg) % 360.0
         return self._read("get_yaw", int(round(yaw - 360 if yaw > 180 else yaw)))
 
     def get_flight_time(self) -> int:

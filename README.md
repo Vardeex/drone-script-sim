@@ -134,6 +134,58 @@ z meblami), `gate_slalom` (slalom z bramkami), `obstacle_course` (tor przeszkód
 | `examples/obstacles_demo.py` | slalom przez 3 bramki (scena `gate_slalom`) | 3/3 bramki, 0 kolizji, 0 ostrzeżeń |
 | `examples/obstacles_crash.py` | za mały zjazd w bok przed bramką 2 | kolizja z ramą bramki 2 |
 
+### Maty Tello EDU (Mission Pads)
+
+Tello EDU rozpoznaje **maty z kodem** (Mission Pad `m1`-`m8`) kamerą dolną i zna
+wtedy swoją pozycję względem maty. Symulator odwzorowuje to samo API djitellopy:
+
+| Komenda | Znaczenie |
+|---|---|
+| `enable_mission_pads()` / `disable_mission_pads()` | włącz / wyłącz wykrywanie (`mon` / `moff`) |
+| `set_mission_pad_detection_direction(0\|1\|2)` | kierunek: 0 = kamera dolna, 1 = przód, 2 = oba |
+| `get_mission_pad_id()` | numer widzianej maty 1-8, **-1** gdy żadnej nie widać |
+| `get_mission_pad_distance_x/y/z()` | pozycja drona w układzie maty (x przód maty, y lewo, z góra) |
+| `go_xyz_speed_mid(x, y, z, speed, mid)` | lot do punktu względem maty `mid` |
+| `curve_xyz_speed_mid(...)` | lot łukiem do punktu względem maty |
+| `go_xyz_speed_yaw_mid(...)` | lot do punktu względem `mid1`, potem nad `mid2` + obrót (`jump`) |
+
+Aby użyć mat: w zakładce **Przeszkody** kliknij **▦ Mata** (albo wczytaj scenę
+`mission_pads`), ustaw numer 1-8, pozycję i obrót. Mata leży na podłodze,
+nie bierze udziału w kolizjach, a w scenie 3D widać jej numer.
+
+**Zasięg wykrywania jest założeniem modelu, nie pomiarem z drona**: kamera
+widzi matę, gdy dron jest nie dalej niż **30 cm** od jej środka i na wysokości
+**30-120 cm** nad nią (dokumentacja Tello SDK 2.0 nie podaje dokładnych liczb;
+mata ma 30 × 30 cm, a kamera dolna ma szersze pole widzenia). Częstotliwość
+ramek 10 Hz. Wartości są w jednym miejscu: `app/features/obstacles/mission_pads.py`.
+Komendy `*_mid` wymagają maty **aktualnie widzianej** - inaczej skrypt kończy
+się błędem `PadError` (tak zachowuje się prawdziwe Tello).
+
+Przykład: [`examples/mission_pads_demo.py`](examples/mission_pads_demo.py) - przelot
+kolejno nad matami 1 → 2 → 1 → 3 → 4 (scena `mission_pads`).
+
+### Tryb realistyczny (domyślnie wyłączony)
+
+Przełącznik w nagłówku edytora: **Realizm: idealny / realistyczny** + pole
+**seed**. Ustawienie zapisuje się w przeglądarce (`localStorage`). Po co: idealny
+symulator nie pokazuje, jak skrypt zachowa się na dronie, który dryfuje i ma
+niedokładne czujniki. Tryb realistyczny dodaje:
+
+| Element | Założenie (nie pomiar) |
+|---|---|
+| dryf poziomy | losowy spacer 2-6 cm/s, nowy kierunek co 1 s |
+| szum wysokości | ±2 cm (1 σ) w `get_height` / `get_distance_tof` |
+| szum kursu | ±1,5° (1 σ) w `get_yaw` |
+| opóźnienie RC | nowe wychylenia wchodzą po 100 ms |
+| niedokładność `move_*` | ±5 % odległości |
+| seed | ten sam seed = ten sam lot (powtarzalność) |
+
+Tryb **idealny** liczy lot bit w bit tak jak dotąd (pilnuje tego test
+`test_ideal_mode_is_unchanged`). Zmierzone w trybie realistycznym dla scenariusza
+`forward 100 → turn 90° → forward 80 → return_home`: dron kończy **2,9-11,3 cm**
+od startu (średnio 7,8 cm z 10 seedów) - czyli `return_home` nadal działa, ale
+idealne 0 cm nie jest już osiągalne. Parametry: `app/sim/realism.py`.
+
 ## Planer trasy
 
 Zakładka **Planer** (funkcja `route_planner`, włączana w `config.json`) pozwala
@@ -433,6 +485,9 @@ wybrano rozsądne wartości):
 | Wysokość modelu | dno na `y = 0` (nóżki 6 mm), góra śmigieł 38,5 mm nad ziemią; środek obrotu = środek geometryczny |
 | Skala modelu | przełącznik „Rozmiar”: **Prawdziwy (×1)** / ×3 / ×5 / ×10; domyślnie ×5, bo trasy mają kilka metrów. Skalowanie dotyczy tylko modelu - trasa, telemetria i statystyki pozostają w rzeczywistej skali |
 | Kierunek przodu | kamera z przodu + subtelny akcent (kolor) na przednich osłonach; opcjonalna strzałka na cieniu drona („Cień”) |
+| Maty Mission Pad | wykrywanie w promieniu 30 cm od środka maty i na wysokości 30-120 cm, 10 Hz; `get_mission_pad_distance_*` w układzie maty (x przód maty, y lewo, z góra) z uwzględnieniem jej obrotu (szczegóły: sekcja „Maty Tello EDU”) |
+| `go_xyz_speed_yaw_mid` | symulator wykonuje przelot do punktu nad `mid2`; obrót do zadanego kursu tylko sprawdzany (brak osobnego obrotu w tym ruchu) |
+| Tryb realistyczny | domyślnie wyłączony; parametry (dryf 2-6 cm/s, szum ±2 cm i ±1,5°, opóźnienie RC 100 ms, `move_*` ±5 %) to założenia, nie pomiary - `app/sim/realism.py` |
 
 Model jest w osobnym module `app/static/js/drone_model.js` (adaptery w `DRONE_MODELS`),
 więc dodanie innego drona = nowa funkcja tworząca model, bez zmian w scenie.

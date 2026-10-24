@@ -169,6 +169,16 @@
           </select>
           <button id="btn-clear" class="ghost">Wyczyść</button>
           <label class="hint"><input type="checkbox" id="opt-accel"> przyspieszenie</label>
+          <label class="hint" title="Dron nie jest idealny: dryf poziomy, szum wysokości i kursu,
+opóźnienie RC i niedokładność ruchów (założenia modelu)">Realizm:
+            <select id="opt-realism" style="width:auto">
+              <option value="ideal">idealny</option>
+              <option value="real">realistyczny</option>
+            </select>
+          </label>
+          <label class="hint" title="Ziarno losowości trybu realistycznego (ten sam seed = ten sam lot)">
+            seed <input type="number" id="opt-realism-seed" min="0" step="1" value="1" style="width:5em">
+          </label>
         </div>
         <textarea id="editor-area" spellcheck="false" placeholder="from djitellopy import Tello"></textarea>
       </div>
