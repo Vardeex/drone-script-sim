@@ -263,9 +263,13 @@ tello.land()
 ### Ograniczenia trybu „płynna”
 
 * jedna prędkość na całą trasę (bez prędkości indywidualnych),
-* brak „Wróć do startu” (obsługuje tylko tryb „prosta”),
 * punkt w innym kierunku niż nos drona na starcie nie jest realizowany
   poprawnie (KI-1) - wstaw obrót albo użyj trybu „prosta”.
+
+Długie trasy (punkty ponad 500 cm od startu) i „Wróć do startu” **działają od
+2026-10-24** (KI-7): odcinki dłuższe niż 400 cm są dzielone na punkty pośrednie
+w tym samym wywołaniu `path`, a powrót robi `pilot.return_home()`. Zmierzone na
+trasie `(600, 0) → (600, 100)` + powrót: punkty 0,1 / 0,7 cm, powrót 0,5 cm.
 
 ## Punkty rozszerzeń
 

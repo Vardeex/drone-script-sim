@@ -190,3 +190,48 @@ działał na POSIX już wcześniej (`os.kill(pid, 0)`, `killpg`, `start_new_sess
 ale test tego nie sprawdzał.
 
 jest grupa `route-planner` z markerami.
+
+---
+
+## KI-7: tryb „płynna” odrzucał powrót do startu i długie trasy - NAPRAWIONE
+
+**Objaw.** Trasa „dluga 600 cm” (punkt 600 cm od startu + „Wróć do startu”)
+w trybie „płynna” kończyła się `RouteError` już w generatorze - nie dało się
+nawet wygenerować skryptu. Test `test_generated_script_visits_every_point`
+miał dla niej `xfail(strict=True)`.
+
+**Przyczyny (trzy, nakładające się):**
+
+1. `codegen_smooth.generate` wprost odrzucał `return_home`
+   („obsługiwane tylko w trybie «prosta»”).
+2. `Pilot.path` sprawdza `max_radius_cm` względem **bieżącej pozycji drona**
+   (punkty są względne), a skrypt ustawiał `max_radius_cm=500` - odcinek 600 cm
+   nie mieścił się w limicie.
+3. `Pilot` liczy też oddalenie **od startu**; z `max_radius_cm=500` lot do
+   (600, 0) kończył się `PathError: Manewr oddala się o 502 cm od startu`.
+
+**Pomiary po naprawie** (symulator, trasa `(600, 0, 80) → (600, 100, 80)` + powrót):
+
+| Kryterium | Wynik |
+|---|---|
+| punkt 1 (600, 0) | 0,1 cm |
+| punkt 2 (600, 100) | 0,7 cm |
+| `return_home` | 0,5 cm od startu |
+| maksymalne oddalenie | 607,6 cm |
+
+**Poprawka** (`app/features/route_planner/codegen_smooth.py`):
+
+* `_split_legs` - odcinek dłuższy niż `MAX_PATH_LEG_CM` (400 cm) dostaje
+  punkty pośrednie **na tym samym odcinku**, w tym samym wywołaniu `path`
+  (krótkie trasy generują identyczny kod jak wcześniej - pilnuje tego
+  `test_short_route_is_unchanged`),
+* `_path_segments` - dodatkowa granica wywołania `path`, gdy odcinek trasy
+  jest dłuższy niż 400 cm,
+* `max_radius_cm` pilota = `max(500, 1,1 × najdalszy punkt)` - pokrywa trasę
+  z 10 % zapasu; limit Tello (100 m) nadal pilnuje walidator,
+* `return_home` → `pilot.return_home()` na końcu (jak w trybie „prosta”).
+
+**Uwaga o regresji w trakcie naprawy.** Pierwsza wersja dzieliła trasę na
+wywołania `path` po każdym punkcie - „kwadrat” przestał się zgadzać
+(punkt 3: 99 cm). Przyczyna: kolejne wywołania liczyły offset od punktu
+pośredniego. Test `test_short_route_is_unchanged` blokuje powrót tego błędu.

@@ -28,16 +28,11 @@ from tests.route_helpers import (
 
 LIMITS = {"simple": 5.0, "smooth": 15.0}
 
-# Tryb „płynna” (eksperymentalny) ma udokumentowane odchylenia; trasy poniżej
-# przekraczają 15 cm z powodu KNOWN_ISSUES KI-1 (path nie realizuje kursu
-# zaplanowanego na starcie manewru). Test NIE zmienia oczekiwań - jest xfail
-# z odnośnikiem do KNOWN_ISSUES.md, a UI pokazuje ostrzeżenie z odchyleniem.
-# Tryb „płynna” (eksperymentalny) ma udokumentowane odchylenia; trasy poniżej
-# nie spełniają jeszcze oczekiwań (KNOWN_ISSUES.md). Test NIE zmienia oczekiwań -
-# jest xfail z odnośnikiem, a UI pokazuje ostrzeżenie z odchyleniem.
-SMOOTH_KNOWN_ISSUE = {
-    "dluga 600 cm": "tryb „płynna” nie obsługuje powrotu do startu (RouteError)",
-}
+# Tryb „płynna” (eksperymentalny): znane odchylenia opisane w KNOWN_ISSUES.md.
+# Trasa „dluga 600 cm” była tu do 2026-10-24 (RouteError: brak powrotu do startu
+# i limit odcinka) - po podziale trasy na `path` <= 400 cm i obsłudze
+# `return_home` test przechodzi normalnie (punkty 0,1 / 0,7 cm, powrót 0,5 cm).
+SMOOTH_KNOWN_ISSUE: dict = {}
 
 
 @pytest.fixture(scope="module")
