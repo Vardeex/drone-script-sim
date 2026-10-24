@@ -194,6 +194,12 @@ def _kill_tree(proc: subprocess.Popen) -> None:
 
     Uwaga: na Windows ``venv\\Scripts\\python.exe`` to launcher, który uruchamia
     właściwy interpreter jako proces potomny - ``taskkill /T`` zabija oba.
+
+    ``os.killpg`` wolno użyć **tylko** gdy proces ma własną grupę: ``run_script``
+    uruchamia go z ``start_new_session=True`` (POSIX) / ``CREATE_NEW_PROCESS_GROUP``
+    (Windows). Gdyby ktoś kiedyś podał proces z bieżącej grupy (np. pytest),
+    ``killpg`` zabiłby cały proces testowy - dlatego sprawdzamy grupy i w razie
+    równości zabijamy tylko ten proces.
     """
     if proc.poll() is not None:
         return
@@ -202,8 +208,16 @@ def _kill_tree(proc: subprocess.Popen) -> None:
                        capture_output=True, check=False)
     else:  # pragma: no cover - na Windows nieosiągalne
         try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
+            own_group = os.getpgid(proc.pid) != os.getpgid(0)
+        except (ProcessLookupError, PermissionError, AttributeError):
+            own_group = False
+        if own_group:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                proc.kill()
+        else:
+            # ta sama grupa co aplikacja - nie wolno zabijać grupy
             proc.kill()
     try:
         proc.wait(timeout=5)

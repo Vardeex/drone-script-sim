@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from app import runner
-from tests.proc_helpers import pid_alive
+from tests.proc_helpers import kill_tree, pid_alive, spawn
 
 SQUARE = """
 from djitellopy import Tello
@@ -231,8 +231,10 @@ def test_watchdog_kills_script_when_parent_dies():
     )
     env = dict(os.environ)
     env["PYTHONPATH"] = str(Path(__file__).resolve().parent.parent)
-    parent = subprocess.Popen([sys.executable, "-c", helper], env=env,
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    # helper w osobnej grupie procesów - test może go potem zabić hurtowo
+    # (na Windows ``taskkill /T``), nie ruszając grupy pytest
+    parent = spawn([sys.executable, "-c", helper], env=env,
+                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     try:
         script_pid = None
         deadline = time.time() + 25
@@ -256,7 +258,7 @@ def test_watchdog_kills_script_when_parent_dies():
         assert not alive, f"skrypt {script_pid} przeżył śmierć rodzica (brak watchdoga)"
     finally:
         if parent.poll() is None:
-            parent.kill()
+            kill_tree(parent)          # helper + jego potomkowie, bez grupy pytest
 
 
 def test_no_private_temp_paths_in_output():

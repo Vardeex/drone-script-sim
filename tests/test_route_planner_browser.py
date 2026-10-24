@@ -16,8 +16,6 @@ czytał ``#route-stats`` po 400 ms i trafiał na „Brak podglądu.”).
 
 from __future__ import annotations
 
-import os
-import signal
 import socket
 import subprocess
 import sys
@@ -25,6 +23,8 @@ import time
 import urllib.request
 
 import pytest
+
+from tests.proc_helpers import kill_tree, spawn
 
 playwright = pytest.importorskip("playwright.sync_api")
 sync_playwright = playwright.sync_playwright
@@ -59,13 +59,17 @@ def _free_port() -> int:
 def server():
     """Serwer aplikacji na wolnym porcie (zatrzymywany po testach).
 
-    Sprzątanie jest w ``finally``: ``terminate()`` + ``kill()`` procesu **i jego
-    drzewa** (Windows: ``taskkill /T``, POSIX: grupa procesów). Bez tego po
-    każdym przebiegu zostawały procesy ``uvicorn`` i kolejne uruchomienia
-    zwalniały (widoczne przy 5 przebiegach z rzędu).
+    Serwer startuje w **własnej sesji** (``start_new_session=True`` na POSIX,
+    ``CREATE_NEW_PROCESS_GROUP`` na Windows - patrz ``tests.proc_helpers.spawn``).
+    Bez tego ``os.killpg`` w sprzątaniu trafiał w grupę procesów pytest i krok
+    CI kończył się „The operation was canceled” mimo zielonych testów.
+
+    Sprzątanie jest w ``finally`` i zabija proces **z potomkami**
+    (``taskkill /T`` na Windows, ``killpg`` na POSIX), ale tylko gdy proces ma
+    własną grupę - ``kill_tree`` sprawdza to przed ``killpg``.
     """
     port = _free_port()
-    process = subprocess.Popen(
+    process = spawn(
         [sys.executable, "-m", "uvicorn", "app.server:app", "--host", "127.0.0.1",
          "--port", str(port)],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -85,21 +89,8 @@ def server():
 
 
 def _stop_server(process) -> None:
-    """Zatrzymaj serwer wraz z procesami potomnymi (wieloplatformowo, bez psutil)."""
-    if process.poll() is not None:
-        return
-    if os.name == "nt":
-        subprocess.run(["taskkill", "/F", "/T", "/PID", str(process.pid)],
-                       capture_output=True, check=False)
-    else:
-        try:
-            os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-        except (ProcessLookupError, PermissionError, AttributeError):
-            process.terminate()
-    try:
-        process.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        process.kill()
+    """Zatrzymaj serwer wraz z procesami potomnymi (nigdy własnej grupy pytest)."""
+    kill_tree(process, timeout=10.0)
 
 
 

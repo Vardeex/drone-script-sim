@@ -6,6 +6,7 @@ Serwer uruchamiany jest lokalnie na wolnym porcie.
 """
 from __future__ import annotations
 
+import os
 import socket
 import subprocess
 import sys
@@ -47,10 +48,15 @@ def check_png(path: Path) -> tuple[bool, str]:
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     port = free_port()
+    # serwer w osobnej sesji (POSIX) / grupie (Windows): sprzątanie nie może
+    # trafić w grupę procesów wywołującego (np. pytest albo powłokę CI)
+    spawn_kwargs = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+                    if os.name == "nt" else {"start_new_session": True})
     server = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "app.server:app", "--host", "127.0.0.1",
          "--port", str(port)],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=str(ROOT))
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=str(ROOT),
+        **spawn_kwargs)
     base = f"http://127.0.0.1:{port}"
     try:
         for _ in range(100):
@@ -209,8 +215,14 @@ def main() -> int:
 
             browser.close()
     finally:
+        # tylko proces serwera (nie grupa): uvicorn nie ma potomków, a grupa
+        # mogłaby przypadkiem objąć wywołującego na systemie bez setsid
         server.terminate()
-        server.wait(timeout=10)
+        try:
+            server.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            server.kill()
+            server.wait(timeout=10)
 
     results = [check_png(path) for path in sorted(OUT.glob("*.png"))]
     for ok, info in results:
