@@ -14,8 +14,9 @@ a na końcu przejście na prawdziwego drona Tello.
 4. [Planer trasy](#4-planer-trasy)
 5. [Biblioteka dronemoves](#5-biblioteka-dronemoves)
 6. [Przejście na prawdziwego Tello](#6-przejście-na-prawdziwego-tello) · [tryb realistyczny](#66-tryb-realistyczny---po-co-i-czego-się-spodziewać)
-7. [Wtyczki](#7-wtyczki)
-8. [Słowniczek](#słowniczek)
+7. [Kamera z drona (FPV)](#7-kamera-z-drona-fpv)
+8. [Wtyczki](#8-wtyczki)
+9. [Słowniczek](#słowniczek)
 
 ---
 
@@ -235,6 +236,7 @@ się i nie zatrzymuje; aplikacja tylko pokazuje, co by się stało.
 | ◍ Słup | walec | drzewa, słupy |
 | ⌸ Bramka | rama z otworem | przelot (bramka) |
 | ▬ Sufit | płaszczyzna | ograniczenie wysokości (tylko widok) |
+| ▦ Mata | mata Tello EDU | Mission Pad 1-8 (wykrywanie kamerą dolną) |
 
 Po zaznaczeniu przeszkody w liście (albo kliknięciu w scenie 3D) w edytorze
 ustawiasz nazwę, pozycję X/Y/Z, rozmiar, obrót. Zaznaczona przeszkoda daje się
@@ -277,6 +279,11 @@ W skrypcie: `tello.enable_mission_pads()`, potem `tello.get_mission_pad_id()`
 Dron widzi matę, gdy jest nie dalej niż 30 cm od jej środka i na 30-120 cm
 nad nią - to **założenia modelu**, nie zmierzone wartości z drona.
 Przykład: `examples/mission_pads_demo.py` (przelot 1 → 2 → 1 → 3 → 4).
+
+![Maty Mission Pad](poradnik/07-mission-pady.png)
+
+*Zrzut: scena `mission_pads` - cztery maty na podłodze (w scenie 3D widać ich
+numery), po prawej lista przeszkód z numerami mat.*
 
 ## 4. Planer trasy
 
@@ -550,9 +557,30 @@ dolot w promień 30 cm nie zawsze się udaje.
 
 Tryb idealny (domyślny) liczy lot dokładnie tak jak wcześniej.
 
+![Tryb realistyczny](poradnik/08-realizm.png)
+
+*Zrzut: przełącznik „Realizm: realistyczny” i pole seed w nagłówku edytora;
+w statystykach widać, że dron nie jest dokładnie tam, gdzie przewidywała trasa.*
+
+## 7. Kamera z drona (FPV)
+
+Lista **Kamera** (nad osią czasu) ma tryb **Z drona (FPV)** - obraz z kamery
+w nosie modelu, z polem widzenia **82,6°** (tyle podaje specyfikacja DJI Tello;
+pozostałe tryby mają 50°). Kamera jedzie z dronem w każdej klatce, więc działa
+przy odtwarzaniu i przy przewijaniu suwakiem. W tym trybie mysz nie obraca
+kamerą (steruje nią dron) - wróć do „Swobodna”, żeby rozglądać się po scenie.
+
+Wskazówka: do przeglądania długiej trasy użyj „Śledząca”; FPV najlepiej pokazuje
+przelot przez bramkę albo nad matą.
+
+![Kamera FPV](poradnik/09-fpv.png)
+
+*Zrzut: widok z drona (tryb FPV) w locie `basic_square` - scena `gate_slalom`
+widziana z perspektywy drona.*
+
 ---
 
-## 7. Wtyczki
+## 8. Wtyczki
 
 Zakładka **Wtyczki** pokazuje wszystkie rozszerzenia aplikacji: nazwę, wersję,
 autora, zależności, stan (włączona / wyłączona / błąd) i przełącznik.

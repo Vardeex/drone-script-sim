@@ -119,6 +119,27 @@ Pilot(drone=None, *, backend=None, speed=40, profile=TELLO_PROFILE,
 Każdy manewr przyjmuje `mode="rc"` (domyślnie) lub `mode="native"`.
 Manewr `sequence` działa na liście obiektów `Maneuver` (np. z `p._line_planner`).
 
+### Limity `max_radius_cm` a długie trasy
+
+`max_radius_cm` (domyślnie 500 cm) jest sprawdzany **dwukrotnie**, w różnych
+układach odniesienia:
+
+* `Pilot.path` - odległość **względna** punktów od bieżącej pozycji drona
+  (punkty `path` są względne),
+* executor - oddalenie drona **od miejsca utworzenia pilota**.
+
+Dlatego trasa z punktem 600 cm od startu wymaga dwóch rzeczy: punktów podanych
+porcjami po ≤ 500 cm i `max_radius_cm` większego niż najdalszy punkt.
+Planer trasy (DroneSim) robi to automatycznie od 2026-10-24 - patrz
+`KNOWN_ISSUES.md`, KI-7:
+
+```python
+pilot = Pilot(tello, max_radius_cm=700)    # najdalszy punkt ~600 cm od startu
+pilot.path([(300, 0, 0)], smooth=True)     # pierwsze 300 cm trasy
+pilot.path([(300, 0, 0)], smooth=True)     # kolejne 300 cm (od nowej pozycji)
+pilot.return_home()                        # powrót do miejsca utworzenia pilota
+```
+
 ## Kierunek kątów (konwencja Tello)
 
 **Dodatni kąt = skręt w PRAWO** (zgodnie z zegarem), ujemny = w lewo — tak samo

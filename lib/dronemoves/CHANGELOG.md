@@ -3,6 +3,23 @@
 Forma zgodna z [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/),
 wersjonowanie zgodne z [SemVer](https://semver.org/lang/pl/).
 
+## [Niewydane] - 2026-10-24
+
+### Dokumentacja
+
+- **Limity `max_radius_cm` a długie trasy**: opisano, że limit jest sprawdzany
+  dwa razy (względem bieżącej pozycji w `Pilot.path` i względem miejsca
+  utworzenia pilota w executorze) oraz jak złożyć trasę dłuższą niż 500 cm
+  (porcje `path` + większy `max_radius_cm` + `return_home`). Bez zmian w kodzie
+  biblioteki - to dokumentacja zachowania, które wcześniej dawało
+  `PathError: Manewr oddala się o 502 cm od startu` (KI-7 w DroneSim).
+
+### Testy (poza biblioteką)
+
+- 200 losowych lotów + 100 tras planera w DroneSim przepuszczono przez
+  bibliotekę bez żadnego błędu (kryteria: pozycja vs symulator ≤ 15 cm, kurs
+  ≤ 5°, `return_home` ≤ 10 cm).
+
 ## [0.2.2] - 2026-10-23
 
 > ⚠️ **0.2.1: `return_home` po zakręcie odlatywał - nie używać tej wersji.**

@@ -3,6 +3,48 @@
 Format: [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/); wersjonowanie
 zgodne z [SemVer](https://semver.org/lang/pl/).
 
+## [Niewydane] - 2026-10-24
+
+### Dodane
+
+* **Testy losowe lotów** (`tests/test_random_flights.py`): generator z ziarnem
+  (`random.Random(seed)`, seed w nazwie przypadku) buduje sekwencje 1-6 manewrów
+  `dronemoves` z losowym kursem startowym. Kryteria liczone z geometrii:
+  `pilot.position()` vs symulator ≤ 15 cm i kurs ≤ 5°, `return_home` ≤ 10 cm,
+  limity zawsze z wyjątkiem `PathError`/`SafetyError`. Wariant szybki (20 lotów
+  + 5 tras planera) w zwykłym zestawie, pełny (200 + 100) pod markerem `slow`
+  i w osobnym jobie CI uruchamianym z przycisku. Wynik pełnego przebiegu:
+  300/300 bez błędu,
+* **Maty Tello EDU (Mission Pads)**: nowy typ obiektu `mission_pad` (numer 1-8,
+  pozycja, obrót) w edytorze przeszkód i w formacie sceny; wykrywanie w mocku
+  (`enable_mission_pads`, `get_mission_pad_id`, `get_mission_pad_distance_x/y/z`,
+  `set_mission_pad_detection_direction`) oraz loty względem maty
+  (`go_xyz_speed_mid`, `curve_xyz_speed_mid`, `go_xyz_speed_yaw_mid`);
+  scena `mission_pads` (4 maty) i `examples/mission_pads_demo.py`. Zasięg
+  wykrywania (30 cm od środka, 30-120 cm wysokości) to **założenie modelu**,
+  opisane w README i `app/features/obstacles/mission_pads.py`,
+* **Tryb realistyczny symulatora** (przełącznik „Realizm: idealny /
+  realistyczny” + seed, zapis w `localStorage`): dryf poziomy 2-6 cm/s, szum
+  wysokości ±2 cm i kursu ±1,5°, opóźnienie RC 100 ms, niedokładność `move_*`
+  ±5 %. Domyślnie **wyłączony** - tryb idealny liczy lot bit w bit jak dotąd
+  (`test_ideal_mode_is_unchanged`). Zmierzone: `return_home` 2,9-11,3 cm
+  (średnio 7,8 cm) w trybie realistycznym,
+* **Kamera „Z drona (FPV)”**: kamera w nosie modelu, pole widzenia 82,6°
+  (specyfikacja Tello), działa przy odtwarzaniu i przewijaniu; test
+  przeglądarkowy `test_fpv_camera_follows_drone`,
+* dokumentacja: sekcje o matach, trybie realistycznym i FPV w README i poradniku,
+  nowe zrzuty `07-mission-pady.png`, `08-realizm.png`, `09-fpv.png`.
+
+### Naprawione
+
+* **Tryb „płynna” dla długich tras (KI-7)**: trasa „dluga 600 cm” z powrotem do
+  startu kończyła się `RouteError` już w generatorze. Teraz odcinki dłuższe niż
+  400 cm są dzielone na punkty pośrednie w tym samym wywołaniu `path`,
+  `max_radius_cm` pilota pokrywa najdalszy punkt, a powrót robi
+  `pilot.return_home()`. Zmierzone: punkty 0,1 / 0,7 cm, powrót 0,5 cm.
+  Usunięty jedyny celowy `xfail` testu konformacji (krótkie trasy generują
+  identyczny kod jak wcześniej - `test_short_route_is_unchanged`).
+
 ## [Niewydane] - 2026-10-22
 
 ### Dodane

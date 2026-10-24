@@ -414,6 +414,7 @@ nie zapisuje w konfiguracji systemu.
 | `no_takeoff.py` | ruch bez `takeoff()` | błąd stanu (linia 13) |
 | `obstacles_demo.py` | slalom przez 3 bramki (scena `gate_slalom`) | 3/3 bramki, 0 kolizji, 0 ostrzeżeń |
 | `obstacles_crash.py` | zbyt mały zjazd w bok przed bramką 2 | kolizja z ramą bramki 2 |
+| `mission_pads_demo.py` | przelot nad matami 1 → 2 → 1 → 3 → 4 (scena `mission_pads`) | 4/5 mat rozpoznanych, 0 błędów |
 
 ## Ograniczenia symulacji
 
