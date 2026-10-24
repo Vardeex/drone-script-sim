@@ -135,6 +135,12 @@ export async function registerFeatures(context = {}) {
     window.__featureErrors = { ...(window.__featureErrors || {}), [feature.id]: errors };
     if (!errors.length) loaded.push(feature);
   }
+  // stan gotowości dla diagnostyki i testów (bez importu modułu w przeglądarce)
+  window.__featuresReady = {
+    loaded: loaded.map((f) => f.id),
+    total: features.length,
+    layers: sceneLayers.map((layer) => layer.id),
+  };
   return loaded;
 }
 /** Dodaj warstwy funkcji do sceny (wywoływane po jej utworzeniu). */

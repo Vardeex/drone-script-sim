@@ -64,6 +64,8 @@
   color: var(--muted);
 }
 #route-panel .route-stats b { color: var(--text); font-weight: 600; }
+#route-panel .route-stats .route-pending { color: var(--muted); font-style: italic; }
+#route-panel .route-stats .route-pending.error { color: #fca5a5; font-style: normal; }
 #route-panel .route-problems { margin: 4px 0 0; padding-left: 16px; font-size: 12px; }
 #route-panel .route-problems .error { color: #fca5a5; }
 #route-panel .route-problems .warning { color: #fcd34d; }

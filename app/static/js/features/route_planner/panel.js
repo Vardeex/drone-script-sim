@@ -121,8 +121,16 @@ function changed() {
 }
 
 // --------------------------------------------------------------- podgląd
+/**
+ * Stan podglądu: nowe żądanie unieważnia starsze odpowiedzi (licznik).
+ * Bez tego przy dwóch szybkich zmianach trasy starsza odpowiedź mogła
+ * nadpisać nowszą i UI pokazywał nieaktualne „Punkty: N”.
+ */
+let previewRequest = 0;
+
 async function refreshPreview() {
   if (!store.route.points.length) {
+    previewRequest += 1;                 // anuluj ewentualne żądanie w locie
     store.preview = null;
     store.validation = null;
     if (store.layer) store.layer.setPreview([]);
@@ -131,12 +139,15 @@ async function refreshPreview() {
     updateWarning();
     return;
   }
+  const request = ++previewRequest;
+  renderStats(null, { pending: true });  // „Liczę podgląd…” zamiast „Brak podglądu.”
   const body = JSON.stringify({ route: store.route, scene: store.scene });
   try {
     const [preview, validation] = await Promise.all([
       api('/preview', { method: 'POST', body }),
       api('/validate', { method: 'POST', body }),
     ]);
+    if (request !== previewRequest) return;   // przyszła nowsza odpowiedź
     store.preview = preview;
     store.validation = validation;
     if (store.layer && preview.points) store.layer.setPreview(preview.points);
@@ -144,6 +155,8 @@ async function refreshPreview() {
     renderProblems(validation.problems || []);
     updateWarning();
   } catch (err) {
+    if (request !== previewRequest) return;
+    renderStats(null, { error: String(err.message || err) });
     status(String(err.message || err), 'error');
   }
 }
@@ -232,9 +245,18 @@ function select(index) {
   renderPoints();
 }
 
-function renderStats(preview) {
+function renderStats(preview, state = {}) {
   const box = el('route-stats');
   if (!box) return;
+  if (state.pending) {
+    box.innerHTML = '<span class="route-pending">Liczę podgląd…</span>';
+    return;
+  }
+  if (state.error) {
+    box.innerHTML = `<span class="route-pending error">Nie udało się policzyć podglądu: `
+      + `${state.error}</span>`;
+    return;
+  }
   if (!preview) {
     box.innerHTML = '<span>Brak podglądu.</span>';
     return;
