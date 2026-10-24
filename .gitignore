@@ -34,7 +34,7 @@ desktop.ini
 .log
 
 # Raport sesji bez nadzoru (dokument roboczy, nie publikujemy)
-RAPORT_SESJI.md
+RAPORT_SESJI*.md
 
 # Wtyczki zewnętrzne użytkownika (poza wzorem example_hello i opisem)
 plugins/*
