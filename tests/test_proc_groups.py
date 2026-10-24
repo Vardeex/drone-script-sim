@@ -114,17 +114,17 @@ def test_kill_tree_without_own_group_falls_back_to_terminate(monkeypatch):
     """``kill_tree`` nie woła ``killpg``, gdy proces dzieli grupę z pytest.
 
     Scenariusz z CI: gdyby ``owns_own_group`` zwróciło fałsz (proces w naszej
-    grupie), ``kill_tree`` musi użyć ``terminate()`` - ``killpg`` zabiłby
-    cały krok. Podmieniamy tylko ``owns_own_group``, prawdziwy proces i sygnały
-    zostają bez zmian.
+    grupie), ``kill_tree`` musi użyć ``terminate()`` - ``killpg`` zabiłby cały
+    krok. Podstawka ``os.killpg`` **tylko zapisuje** wywołanie (sygnatura jak
+    prawdziwej funkcji: ``(pgid, sig)``) i **nie wysyła żadnego sygnału** -
+    wcześniejsza wersja wołała prawdziwe ``killpg(..., własna grupa)``, czyli
+    na Linuxie zabiłaby proces pytest, zamiast sprawdzić, że nie ma wywołania.
     """
     process = spawn([sys.executable, "-c", "import time; time.sleep(30)"])
     called = []
-    real_killpg = os.killpg
 
-    def _guard(sig):
-        called.append(sig)
-        real_killpg(sig, os.getpgid(0))     # celowo: nie zabijamy prawdziwej grupy
+    def _guard(pgid, sig):
+        called.append((pgid, sig))          # zapis tylko - żadnego sygnału
 
     monkeypatch.setattr(os, "killpg", _guard)
     monkeypatch.setattr(proc_helpers, "owns_own_group", lambda pid: False)
@@ -134,6 +134,26 @@ def test_kill_tree_without_own_group_falls_back_to_terminate(monkeypatch):
         monkeypatch.undo()
         if process.poll() is None:
             kill_tree(process, timeout=10)
-    assert called == [], "killpg wywołane mimo braku własnej grupy"
+    assert called == [], f"killpg wywołane mimo braku własnej grupy: {called}"
     assert process.poll() is not None, "proces nie został zatrzymany"
+    assert pid_alive(os.getpid())
+    assert os.getpgid(0) == os.getpgid(os.getpid())
+
+
+@posix_only
+def test_killpg_stub_never_sends_real_signal(monkeypatch):
+    """Podstawka ``os.killpg`` w teście nie może realnie sygnalizować.
+
+    Sprawdzenie same w sobie: po podmianie ``killpg`` wywołanie z własną grupą
+    (tak jak robiła stara wersja ``_guard``) nie kończy procesu testowego,
+    a jedynie zostaje zapisane.
+    """
+    called = []
+
+    def _guard(pgid, sig):
+        called.append((pgid, sig))
+
+    monkeypatch.setattr(os, "killpg", _guard)
+    os.killpg(os.getpgid(0), 15)            # sygnał NIE idzie do systemu
+    assert called == [(os.getpgid(0), 15)]
     assert pid_alive(os.getpid())

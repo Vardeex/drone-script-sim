@@ -17,6 +17,8 @@ jobs:
   tests:
     name: Testy (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # twardy limit: normalnie ~1 min; wisi = szybciej widać w podsumowaniu
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -37,7 +39,9 @@ jobs:
         run: python -m pyflakes app tests lib/dronemoves
 
       - name: Testy aplikacji (bez przeglądarki, bez testów losowych)
-        run: python -m pytest -p no:cacheprovider -m "not browser and not slow"
+        # -v + --durations: w logu widać, który test trwa (bez tego CI milczy
+        # do końca). faulthandler_timeout z pytest.ini robi zrzut stosów po 60 s.
+        run: python -m pytest -p no:cacheprovider -v --durations=20 -m "not browser and not slow"
 
       - name: Testy biblioteki dronemoves
         working-directory: lib/dronemoves
@@ -50,6 +54,8 @@ jobs:
     name: Testy losowe — pełny wariant (marker slow)
     if: github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.os }}
+    # pełny wariant: ~4 min lokalnie, 60 min to limit bezpieczeństwa
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -67,12 +73,13 @@ jobs:
         run: python -m pip install --upgrade pip -r requirements.txt
 
       - name: Testy losowe (slow)
-        run: python -m pytest -p no:cacheprovider -m slow --tb=short
+        run: python -m pytest -p no:cacheprovider -v --durations=20 -m slow --tb=short
 
   # ------------------------------------------------------- przeglądarka (Playwright)
   browser:
     name: Testy w przeglądarce (ubuntu)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
 
@@ -89,12 +96,13 @@ jobs:
         run: python -m playwright install --with-deps chromium
 
       - name: Testy przeglądarkowe
-        run: python -m pytest -p no:cacheprovider -m browser
+        run: python -m pytest -p no:cacheprovider -v --durations=20 -m browser
 
   # ------------------------------------------------------------- paczka biblioteki
   package:
     name: Paczka dronemoves (build + twine check)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
 

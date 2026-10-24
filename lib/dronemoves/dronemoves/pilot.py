@@ -32,6 +32,11 @@ __all__ = ["Pilot", "Maneuver", "ManeuverCollection", "SafetyError", "ManeuverEr
 
 ManeuverLike = Union["Maneuver", Trajectory, Sequence["ManeuverLike"]]
 
+#: ile sekund nadzór baterii czeka na przejęcie sterowania od pętli głównej,
+#: zanim zrezygnuje z powrotu i tylko wyląduje (zabezpieczenie przed zawieszeniem
+#: wątku, gdy pętla główna trzyma blokadę przez długi ``time.sleep``)
+WATCH_OWNER_TIMEOUT_S = 5.0
+
 
 # ------------------------------------------------------------------ konwencja kątów
 # JEDYNE miejsce konwersji kierunku między publicznym API a wnętrzem biblioteki.
@@ -407,18 +412,25 @@ class Pilot:
                     # 1) przerwij bieżący manewr pętli głównej (inaczej czekalibyśmy
                     #    na zwolnienie _lock do końca całej trasy)
                     self.executor.stop()
-                    # 2) przejmij sterowanie i poczekaj, aż pętla główna odda lock
                     # 2) przejmij sterowanie; pętla główna dostaje odrzucenia
-                    #    manewrów (guard w _execute), więc nie odjedzie z powrotem
-                    with self._watch_owner:
-                        self._watch_owner_thread = threading.get_ident()
-                        try:
-                            if action == "return_home":
-                                self.return_home()
-                        finally:
-                            self._watch_position = self.position()
-                            self._safe_land()
-                    return
+                    #    manewrów (guard w _execute), więc nie odjedzie z powrotem.
+                    #    Blokada ma LIMIT: gdy pętla główna nie odda sterowania
+                    #    (np. czeka na time.sleep w innym wątku), nadzór nie może
+                    #    wisieć w nieskończoność - logujemy i lądujemy.
+                    acquired = self._watch_owner.acquire(timeout=WATCH_OWNER_TIMEOUT_S)
+                    self._watch_owner_thread = threading.get_ident()
+                    try:
+                        if not acquired:
+                            print("[watchdog] nie udało się przejąć sterowania "
+                                  f"w {WATCH_OWNER_TIMEOUT_S:.1f} s - ląduję",
+                                  flush=True)
+                        elif action == "return_home":
+                            self.return_home()
+                    finally:
+                        self._watch_position = self.position()
+                        self._safe_land()
+                        if acquired:
+                            self._watch_owner.release()
                     return
                 self._watch_stop.wait(max(interval_s, 0.1))
 

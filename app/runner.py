@@ -406,7 +406,14 @@ def run_script(source: str, script_name: str = "script.py",
         except subprocess.TimeoutExpired:
             status = "timeout"
             _kill_tree(proc)
-            stdout_text, stderr_text = proc.communicate()
+            try:
+                # po zabiciu drzewa odbiór wyjścia MUSI mieć limit: gdy proces
+                # potomny przeżyje (np. POSIX bez prawa do zabicia), gołe
+                # ``communicate()`` wisiałoby w nieskończoność i test/CI stanął
+                stdout_text, stderr_text = proc.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                stdout_text, stderr_text = "", ""
         returncode = proc.returncode
         if session.stop_requested:
             status = "stopped"

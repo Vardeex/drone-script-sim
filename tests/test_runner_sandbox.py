@@ -206,6 +206,33 @@ def test_cleanup_work_dirs_removes_old_only(tmp_path, monkeypatch):
 
 
 
+def _read_line_ready(process: subprocess.Popen, timeout: float = 1.0) -> str:
+    """Odczytaj gotową linię ze ``stdout`` procesu, nie czekając w nieskończoność.
+
+    ``readline()`` blokuje do końca linii, więc test wisiałby, gdyby helper nic
+    nie wypisał (np. na wolniejszej maszynie POSIX). Pętla czeka maksymalnie
+    ``timeout`` sekund i zwraca ``""``, gdy linii nie ma.
+
+    Windows nie ma ``select`` na potokach - tam ``readline()`` jest bezpieczne
+    tylko po sprawdzeniu, że proces coś wypisał; używamy ``threading`` jako
+    uniwersalnego wariantu.
+    """
+    box: dict = {}
+
+    def _read() -> None:
+        try:
+            box["line"] = process.stdout.readline() or ""
+        except (ValueError, OSError):       # strumień zamknięty
+            box["line"] = ""
+
+    reader = threading.Thread(target=_read, daemon=True)
+    reader.start()
+    reader.join(timeout=timeout)
+    if reader.is_alive():
+        return ""                            # brak pełnej linii w zadanym czasie
+    return box.get("line", "")
+
+
 def test_watchdog_kills_script_when_parent_dies():
     """Watchdog w sandboxie: gdy proces uruchamiający skrypt zginie, skrypt też ginie.
 
@@ -239,7 +266,10 @@ def test_watchdog_kills_script_when_parent_dies():
         script_pid = None
         deadline = time.time() + 25
         while time.time() < deadline and script_pid is None:
-            line = (parent.stdout.readline() or "").strip()
+            # readline() blokuje, dopóki helper czegoś nie wypisze - czytamy
+            # tylko wtedy, gdy w buforze jest pełna linia (inaczej na POSIX
+            # brak wyjścia oznaczałby zawieszenie testu do końca joba)
+            line = _read_line_ready(parent, timeout=1.0).strip()
             if line.isdigit():
                 script_pid = int(line)
         assert script_pid, "proces skryptu nie wystartował (helper nie wypisał PID)"
