@@ -3,7 +3,16 @@
 Pokazuje ruch w układzie drona po obrocie oraz komendy z prędkością.
 """
 
+import sys
+
 from djitellopy import Tello
+
+# polskie znaki w print() wymagają UTF-8 (konsola Windows domyślnie go nie ma)
+for _strumien in (sys.stdout, sys.stderr):
+    try:
+        _strumien.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError, ValueError):
+        pass
 
 tello = Tello()
 tello.connect()

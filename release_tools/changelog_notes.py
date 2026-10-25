@@ -24,6 +24,23 @@ import sys
 from pathlib import Path
 from typing import List, Optional, Sequence
 
+
+def _utf8_console() -> None:
+    """Wymuś UTF-8 na ``stdout``/``stderr`` (konsola Windows to cp1252).
+
+    Skrypt wypisuje polskie znaki („zapisano…”, „Niewydane”), więc bez tego
+    kończyłby się ``UnicodeEncodeError``. ``try/except`` dla starszych Pythonów
+    i strumieni bez ``reconfigure``.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, OSError, ValueError):
+            pass
+
+
+_utf8_console()
+
 ROOT = Path(__file__).resolve().parent.parent
 HEADER = re.compile(r"^##\s+(?P<title>.+?)\s*$")
 
@@ -49,6 +66,19 @@ def sections(text: str) -> List[tuple]:
 def _normalise(version: str) -> str:
     """``v0.3.0`` / ``0.3.0`` -> ``0.3.0`` (tag GitHub bywa z ``v``)."""
     return version.strip().lstrip("vV")
+
+
+def write_utf8(path: Path, body: str) -> None:
+    """Zapisz notatki jako UTF-8 **bez BOM** i sprawdź, że plik czyta się z powrotem.
+
+    Notatki trafiają do ``gh release create --notes-file``, a tam muszą być
+    poprawnym UTF-8 (polskie znaki w CHANGELOG-u). BOM potrafi wejść na początek
+    treści wydania, dlatego zapisujemy bajty i od razu je weryfikujemy.
+    """
+    data = (body + "\n").encode("utf-8")
+    path.write_bytes(data)
+    if path.read_bytes().decode("utf-8") != body + "\n":
+        raise SystemExit(f"zapis notatek nie zgadza się z treścią: {path}")
 
 
 def notes_for(text: str, version: str) -> str:
@@ -79,8 +109,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     text = Path(args.changelog).read_text(encoding="utf-8")
     body = notes_for(text, args.version) or "Brak wpisu w CHANGELOG.md dla tej wersji."
     if args.out:
-        Path(args.out).write_text(body + "\n", encoding="utf-8")
-        print(f"[notes] zapisano {args.out} ({len(body)} znaków)")
+        target = Path(args.out)
+        write_utf8(target, body)
+        print(f"[notes] zapisano {args.out} ({len(body)} znaków, UTF-8 bez BOM)")
     else:
         print(body)
     return 0

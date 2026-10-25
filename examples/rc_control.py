@@ -4,9 +4,17 @@ W symulacji ruch RC jest całkowany w czasie trwania time.sleep:
 prędkość [cm/s] = (wychylenie / 100) * set_speed.
 """
 
+import sys
 import time
 
 from djitellopy import Tello
+
+# polskie znaki w print() wymagają UTF-8 (konsola Windows domyślnie go nie ma)
+for _strumien in (sys.stdout, sys.stderr):
+    try:
+        _strumien.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError, ValueError):
+        pass
 
 tello = Tello()
 tello.connect()

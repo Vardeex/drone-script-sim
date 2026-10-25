@@ -18,6 +18,23 @@ from pathlib import Path
 warnings.filterwarnings("ignore")
 from playwright.sync_api import sync_playwright  # noqa: E402
 
+
+def _utf8_console() -> None:
+    """Wymuś UTF-8 na ``stdout``/``stderr`` (konsola Windows to cp1252).
+
+    Skrypt wypisuje polskie znaki („kolorów”, „PUSTY”), więc bez tego kończyłby
+    się ``UnicodeEncodeError``. ``try/except`` dla starszych Pythonów
+    i strumieni bez ``reconfigure``.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, OSError, ValueError):
+            pass
+
+
+_utf8_console()
+
 ROOT = Path(__file__).resolve().parent.parent.parent   # katalog projektu (…/docs/poradnik/..)
 OUT = Path(__file__).resolve().parent                    # zrzuty leżą obok tego skryptu
 MIN_BYTES = 20000          # mniejszy PNG = prawdopodobnie pusty ekran

@@ -10,6 +10,12 @@ on:
 permissions:
   contents: write        # potrzebne do utworzenia GitHub Release
 
+# Konsola runnera Windows używa cp1252 - polskie znaki w komunikatach skryptów
+# wywalają się wtedy z UnicodeEncodeError. Wymuszamy UTF-8 dla całego workflow.
+env:
+  PYTHONUTF8: "1"
+  PYTHONIOENCODING: "utf-8"
+
 concurrency:
   group: release-${{ github.ref_name }}
   cancel-in-progress: false
@@ -39,7 +45,9 @@ jobs:
           $tag = "${{ github.ref_name }}".TrimStart('v')
           Write-Host "tag=$tag wersja aplikacji=$version"
           if ($version -ne $tag) {
-            Write-Error "Tag ${{ github.ref_name }} nie odpowiada wersji w app/__init__.py ($version). Podnieś wersję albo popraw tag."
+            # `throw` (a nie Write-Error) zawsze przerywa krok, niezależnie od
+            # $ErrorActionPreference - wydanie nie może wyjść z niespójnym tagiem
+            throw "Tag ${{ github.ref_name }} nie odpowiada wersji w app/__init__.py ($version). Podnieś wersję albo popraw tag."
           }
 
       - name: Zbuduj paczkę (embeddable Python + zależności)
@@ -55,7 +63,10 @@ jobs:
           Write-Host "test dymny: $zip"
           python release_tools/smoke_portable.py --zip $zip
 
-      - name: Notatki wydania z CHANGELOG
+      - name: Notatki wydania z CHANGELOG (UTF-8, polskie znaki)
+        # Skrypt zapisuje plik jako UTF-8 bez BOM i sam sprawdza, że czyta się
+        # z powrotem bez zmian; `gh release create --notes-file` czyta taki plik
+        # poprawnie. Nagłówek wydania trzymamy w ASCII (nazwa + tag).
         run: python release_tools/changelog_notes.py --version ${{ github.ref_name }} --out release_notes.md
 
       - name: Zachowaj paczkę jako artefakt (diagnostyka)

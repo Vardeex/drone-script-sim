@@ -112,6 +112,20 @@ zgodne z [SemVer](https://semver.org/lang/pl/).
 
 ### Naprawione
 
+* **Wydanie `v0.3.0` padło na `windows-latest`**: krok „Zbuduj paczkę”
+  kończył się `UnicodeEncodeError: 'charmap' codec can't encode characters`
+  w `_print("włączone site-packages…")`, bo konsola runnera to cp1252.
+  Teraz oba workflow (`release.yml`, `tests.yml`) ustawiają na poziomie
+  workflow `PYTHONUTF8: "1"` i `PYTHONIOENCODING: "utf-8"` (dziedziczą
+  wszystkie joby), a każdy skrypt konsolowy - `release_tools/*.py`,
+  `docs/poradnik/make_screens.py` i przykłady z polskimi `print()` - na starcie
+  przełącza `sys.stdout`/`sys.stderr` na UTF-8 z `errors="replace"`
+  (w `try/except`, więc starszy Python albo strumień bez `reconfigure` nie
+  psuje skryptu). Notatki wydania są zapisywane jako UTF-8 **bez BOM**
+  i odczytywane z powrotem dla kontroli przed `gh release create
+  --notes-file`; bramka zgodności tagu z `app/__init__.py` używa `throw`
+  (zawsze przerywa krok). Test regresyjny: `tests/test_console_encoding.py`
+  (18 testów, m.in. podproces z `PYTHONIOENCODING=cp1252` bez `PYTHONUTF8`),
 * **Zawieszanie testów w CI**: sprzątanie serwera w testach nie zabija już grupy
   procesów pytest (`start_new_session` na POSIX, `kill_tree` z kontrolą grupy),
   `watch_battery` ma ograniczony czas blokady zamiast czekać w nieskończoność,

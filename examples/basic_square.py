@@ -4,7 +4,17 @@ Po każdym boku dron obraca się o 90 stopni w prawo, więc wraca
 do punktu startu z yaw = 0.
 """
 
+import sys
+
 from djitellopy import Tello
+
+# konsola Windows nie jest domyślnie UTF-8 - bez tego polskie znaki w print()
+# kończą się wyjątkiem UnicodeEncodeError (w symulatorze to nie występuje)
+for _strumien in (sys.stdout, sys.stderr):
+    try:
+        _strumien.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError, ValueError):
+        pass
 
 tello = Tello()
 tello.connect()

@@ -4,8 +4,17 @@ Pokazuje ``Pilot.preflight()`` (raport bez startu) i ``safe_start()``
 (preflight + takeoff). Skrypt działa w symulatorze i na prawdziwym Tello.
 """
 
+import sys
+
 from djitellopy import Tello
 from dronemoves import Pilot, PreflightError, preflight, safe_start
+
+# polskie znaki w print() wymagają UTF-8 (konsola Windows domyślnie go nie ma)
+for _strumien in (sys.stdout, sys.stderr):
+    try:
+        _strumien.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError, ValueError):
+        pass
 
 
 def main() -> None:

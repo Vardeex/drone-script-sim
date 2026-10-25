@@ -43,6 +43,24 @@ import zipfile
 from pathlib import Path
 from typing import List, Optional, Sequence
 
+
+def _utf8_console() -> None:
+    """Wymuś UTF-8 na ``stdout``/``stderr``.
+
+    Konsola Windows (także runner GitHub Actions) domyślnie używa cp1252, więc
+    polskie znaki kończyły się ``UnicodeEncodeError``. Wszystko w ``try/except``:
+    starsze Pythony i podmienione strumienie (np. w testach) nie mają
+    ``reconfigure`` i brak tej metody nie może psuć skryptu.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, OSError, ValueError):
+            pass
+
+
+_utf8_console()
+
 ROOT = Path(__file__).resolve().parent.parent
 CACHE_DIR = ROOT / "cache"
 DEFAULT_OUT = ROOT / "dist"

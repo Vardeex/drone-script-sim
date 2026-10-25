@@ -11,6 +11,18 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+
+def _utf8_console() -> None:
+    """Wymuś UTF-8 na ``stdout``/``stderr`` (konsola Windows to cp1252)."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, OSError, ValueError):
+            pass
+
+
+_utf8_console()
+
 PACKAGES = [
     "@codemirror/state", "@codemirror/view", "@codemirror/commands",
     "@codemirror/language", "@codemirror/autocomplete", "@codemirror/lang-python",

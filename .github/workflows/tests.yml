@@ -12,6 +12,12 @@ concurrency:
   group: tests-${{ github.ref }}
   cancel-in-progress: true
 
+# Konsola runnera Windows używa cp1252 - polskie znaki w nazwach testów
+# i komunikatach wywalają się wtedy z UnicodeEncodeError. UTF-8 dla całości.
+env:
+  PYTHONUTF8: "1"
+  PYTHONIOENCODING: "utf-8"
+
 jobs:
   # ---------------------------------------------------------------- testy główne
   tests:
