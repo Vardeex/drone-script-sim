@@ -3,6 +3,7 @@
 tools/
 cache/
 tmp/
+dist/
 
 # Wyniki lotów (dane runtime, w tym wgrane skrypty i katalogi robocze _work)
 flights/

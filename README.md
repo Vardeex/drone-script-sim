@@ -300,6 +300,54 @@ trafia do stanu „błąd” z komunikatem w zakładce **Wtyczki**.
 Gotowy wzór: [`plugins/example_hello/`](plugins/example_hello/).
 Opis krok po kroku: **[docs/plugins.md](docs/plugins.md)**.
 
+## Najprościej: pobierz gotową paczkę (Windows)
+
+Jeśli nie chcesz nic instalować: na stronie
+**[Releases](https://github.com/Vardeex/drone-script-sim/releases)** pobierz
+`DroneSim-portable-<wersja>-win64.zip`, rozpakuj **cały** ZIP i kliknij dwa razy
+`start.bat`. Przeglądarka otworzy się na `http://127.0.0.1:8765/`.
+
+Paczka zawiera własny Python 3.11 (oficjalny *embeddable package* z python.org)
+i wszystkie zależności, więc **nic nie jest instalowane w systemie** - usunięcie
+programu to skasowanie katalogu. W środku są też przykłady, sceny i ten poradnik.
+
+| Co | Gdzie |
+|---|---|
+| instrukcja na start | `PRZECZYTAJ.txt` w rozpakowanym katalogu |
+| poradnik krok po kroku | `docs\PORADNIK.md` |
+| inny port | `set PORT=9000` przed uruchomieniem `start.bat` |
+
+Paczkę buduje `release_tools/build_portable.py` (pobiera Pythona z weryfikacją
+sumy SHA-256/MD5 z python.org), a wydanie publikuje workflow `release.yml` -
+uruchamiany **tylko** po wypchnięciu tagu `v*`.
+
+### Jak wydać nową wersję (dla autora)
+
+```bash
+# 1. podnieś wersję w app/__init__.py i opisz zmiany w CHANGELOG.md
+# 2. commit + push
+git commit -am "Wersja 1.0.1"
+git push
+
+# 3. tag musi odpowiadać wersji z app/__init__.py (workflow to sprawdza)
+git tag v1.0.1
+git push origin v1.0.1
+```
+
+Po wypchnięciu tagu GitHub Actions (`release.yml`) buduje paczkę na
+`windows-latest`, robi **test dymny** (start serwera z rozpakowanej paczki,
+`/api/health`, `basic_square.py`, skrypt `dronemoves`) i tworzy GitHub Release
+z plikiem ZIP i notatkami wyciągniętymi z `CHANGELOG.md`. Jeśli tag nie
+odpowiada wersji aplikacji, workflow **przerywa** pracę - nie da się
+opublikować paczki z niespójnym numerem.
+
+Lokalnie, bez publikowania:
+
+```bash
+python release_tools/build_portable.py            # -> dist/DroneSim-portable-<wersja>-win64.zip
+python release_tools/smoke_portable.py --zip dist/DroneSim-portable-1.0.0-win64.zip
+```
+
 ## Wymagania
 
 * Windows 10/11

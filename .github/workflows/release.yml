@@ -1,0 +1,81 @@
+name: Wydanie (paczka przenosna)
+
+# Uruchamiane WYŁĄCZNIE po wypchnięciu tagu v* (np. git tag v1.0.0 && git push origin v1.0.0).
+# Push zwykłego commita NIE tworzy wydania - to jest celowe.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write        # potrzebne do utworzenia GitHub Release
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Paczka przenosna + Release
+    runs-on: windows-latest
+    # budowa ~20 s + test dymny ~15 s + zapas na instalację zależności
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Zależności (do zbudowania paczki i testu dymnego)
+        run: python -m pip install --upgrade pip -r requirements.txt
+
+      - name: Sprawdź, czy tag odpowiada wersji aplikacji
+        shell: pwsh
+        run: |
+          $version = python -c "from app import __version__; print(__version__)"
+          $tag = "${{ github.ref_name }}".TrimStart('v')
+          Write-Host "tag=$tag wersja aplikacji=$version"
+          if ($version -ne $tag) {
+            Write-Error "Tag ${{ github.ref_name }} nie odpowiada wersji w app/__init__.py ($version). Podnieś wersję albo popraw tag."
+          }
+
+      - name: Zbuduj paczkę (embeddable Python + zależności)
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          python release_tools/build_portable.py --version $version --out dist
+
+      - name: Test dymny paczki (start, /api/health, dwa przykłady)
+        shell: pwsh
+        run: |
+          $zip = (Get-ChildItem dist/DroneSim-portable-*-win64.zip | Select-Object -First 1).FullName
+          Write-Host "test dymny: $zip"
+          python release_tools/smoke_portable.py --zip $zip
+
+      - name: Notatki wydania z CHANGELOG
+        run: python release_tools/changelog_notes.py --version ${{ github.ref_name }} --out release_notes.md
+
+      - name: Zachowaj paczkę jako artefakt (diagnostyka)
+        uses: actions/upload-artifact@v4
+        with:
+          name: portable-${{ github.ref_name }}
+          path: |
+            dist/*.zip
+            release_notes.md
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Utwórz GitHub Release z paczką
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $zip = (Get-ChildItem dist/DroneSim-portable-*-win64.zip | Select-Object -First 1).FullName
+          gh release create $tag $zip `
+            --title "Drone Script Simulator $tag" `
+            --notes-file release_notes.md `
+            --verify-tag

@@ -8,7 +8,7 @@ a na końcu przejście na prawdziwego drona Tello.
 
 ## Spis treści
 
-1. [Instalacja na czystym Windows](#1-instalacja-na-czystym-windows)
+1. [Instalacja na czystym Windows](#1-instalacja-na-czystym-windows) · [gotowa paczka (bez instalacji)](#10-najprościej-gotowa-paczka-bez-instalowania-pythona)
 2. [Pierwszy lot w symulatorze](#2-pierwszy-lot-w-symulatorze)
 3. [Przeszkody: edytor, sceny, kolizje i bramki](#3-przeszkody-edytor-sceny-kolizje-i-bramki) · [maty Mission Pad](#36-maty-tello-edu-mission-pads)
 4. [Planer trasy](#4-planer-trasy)
@@ -25,6 +25,31 @@ a na końcu przejście na prawdziwego drona Tello.
 Potrzebujesz: Windows 10/11, ok. 1 GB miejsca na dysku, przeglądarki
 (Edge, Chrome, Opera albo Firefox). **Nie** potrzebujesz konta, internetu po
 instalacji, ani prawdziwego drona.
+
+### 1.0. Najprościej: gotowa paczka (bez instalowania Pythona)
+
+Jeśli nie chcesz instalować Pythona ani niczego ustawiać w systemie:
+
+1. Wejdź na [github.com/Vardeex/drone-script-sim/releases](https://github.com/Vardeex/drone-script-sim/releases).
+2. Pobierz `DroneSim-portable-<wersja>-win64.zip`.
+3. **Rozpakuj cały ZIP** do dowolnego katalogu (np. `D:\DroneSim`). Nie kopiuj
+   pojedynczych plików z podglądu archiwum - program potrzebuje całego katalogu
+   `python\`.
+4. Kliknij dwa razy `start.bat`. Przeglądarka otworzy się na
+   `http://127.0.0.1:8765/`.
+
+Nic nie jest instalowane w systemie: Python 3.11 i biblioteki są w katalogu
+`python\` w rozpakowanej paczce. Usunięcie programu = skasowanie katalogu.
+Jeśli port 8765 jest zajęty, ustaw inny przed uruchomieniem:
+
+```bat
+set PORT=9000
+start.bat
+```
+
+Pozostałe sekcje opisują instalację ze źródeł (dla osób, które chcą zmieniać
+kod). Jeśli korzystasz z gotowej paczki, możesz przejść od razu do
+[rozdziału 2](#2-pierwszy-lot-w-symulatorze).
 
 ### 1.1. Zainstaluj Pythona 3.11 (lub nowszego)
 
