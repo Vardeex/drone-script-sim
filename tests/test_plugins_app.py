@@ -70,6 +70,7 @@ def test_app_works_with_all_plugins_disabled(monkeypatch, tmp_path):
     """Aplikacja działa, gdy wszystkie wtyczki są wyłączone w ``config.json``."""
     payload = {"features": {"obstacles": {"enabled": False},
                             "route_planner": {"enabled": False},
+                            "manual_flight": {"enabled": False},
                             "example_hello": {"enabled": False}}}
     cfg = tmp_path / "config.json"
     cfg.write_text(json.dumps(payload), encoding="utf-8")
@@ -85,11 +86,12 @@ def test_app_works_with_all_plugins_disabled(monkeypatch, tmp_path):
             assert client.get("/api/adapters").status_code == 200
             assert client.get("/api/obstacles/info").status_code == 404
             assert client.get("/api/route_planner/info").status_code == 404
+            assert client.get("/api/manual_flight/variants").status_code == 404
             assert client.get("/api/example_hello/hello").status_code == 404
             assert client.get("/").status_code == 200
             plugins = client.get("/api/plugins").json()["plugins"]
             assert {p["id"] for p in plugins} == {"obstacles", "route_planner",
-                                                  "example_hello"}
+                                                  "manual_flight", "example_hello"}
             assert all(p["state"] == "disabled" for p in plugins)
     finally:
         monkeypatch.undo()

@@ -1,0 +1,20 @@
+{
+  "id": "manual_flight",
+  "name": "Lot ręczny",
+  "version": "1.0.0",
+  "description": "Sterowanie dronem klawiaturą na żywo (RC), nagrywanie lotu i zapis nagrania jako skrypt Pythona",
+  "author": "Vardeex",
+  "requires_app": ">=1.0.0",
+  "requires": [],
+  "extension_points": ["api", "ui.panel", "ui.scene_layer", "ui.styles"],
+  "enabled": true,
+  "api_prefix": "/api/manual_flight",
+  "static": "static/js/features/manual_flight",
+  "ui": {
+    "panel": "static/js/features/manual_flight/panel.js",
+    "scene_layer": "static/js/features/manual_flight/scene_layer.js",
+    "styles": ["static/css/features/manual_flight.css"],
+    "tab": "tab-manual",
+    "tab_button": "tab-btn-manual"
+  }
+}

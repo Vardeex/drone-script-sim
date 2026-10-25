@@ -447,6 +447,26 @@ export class DroneScene {
     return 0.95 + 0.38 * Math.max(1, this.droneModelScale);
   }
 
+  /**
+   * Pozycja kamery „z tyłu drona" i punkt patrzenia (scena three.js, metry).
+   *
+   * Kamera stoi **za** dronem (przeciwnie do kierunku nosa) i patrzy na niego,
+   * dzięki czemu prawo drona = prawo ekranu - tak działa kamera pościgowa
+   * i tego oczekuje sterowanie klawiaturą w locie ręcznym.
+   */
+  _followPose(sample) {
+    const p = toScene(sample);
+    const reach = this._followDistance();
+    const yaw = THREE.MathUtils.degToRad(sample.yaw);   // 0 = nos w +X sceny
+    const target = new THREE.Vector3(p.x / M, Math.max(p.y, 0) / M + 0.05, p.z / M);
+    const position = new THREE.Vector3(
+      target.x - Math.cos(yaw) * reach * 0.8,
+      target.y + reach * 0.45,
+      target.z + Math.sin(yaw) * reach * 0.8,
+    );
+    return { target, position };
+  }
+
   /** Ustaw skalę modelu drona (×1, ×3, ×5, ×10) - trasa i telemetria bez zmian. */
   setDroneSize(factor) {
     this.applyDroneScale(Number(factor) || 1);
@@ -497,15 +517,11 @@ export class DroneScene {
       this.camera.lookAt(target);
     } else {
       this.camera.up.set(0, 1, 0);
-      if (mode === 'follow') {
-        // dopasuj odległość kamery do rozmiaru modelu (×1..×10)
-        const reach = this._followDistance();
-        const offset = this.camera.position.clone().sub(this.controls.target);
-        const desired = new THREE.Vector3(reach * 0.55, reach * 0.42, reach * 0.55);
-        if (offset.length() < reach * 0.45 || offset.length() > reach * 1.6
-            || Math.abs(offset.length() - reach) > reach * 0.7) {
-          this.camera.position.copy(this.controls.target).add(desired);
-        }
+      if (mode === 'follow' && this._lastSample) {
+        // kamera pościgowa: od razu za dronem (bez czekania na animację)
+        const pose = this._followPose(this._lastSample);
+        this.controls.target.copy(pose.target);
+        this.camera.position.copy(pose.position);
       }
     }
   }
@@ -646,14 +662,11 @@ export class DroneScene {
       }
     }
     if (this.cameraMode === 'follow' && this._lastSample) {
-      const p = toScene(this._lastSample);
-      // odległość kamery śledzącej rośnie z rozmiarem modelu (×1 → ~1,3 m, ×10 → ~4,7 m)
-      const reach = this._followDistance();
-      const target = new THREE.Vector3(p.x / M, p.y / M + 0.05, p.z / M);
-      const offset = this.camera.position.clone().sub(this.controls.target);
-      if (offset.length() > reach * 1.6) offset.setLength(reach * 1.6);
-      this.controls.target.lerp(target, clamp(dt * 6, 0, 1));
-      this.camera.position.copy(this.controls.target).add(offset);
+      // kamera pościgowa: celuje w drona i jedzie za nim (za nosem)
+      const pose = this._followPose(this._lastSample);
+      const blend = clamp(dt * 6, 0, 1);
+      this.controls.target.lerp(pose.target, blend);
+      this.camera.position.lerp(pose.position, blend);
     } else if (this.cameraMode === 'top' && this._lastSample) {
       const p = toScene(this._lastSample);
       const target = new THREE.Vector3(p.x / M, 0, p.z / M);
