@@ -20,7 +20,7 @@ tylko źródłowe). Plik jest pobierany raz do ``cache/`` i weryfikowany:
 Uruchomienie
 ------------
     python release_tools/build_portable.py                # wersja z app/__init__.py
-    python release_tools/build_portable.py --version 1.0.0 --out dist
+    python release_tools/build_portable.py --version 0.3.0 --out dist
 
 Dlaczego nie ``tools/``: katalog ``tools/`` jest w ``.gitignore`` (lokalne
 środowisko Pythona), więc skrypt budujący musi leżeć gdzie indziej.

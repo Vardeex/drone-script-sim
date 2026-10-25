@@ -3,7 +3,9 @@
 Format: [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/); wersjonowanie
 zgodne z [SemVer](https://semver.org/lang/pl/).
 
-## [Niewydane] - 2026-10-25
+## [0.3.0] - 2026-10-25
+
+> Wszystkie prace z 22-25.10.2026 (wcześniej trzy sekcje „Niewydane”) są częścią wydania 0.3.0.
 
 ### Dodane
 
@@ -50,23 +52,7 @@ zgodne z [SemVer](https://semver.org/lang/pl/).
   pionie oraz konkretne podpowiedzi kalibracji; oba tory na jednej scenie 3D,
 * dokumentacja: sekcje o paczce, edytorze, locie ręcznym i porównaniu w README
   i poradniku (rozdziały 9-11), nowe zrzuty `10-lot-reczny.png`,
-  `11-edytor-ostrzezenia.png`, `12-porownanie.png`.
-
-### Zmienione
-
-* **Kamera „Śledząca”** to teraz kamera pościgowa **z tyłu** drona (wcześniej
-  trzymała kąt z boku) - dzięki temu prawo drona = prawo ekranu, co jest
-  potrzebne do sterowania klawiaturą,
-* historia lotów pokazuje źródło lotu (`sim`/`real`) i oznacza loty rzeczywiste.
-
-### Naprawione
-
-* (patrz poprzednia sekcja - poprawki CI: grupa procesów i limity czasu)
-
-## [Niewydane] - 2026-10-24
-
-### Dodane
-
+  `11-edytor-ostrzezenia.png`, `12-porownanie.png`,
 * **Testy losowe lotów** (`tests/test_random_flights.py`): generator z ziarnem
   (`random.Random(seed)`, seed w nazwie przypadku) buduje sekwencje 1-6 manewrów
   `dronemoves` z losowym kursem startowym. Kryteria liczone z geometrii:
@@ -94,21 +80,6 @@ zgodne z [SemVer](https://semver.org/lang/pl/).
   przeglądarkowy `test_fpv_camera_follows_drone`,
 * dokumentacja: sekcje o matach, trybie realistycznym i FPV w README i poradniku,
   nowe zrzuty `07-mission-pady.png`, `08-realizm.png`, `09-fpv.png`.
-
-### Naprawione
-
-* **Tryb „płynna” dla długich tras (KI-7)**: trasa „dluga 600 cm” z powrotem do
-  startu kończyła się `RouteError` już w generatorze. Teraz odcinki dłuższe niż
-  400 cm są dzielone na punkty pośrednie w tym samym wywołaniu `path`,
-  `max_radius_cm` pilota pokrywa najdalszy punkt, a powrót robi
-  `pilot.return_home()`. Zmierzone: punkty 0,1 / 0,7 cm, powrót 0,5 cm.
-  Usunięty jedyny celowy `xfail` testu konformacji (krótkie trasy generują
-  identyczny kod jak wcześniej - `test_short_route_is_unchanged`).
-
-## [Niewydane] - 2026-10-22
-
-### Dodane
-
 * **Planer trasy** (funkcja `route_planner`, punkt rozszerzeń nr 1): zakładka
   „Planer” z listą punktów (X/Y/Z, kurs nosa, kolejność, wstawianie, usuwanie),
   podglądem na żywo (dystans, czas, bateria, problemy z limitów i kolizji),
@@ -121,17 +92,6 @@ zgodne z [SemVer](https://semver.org/lang/pl/).
   przekracza 15 cm (zamiast blokowania generowania),
 * `docs/route_planner.png` i sekcja „Planer trasy” w README z przykładami
   kodu w obu trybach.
-
-### Naprawione
-
-* testy funkcji przeszkód nie zakładają już stałej listy funkcji
-  (`test_obstacles_feature_off`) - sprawdzają tylko, że `obstacles` jest
-  wyłączone, a reszta aplikacji działa,
-* `Planer.path` (dronemoves 0.1.5) startuje w miejscu drona i realnie się
-  wznosi (szczegóły w `lib/dronemoves/CHANGELOG.md`).
-
-### Dodane (wcześniej w tej serii)
-
 * **stopka aplikacji** „Development by Vardeex” na samym dole okna (własny,
   24 px pasek pod `#app`, poza sceną 3D, osią czasu i panelami; nie nachodzi
   na żaden z nich także po przełączeniu zakładki - sprawdzone zrzutami
@@ -142,6 +102,33 @@ zgodne z [SemVer](https://semver.org/lang/pl/).
   „Vardeex” podświetla się kolorem akcentu,
 * sekcja **Autor** w `README.md` (Vardeex, e-mail, GitHub),
 * odświeżony `docs/screenshot.png` (1600×950) - stopka jest na nim widoczna.
+
+### Zmienione
+
+* **Kamera „Śledząca”** to teraz kamera pościgowa **z tyłu** drona (wcześniej
+  trzymała kąt z boku) - dzięki temu prawo drona = prawo ekranu, co jest
+  potrzebne do sterowania klawiaturą,
+* historia lotów pokazuje źródło lotu (`sim`/`real`) i oznacza loty rzeczywiste.
+
+### Naprawione
+
+* **Zawieszanie testów w CI**: sprzątanie serwera w testach nie zabija już grupy
+  procesów pytest (`start_new_session` na POSIX, `kill_tree` z kontrolą grupy),
+  `watch_battery` ma ograniczony czas blokady zamiast czekać w nieskończoność,
+  a `communicate()` po timeoucie nie wisi; `pytest.ini` ma
+  `faulthandler_timeout = 60`, joby CI - `timeout-minutes` i `--durations=20`,
+* **Tryb „płynna” dla długich tras (KI-7)**: trasa „dluga 600 cm” z powrotem do
+  startu kończyła się `RouteError` już w generatorze. Teraz odcinki dłuższe niż
+  400 cm są dzielone na punkty pośrednie w tym samym wywołaniu `path`,
+  `max_radius_cm` pilota pokrywa najdalszy punkt, a powrót robi
+  `pilot.return_home()`. Zmierzone: punkty 0,1 / 0,7 cm, powrót 0,5 cm.
+  Usunięty jedyny celowy `xfail` testu konformacji (krótkie trasy generują
+  identyczny kod jak wcześniej - `test_short_route_is_unchanged`).
+* testy funkcji przeszkód nie zakładają już stałej listy funkcji
+  (`test_obstacles_feature_off`) - sprawdzają tylko, że `obstacles` jest
+  wyłączone, a reszta aplikacji działa,
+* `Planer.path` (dronemoves 0.1.5) startuje w miejscu drona i realnie się
+  wznosi (szczegóły w `lib/dronemoves/CHANGELOG.md`).
 
 ## [0.2.2] - 2026-10-21
 
@@ -244,3 +231,4 @@ zgodne z [SemVer](https://semver.org/lang/pl/).
 ## [0.1.x]
 
 Wcześniejsze wersje - patrz `git log`.
+

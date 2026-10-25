@@ -60,7 +60,7 @@ jest importowany jako `app.plugins_ext.<id>`.
 | `version` | tak | wersja wtyczki (np. `"1.0.0"`) |
 | `description` | tak | jednozdaniowy opis |
 | `author` | nie | autor |
-| `requires_app` | nie | minimalna wersja aplikacji, np. `">=1.0.0"` (obsługiwane `>=`, `>`, `<=`, `<`, `==`, `!=`, łączone przecinkiem) |
+| `requires_app` | nie | minimalna wersja aplikacji, np. `">=0.3.0"` (obsługiwane `>=`, `>`, `<=`, `<`, `==`, `!=`, łączone przecinkiem) |
 | `requires` | nie | lista id wtyczek, które muszą działać (np. `["obstacles"]`) |
 | `extension_points` | nie | z których punktów rozszerzeń korzysta (walidowane) |
 | `api_prefix` | nie | prefiks API, domyślnie `/api/<id>` |
@@ -80,7 +80,7 @@ Przykład (`plugins/example_hello/plugin.json`):
   "version": "1.0.0",
   "description": "Panel z tekstem i endpoint API",
   "author": "Vardeex",
-  "requires_app": ">=1.0.0",
+  "requires_app": ">=0.3.0",
   "requires": [],
   "extension_points": ["api", "ui.panel", "ui.styles"],
   "api_prefix": "/api/example_hello",

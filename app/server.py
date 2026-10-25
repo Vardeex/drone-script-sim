@@ -43,7 +43,7 @@ from . import paths, runner, storage
 from .adapters.base import detect_adapter, get_adapter, list_adapters
 from .features import plugin_model, registry
 
-app = FastAPI(title="Drone Script Simulator", version="1.0.0")
+app = FastAPI(title="Drone Script Simulator", version="0.3.0")
 
 
 # ------------------------------------------- punkt rozszerzeń nr 1: wtyczki

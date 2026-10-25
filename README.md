@@ -335,12 +335,12 @@ uruchamiany **tylko** po wypchnięciu tagu `v*`.
 ```bash
 # 1. podnieś wersję w app/__init__.py i opisz zmiany w CHANGELOG.md
 # 2. commit + push
-git commit -am "Wersja 1.0.1"
+git commit -am "Wersja 0.3.0"
 git push
 
 # 3. tag musi odpowiadać wersji z app/__init__.py (workflow to sprawdza)
-git tag v1.0.1
-git push origin v1.0.1
+git tag v0.3.0
+git push origin v0.3.0
 ```
 
 Po wypchnięciu tagu GitHub Actions (`release.yml`) buduje paczkę na
@@ -354,7 +354,7 @@ Lokalnie, bez publikowania:
 
 ```bash
 python release_tools/build_portable.py            # -> dist/DroneSim-portable-<wersja>-win64.zip
-python release_tools/smoke_portable.py --zip dist/DroneSim-portable-1.0.0-win64.zip
+python release_tools/smoke_portable.py --zip dist/DroneSim-portable-0.3.0-win64.zip
 ```
 
 ## Edytor skryptów (CodeMirror 6)

@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Panel z tekstem i endpoint API - wzór do napisania własnej wtyczki",
   "author": "Vardeex",
-  "requires_app": ">=1.0.0",
+  "requires_app": ">=0.3.0",
   "requires": [],
   "extension_points": ["api", "ui.panel", "ui.styles"],
   "api_prefix": "/api/example_hello",

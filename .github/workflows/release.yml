@@ -1,6 +1,6 @@
 name: Wydanie (paczka przenosna)
 
-# Uruchamiane WYŁĄCZNIE po wypchnięciu tagu v* (np. git tag v1.0.0 && git push origin v1.0.0).
+# Uruchamiane WYŁĄCZNIE po wypchnięciu tagu v* (np. git tag v0.3.0 && git push origin v0.3.0).
 # Push zwykłego commita NIE tworzy wydania - to jest celowe.
 on:
   push:

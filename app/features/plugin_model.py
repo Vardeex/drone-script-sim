@@ -12,7 +12,7 @@ Przykład (pełny opis pól w ``docs/plugins.md``)::
       "version": "1.0.0",
       "description": "Panel z tekstem i endpoint /api/example_hello/hello",
       "author": "Vardeex",
-      "requires_app": ">=1.0.0",
+      "requires_app": ">=0.3.0",
       "requires": [],
       "extension_points": ["api", "ui.panel"]
     }

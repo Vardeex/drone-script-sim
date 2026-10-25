@@ -6,14 +6,14 @@ prawdy - mniej okazji, żeby wydanie opisywało coś innego niż kod).
 
 Kolejność dopasowania:
 
-1. sekcja z dokładną wersją (``## [1.0.0]`` albo ``## [v1.0.0]``),
+1. sekcja z dokładną wersją (``## [0.3.0]`` albo ``## [v0.3.0]``),
 2. sekcja ``[Niewydane]`` (typowa sytuacja: wersja w ``app/__init__.py`` jest
    podniesiona, a wpis w CHANGELOG-u wciąż czeka w „Niewydane”),
 3. pierwsza sekcja wersji w pliku (z ostrzeżeniem na stderr).
 
 Uruchomienie:
 
-    python release_tools/changelog_notes.py --version v1.0.0 --out release_notes.md
+    python release_tools/changelog_notes.py --version v0.3.0 --out release_notes.md
 """
 
 from __future__ import annotations
@@ -47,7 +47,7 @@ def sections(text: str) -> List[tuple]:
 
 
 def _normalise(version: str) -> str:
-    """``v1.0.0`` / ``1.0.0`` -> ``1.0.0`` (tag GitHub bywa z ``v``)."""
+    """``v0.3.0`` / ``0.3.0`` -> ``0.3.0`` (tag GitHub bywa z ``v``)."""
     return version.strip().lstrip("vV")
 
 
@@ -71,7 +71,7 @@ def notes_for(text: str, version: str) -> str:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Notatki wydania z CHANGELOG.md")
-    parser.add_argument("--version", required=True, help="wersja albo tag (np. v1.0.0)")
+    parser.add_argument("--version", required=True, help="wersja albo tag (np. v0.3.0)")
     parser.add_argument("--changelog", default=str(ROOT / "CHANGELOG.md"))
     parser.add_argument("--out", default=None, help="plik wyjściowy (domyślnie stdout)")
     args = parser.parse_args(list(argv) if argv is not None else None)

@@ -25,7 +25,9 @@ def write_plugin(root: Path, plugin_id: str, **overrides) -> Path:
         "version": overrides.pop("version", "1.0.0"),
         "description": overrides.pop("description", "testowa wtyczka"),
         "author": overrides.pop("author", "tester"),
-        "requires_app": overrides.pop("requires_app", ">=1.0.0"),
+        # domyślnie „wtyczka dla dowolnej wersji aplikacji” - helper nie może
+        # wymagać wersji, której jeszcze nie ma (blokowałoby to wtyczkę)
+        "requires_app": overrides.pop("requires_app", ">=0.1.0"),
         "requires": overrides.pop("requires", []),
         "extension_points": overrides.pop("extension_points", []),
     }

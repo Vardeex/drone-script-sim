@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Sterowanie dronem klawiaturą na żywo (RC), nagrywanie lotu i zapis nagrania jako skrypt Pythona",
   "author": "Vardeex",
-  "requires_app": ">=1.0.0",
+  "requires_app": ">=0.3.0",
   "requires": [],
   "extension_points": ["api", "ui.panel", "ui.scene_layer", "ui.styles"],
   "enabled": true,

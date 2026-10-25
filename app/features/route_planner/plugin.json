@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Planowanie trasy z punktów, podgląd, kontrola kolizji i generowanie skryptu",
   "author": "Vardeex",
-  "requires_app": ">=1.0.0",
+  "requires_app": ">=0.3.0",
   "requires": ["obstacles"],
   "extension_points": ["api", "ui.panel", "ui.scene_layer", "ui.styles", "flight.analyse", "run.options"],
   "enabled": true,
