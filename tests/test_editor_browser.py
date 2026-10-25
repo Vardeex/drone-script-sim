@@ -89,11 +89,17 @@ def test_suggestion_appears_after_dot(server):
         page.keyboard.press("Control+a")
         page.keyboard.press("Delete")
         page.keyboard.type("tello = Tello()\ntello.")
-        page.locator(".cm-tooltip-autocomplete").wait_for(
-            state="visible", timeout=TIMEOUT_MS)
+        # czekamy na WYPEŁNIONĄ listę (sam widoczny tooltip to za mało - lista
+        # pozycji renderuje się w następnej klatce i `li` mogą być jeszcze puste)
+        page.wait_for_function(
+            "() => { const tip = document.querySelector('.cm-tooltip-autocomplete');"
+            "  return Boolean(tip) && tip.querySelectorAll('li').length > 0"
+            "    && tip.textContent.includes('move_forward'); }",
+            timeout=TIMEOUT_MS)
         labels = page.locator(".cm-tooltip-autocomplete li").all_inner_texts()
         browser.close()
     assert errors == [], errors
+    assert labels, "lista podpowiedzi jest pusta"
     joined = " ".join(labels)
     assert "move_forward" in joined, labels[:10]
     assert "takeoff" in joined, labels[:10]
