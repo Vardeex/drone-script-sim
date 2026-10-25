@@ -1,4 +1,4 @@
-// Drone Script Simulator - logika interfejsu (spina scenę, panele i API).
+﻿// Drone Script Simulator - logika interfejsu (spina scenę, panele i API).
 import { $, $$, el, fmt, fmtTime, debounce, legendGradient, plural, STATUS_LABEL } from './util.js';
 import { FlightTimeline, Player } from './timeline.js';
 import { DroneScene } from './scene.js';
@@ -7,9 +7,10 @@ import { showTooltip, hideTooltip } from './tooltip.js';
 import * as panels from './panels.js';
 import { registerFeatures, attachSceneLayers } from './boot.js';
 import { renderPlugins } from './plugins_tab.js';
+import { mountEditor, setEditorValue } from './editor.js';
 
 //: wersja modułów funkcji (cache-busting lokalnego serwera statyków)
-export const ASSET_VERSION = 'v25';
+export const ASSET_VERSION = 'v26';
 
 const state = {
   adapter: 'tello',
@@ -252,7 +253,7 @@ function loadFlight(data, meta = {}) {
   $('#legend-min').textContent = '0 m';
   $('#legend-max').textContent = `${fmt(Math.max(maxHeight, 100) / 100, 1)} m`;
   $('#scrub').max = String(Math.max(timeline.duration, 0.01));
-  if (!state.editorDirty && timeline.source) $('#editor-area').value = timeline.source;
+  if (!state.editorDirty && timeline.source) setEditorValue(timeline.source);
 
   player.pause();
   player.setTime(0);
@@ -369,7 +370,7 @@ async function loadExamples() {
 
 async function loadExample(name) {
   const data = await api.example(name);
-  $('#editor-area').value = data.source;
+  setEditorValue(data.source);
   setScriptName(data.name);
   state.editorDirty = false;
   panels.renderCodeView(data.source);
@@ -489,7 +490,7 @@ function seekNext() {
 async function loadUploadedFile(file) {
   if (!file) return;
   const text = await file.text();
-  $('#editor-area').value = text;
+  setEditorValue(text);
   setScriptName(file.name);
   state.editorDirty = true;
   panels.renderCodeView(text);
@@ -594,7 +595,7 @@ function bindUi() {
     e.target.value = '';
   });
   $('#btn-clear').addEventListener('click', () => {
-    $('#editor-area').value = '';
+    setEditorValue('');
     setScriptName('skrypt.py');
     state.editorDirty = true;
     panels.renderCodeView('');
@@ -706,6 +707,7 @@ async function init() {
       if (btn.id !== 'btn-play') normalizeText(btn);
     });
     $('#legend-bar').style.background = legendGradient();
+    mountEditor();               // CodeMirror 6 nad ukrytą textarea #editor-area
     bindUi();
     bindSimSettings();
     bindCanvasPicking();

@@ -432,3 +432,26 @@ def api_delete_flight(flight_id: str) -> Dict[str, Any]:
 @app.get("/api/health", response_class=PlainTextResponse)
 def api_health() -> str:
     return "ok"
+
+
+# ------------------------------------------------------- edytor: podpowiedzi i analiza
+class CheckRequest(BaseModel):
+    """Skrypt do sprawdzenia statycznie (bez uruchamiania)."""
+
+    source: str = Field("", description="Treść skryptu Pythona")
+
+
+@app.get("/api/completions")
+def api_completions() -> Dict[str, Any]:
+    """Podpowiedzi do edytora generowane z kodu (mock Tello + ``dronemoves``)."""
+    from . import completions
+
+    return completions.build()
+
+
+@app.post("/api/check")
+def api_check(request: CheckRequest) -> Dict[str, Any]:
+    """Statyczna analiza skryptu (``ast``): składnia, zakresy Tello, kolejność."""
+    from . import staticcheck
+
+    return staticcheck.check(request.source)

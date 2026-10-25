@@ -1,0 +1,21 @@
+{
+  "name": "dronesim-codemirror-bundle",
+  "private": true,
+  "type": "module",
+  "description": "Buduje app/static/vendor/codemirror/codemirror.bundle.js (patrz README.md)",
+  "scripts": {
+    "build": "esbuild entry.js --bundle --format=esm --minify --legal-comments=none --outfile=../../app/static/vendor/codemirror/codemirror.bundle.js"
+  },
+  "dependencies": {
+    "@codemirror/autocomplete": "^6.20.0",
+    "@codemirror/commands": "^6.9.0",
+    "@codemirror/lang-python": "^6.2.1",
+    "@codemirror/language": "^6.11.4",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/view": "^6.39.0",
+    "@lezer/highlight": "^1.2.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

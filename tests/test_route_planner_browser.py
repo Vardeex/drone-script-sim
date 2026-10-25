@@ -235,7 +235,10 @@ def test_fpv_camera_follows_drone(server):
             "() => Boolean(window.__featuresReady) && window.__featuresReady.layers.length > 0",
             timeout=TIMEOUT_MS)
         # uruchom krótki lot w UI (deterministyczny, bez zależności od przykładów)
-        page.fill("#editor-area", MINI_FLIGHT)
+        # Treść podajemy przez API edytora CodeMirror (zadanie 3 zastąpiło textarea
+        # #editor-area edytorem); wpisanie ręczne działa identycznie - setValue
+        # synchronizuje ukrytą textarea i wysyła zdarzenie ``input``.
+        page.evaluate("(source) => window.__editor.setValue(source)", MINI_FLIGHT)
         page.click("#btn-run")
         page.wait_for_function(
             "() => { const el = document.querySelector('#status-text');"

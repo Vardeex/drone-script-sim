@@ -6,6 +6,7 @@
   <title>Drone Script Simulator</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/css/style.css">
+<link rel="stylesheet" href="/static/css/editor.css">
 <link rel="stylesheet" href="/static/css/plugins.css">
   <script type="importmap">
     {
@@ -182,6 +183,7 @@ opóźnienie RC i niedokładność ruchów (założenia modelu)">Realizm:
           </label>
         </div>
         <textarea id="editor-area" spellcheck="false" placeholder="from djitellopy import Tello"></textarea>
+        <div id="script-problems" class="script-problems" hidden></div>
       </div>
       <div class="section">
         <h2>Wykonywana linia <span class="hint" id="current-line-label"></span></h2>
@@ -292,7 +294,7 @@ opóźnienie RC i niedokładność ruchów (założenia modelu)">Realizm:
     console.error('[dronesim] błąd UI:', event.message, event.filename, event.lineno);
   });
 </script>
-<script type="module" src="/static/js/app.js?v=25"></script>
+<script type="module" src="/static/js/app.js?v=26"></script>
 </body>
 </html>
 

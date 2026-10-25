@@ -166,6 +166,8 @@ export function highlightCodeLine(line) {
   const view = $('#code-view');
   const current = view.querySelector('.code-line.current');
   if (current) current.classList.remove('current');
+  // podświetlenie tej samej linii w edytorze (CodeMirror 6, patrz js/editor.js)
+  window.__editor?.setPlaybackLine?.(line || null);
   if (!line) {
     $('#current-line-label').textContent = '';
     return;

@@ -272,6 +272,8 @@ export function registerPanel({ panels, feature, scene, player, getLayer,
     if (!state.script) return;
     const area = document.querySelector('#editor-area');
     if (!area) return;
+    // edytor CodeMirror odwzorowuje ukrytą textarea - aktualizujemy oba
+    if (window.__editor?.setValue) window.__editor.setValue(state.script);
     area.value = state.script;
     area.dispatchEvent(new Event('input', { bubbles: true }));
     document.querySelector("button[data-tab='tab-script']")?.click();

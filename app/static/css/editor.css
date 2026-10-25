@@ -1,0 +1,59 @@
+/* Edytor CodeMirror 6 + lista ostrzeżeń statycznej analizy (js/editor.js). */
+
+/* Ukryta textarea zostaje źródłem prawdy dla starego kodu i formularza
+   uruchomienia - edytor tylko ją odwzorowuje. */
+.editor-source-hidden {
+  display: none;
+}
+
+.editor-host {
+  height: 260px;
+  border: 1px solid var(--line, #253049);
+  border-radius: 6px;
+  overflow: hidden;
+  resize: vertical;
+}
+
+.editor-host .cm-editor {
+  height: 100%;
+}
+
+.editor-host .cm-scroller {
+  overflow: auto;
+}
+
+/* linia z ostrzeżeniem analizy statycznej */
+.cm-warning-line {
+  background: rgba(245, 158, 11, 0.14);
+  box-shadow: inset 3px 0 0 #f59e0b;
+}
+
+/* aktualnie wykonywana linia podczas odtwarzania */
+.cm-playback-line {
+  background: rgba(56, 189, 248, 0.16);
+  box-shadow: inset 3px 0 0 #38bdf8;
+}
+
+.script-problems {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--line, #253049);
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.55);
+  font-size: 12px;
+  max-height: 130px;
+  overflow: auto;
+}
+
+.script-problems .problem {
+  padding: 1px 0;
+}
+
+.script-problems .problem-warning {
+  color: #fbbf24;
+}
+
+.script-problems .problem-error {
+  color: #f87171;
+  font-weight: 600;
+}
