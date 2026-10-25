@@ -45,6 +45,38 @@ def check_png(path: Path) -> tuple[bool, str]:
     return ok, f"{path.name}: {width}x{height}, {size // 1024} kB, {unique} kolorów"
 
 
+def write_fake_real_flight(base: str) -> Path:
+    """Zapisz plik „lotu rzeczywistego” na podstawie ostatniego lotu symulowanego.
+
+    Do zrzutu ekranu porównania potrzebny jest lot z flagą ``source: real``.
+    Bierzemy zapisany lot z historii i przesuwamy próbki (x +8 cm, z +5 cm) -
+    dzięki temu raport pokazuje realną, policzoną odchyłkę, a nie zera.
+    """
+    import json
+    import urllib.request
+
+    with urllib.request.urlopen(base + "/api/flights?limit=20", timeout=10) as response:
+        history = json.loads(response.read().decode("utf-8"))
+    simulated = next((item for item in history if item.get("source") != "real"), None)
+    if simulated is None:
+        raise RuntimeError("brak lotu symulowanego w historii - najpierw uruchom przykład")
+    with urllib.request.urlopen(base + f"/api/flights/{simulated['id']}",
+                                timeout=10) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    payload["source"] = "real"
+    payload["id"] = f"real-{simulated['id']}"
+    payload["script_name"] = "lot_real.json"
+    payload["adapter"] = "tello-real"
+    payload["samples"] = [
+        dict(sample, x=round(sample["x"] + 8.0, 2), z=round(sample["z"] + 5.0, 2))
+        for sample in payload.get("samples") or []
+    ]
+    target = ROOT / "tmp" / "screen_real_flight.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    return target
+
+
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     port = free_port()
@@ -212,6 +244,64 @@ def main() -> int:
             page.mouse.move(800, 930)
             page.wait_for_timeout(400)          # jedna klatka po przewinięciu
             shot("09-fpv.png")
+
+            # 10. lot ręczny: start + chwila lotu (ściągawka klawiszy, stan, ślad w 3D)
+            page.select_option("#camera-select", "follow")
+            page.locator("#tab-btn-manual").click()
+            page.locator("[data-mf-start]").wait_for(state="visible", timeout=TIMEOUT_MS)
+            page.locator("[data-mf-start]").click()
+            page.wait_for_function(
+                "() => window.__manualFlight && window.__manualFlight.state.flying === true",
+                timeout=TIMEOUT_MS)
+            page.keyboard.down("ArrowUp")
+            page.wait_for_timeout(700)
+            page.keyboard.up("ArrowUp")
+            page.keyboard.down("ArrowRight")
+            page.wait_for_timeout(500)
+            page.keyboard.up("ArrowRight")
+            page.wait_for_function(
+                "() => { const s = window.__manualFlight.state.lastState;"
+                "  return Boolean(s) && Math.hypot(s.x, s.y) > 10; }",
+                timeout=TIMEOUT_MS)
+            page.mouse.move(800, 930)
+            page.wait_for_timeout(300)
+            shot("10-lot-reczny.png")
+
+            # 11. edytor z ostrzeżeniem statycznej analizy (move_forward(600))
+            page.click("button[data-tab='tab-script']")
+            page.wait_for_function("() => Boolean(window.__editor)", timeout=TIMEOUT_MS)
+            page.evaluate("""() => window.__editor.setValue(
+              'from djitellopy import Tello\\n\\n'
+              + 'tello = Tello()\\ntello.connect()\\ntello.takeoff()\\n'
+              + 'tello.set_speed(500)\\ntello.move_forward(600)\\ntello.land()')""")
+            page.wait_for_function(
+                "() => (window.__scriptProblems || []).length >= 2",
+                timeout=TIMEOUT_MS)
+            shot("11-edytor-ostrzezenia.png")
+
+            # 12. porównanie lotu rzeczywistego z symulowanym
+            #     bierzemy zapisany lot symulowany i tworzymy „rzeczywisty” z odchyłką
+            real_path = write_fake_real_flight(base)
+            try:
+                page.click("button[data-tab='tab-history']")
+                page.set_input_files("#import-real-input", str(real_path))
+                page.wait_for_function(
+                    "() => !document.getElementById('compare-row').hidden",
+                    timeout=TIMEOUT_MS)
+                page.click("#btn-compare")
+                page.wait_for_function(
+                    "() => { const box = document.getElementById('compare-result');"
+                    "  return Boolean(box) && !box.hidden"
+                    "    && box.querySelectorAll('.stat').length >= 4; }",
+                    timeout=TIMEOUT_MS)
+                page.wait_for_timeout(400)      # kamera ustawia się na oba tory
+                page.mouse.move(800, 930)
+                # przewiń panel historii tak, żeby w kadrze był cały raport odchyłek
+                page.locator("#compare-result").scroll_into_view_if_needed()
+                page.wait_for_timeout(300)
+                shot("12-porownanie.png")
+            finally:
+                real_path.unlink(missing_ok=True)
 
             browser.close()
     finally:

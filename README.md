@@ -33,6 +33,15 @@ lot, trasę, telemetrię, komendy, błędy i ostrzeżenia.
   statystyki lotu (czas, dystans, maks. wysokość, zużycie baterii),
 * podgląd skryptu z podświetleniem aktualnie wykonywanej linii,
 * zapis/wczytanie lotu (JSON), eksport telemetrii do CSV, historia lotów,
+* **edytor skryptów CodeMirror 6** (lokalnie, bez CDN): kolorowanie Pythona,
+  numery linii, **podpowiedzi metod Tello i biblioteki `dronemoves`** generowane
+  z kodu (`GET /api/completions`) oraz **statyczna analiza przed uruchomieniem**
+  (`POST /api/check`, `ast` bez wykonywania kodu) - patrz „Edytor skryptów”,
+* **lot ręczny** (funkcja dodatkowa, wyłączalna): sterowanie klawiaturą na żywo,
+  nagrywanie lotu i zapis nagrania jako skrypt w dwóch wariantach - patrz
+  „Lot ręczny”,
+* **lot rzeczywisty**: import pliku z `dronemoves.FlightRecorder` i porównanie
+  z symulacją (odchyłki + podpowiedzi kalibracji) - patrz „Lot rzeczywisty”,
 * interfejs w języku polskim, działa offline (three.js jest lokalnie),
 * **przeszkody 3D** (funkcja dodatkowa, wyłączalna): edytor scen, kolizje
   i zbliżenia liczone na całej telemetrii, przeloty przez bramki - patrz
@@ -347,6 +356,93 @@ Lokalnie, bez publikowania:
 python release_tools/build_portable.py            # -> dist/DroneSim-portable-<wersja>-win64.zip
 python release_tools/smoke_portable.py --zip dist/DroneSim-portable-1.0.0-win64.zip
 ```
+
+## Edytor skryptów (CodeMirror 6)
+
+Pole skryptu to edytor [CodeMirror 6](https://codemirror.net/) zbudowany
+**lokalnie** do `app/static/vendor/codemirror/codemirror.bundle.js` (402 kB,
+MIT, teksty licencji w `LICENSE` obok) - bez CDN, więc działa offline.
+
+![Edytor z ostrzeżeniami](docs/poradnik/11-edytor-ostrzezenia.png)
+
+Co daje:
+
+| Funkcja | Szczegóły |
+|---|---|
+| kolorowanie Pythona, numery linii | motyw ciemny, podświetlenie aktywnej linii |
+| **podpowiedzi** | po `tello.` - metody mocka `djitellopy` (72), po `pilot.` - API `dronemoves` (24); sygnatury z `inspect.signature`, opisy z docstringów |
+| **analiza przed uruchomieniem** | `POST /api/check` (`ast`, bez wykonywania kodu): błąd składni z linią, zakresy Tello, ruch przed `takeoff()`, brak `land()` |
+| podświetlanie wykonywanej linii | podczas odtwarzania, jak dotychczas |
+| brak blokowania | ostrzeżenia podkreślają linię i pojawiają się na liście, ale nie blokują uruchomienia |
+
+Zakresy w analizie pochodzą z adaptera (`app/adapters/tello/limits.py`), a nie
+z drugiej, ręcznej listy. Pełna lista sprawdzeń:
+
+* `move_*` ze **stałą** poza 20-500 cm, `rotate_*` poza 1-360°,
+  `set_speed` poza 10-100 cm/s, `go_xyz_speed` z osią > 500 cm lub prędkością
+  poza 10-100,
+* ruch (`move_*`, `rotate_*`, `go_xyz_speed`) **przed** `takeoff()`
+  w prostym przepływie liniowym (analiza nie wchodzi w `if`/`for`/`while`,
+  bo tam kolejność zależy od danych),
+* brak `land()` na końcu.
+
+Argument, który nie jest stałą (np. `move_forward(distance)`), nie jest
+sprawdzany - analiza statyczna nie zgaduje wartości.
+
+## Lot ręczny (wtyczka, wyłączalna)
+
+![Lot ręczny](docs/poradnik/10-lot-reczny.png)
+
+Tryb sterowania na żywo: **Start** wznosi drona na 80 cm, **Lądowanie**
+sprowadza go na ziemię, a klawiatura steruje jak w oficjalnym przykładzie
+`djitellopy` `manual-control-pygame.py`:
+
+| Klawisze | Ruch |
+|---|---|
+| ↑ / ↓ | przód / tył |
+| ← / → | lewo / prawo |
+| W / S | góra / dół |
+| A / D | obrót w lewo / w prawo |
+
+Konwencja jest ta sama co `send_rc_control` (`lr`+ = prawo, `yaw`+ = obrót
+w prawo), a prędkość ustawia suwak (10-100). Ruch liczy **serwer** - ta sama
+fizyka co symulacja skryptów (`app.sim.core.Simulation`), więc nagranie
+odtwarza się w skrypcie 1:1. Scena 3D pokazuje drona i ślad; przy zbliżeniu do
+przeszkody pojawia się ostrzeżenie (liczone tak samo jak w analizie lotu).
+
+**Nagrywanie → skrypt.** Po locie kliknij **Zapisz jako skrypt** - do wyboru:
+
+* **wierne odtworzenie** - `send_rc_control` + `time.sleep` z czasami
+  z nagrania (kolejne identyczne wychylenia są złączone). Tor zgadza się
+  z nagraniem w punktach kontrolnych z dokładnością **≤ 5 cm**,
+* **uproszczony** - złączone ruchy `move_*`/`rotate_*` z limitami Tello
+  (20-500 cm, 1-360°); skos jest rozkładany na osie, odcinki krótsze niż 20 cm
+  są pomijane, więc tor jest przybliżony (**≤ 20 cm** w punktach zatrzymań).
+
+Oba warianty są sprawdzane testem: nagranie → wygenerowany skrypt →
+uruchomienie w symulatorze → porównanie torów.
+
+Wyłączenie: `{"features": {"manual_flight": {"enabled": false}}}` w `config.json`.
+
+## Lot rzeczywisty (import i porównanie)
+
+![Porównanie lotu rzeczywistego](docs/poradnik/12-porownanie.png)
+
+`dronemoves.FlightRecorder` (0.3.0) zapisuje lot prawdziwego Tello do pliku JSON
+w formacie symulatora z flagą `"source": "real"`. **Rejestrator nie steruje
+dronem** - tylko czyta jego stan publicznym API `djitellopy`.
+
+W aplikacji: **Historia → Importuj lot rzeczywisty**, potem wybierz lot
+symulowany i kliknij **Porównaj**. Raport zawiera:
+
+* maksymalną, średnią, 95. percentylową i końcową odchyłkę pozycji [cm],
+* drogę drona i symulacji (wykrywa błąd skali prędkości),
+* rozkład błędu: **wzdłuż toru** (skala), **w bok** (kurs/obrót), **w pionie**
+  (wysokość) - z podpowiedziami, który parametr profilu kalibracji zmienić,
+* oba tory na jednej scenie 3D: pomarańczowy = dron, niebieski = symulacja.
+
+Pozycja lotu rzeczywistego jest **szacowana z prędkości** (Tello nie podaje
+pozycji), więc dryf rośnie z czasem - porównuj odcinki do ~20-30 s.
 
 ## Wymagania
 

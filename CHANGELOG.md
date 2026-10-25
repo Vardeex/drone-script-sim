@@ -3,6 +3,66 @@
 Format: [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/); wersjonowanie
 zgodne z [SemVer](https://semver.org/lang/pl/).
 
+## [Niewydane] - 2026-10-25
+
+### Dodane
+
+* **Paczka „rozpakuj i uruchom” dla Windows** (`release_tools/build_portable.py`):
+  buduje `DroneSim-portable-<wersja>-win64.zip` z **oficjalnym Pythonem
+  embeddable 3.11.9** (ostatnie 3.11 z plikami binarnymi) pobranym z python.org
+  i zweryfikowanym (SHA-256 przypięty + krzyżowo MD5 z python.org), z
+  zainstalowanymi zależnościami runtime, `dronemoves`, aplikacją, przykładami,
+  scenami, poradnikiem i `start.bat` używającym wbudowanego Pythona (nic nie
+  instaluje w systemie). `verify_zip` pilnuje, żeby w paczce nie było `.git`,
+  `.venv`, `tmp`, `flights`, `scenes/user`, `.pyc` ani ścieżek z nazwą
+  użytkownika. Paczka: 19,8 MB, budowa 19 s,
+* **`release_tools/smoke_portable.py`**: test dymny paczki (rozpakowanie, start na
+  wolnym porcie, `/api/health`, `basic_square.py`, skrypt `dronemoves`) używany
+  lokalnie i w CI,
+* **`.github/workflows/release.yml`**: wydanie uruchamiane **tylko** po pushu
+  tagu `v*` - buduje paczkę na `windows-latest`, sprawdza zgodność tagu z
+  `app/__init__.py`, robi test dymny i tworzy GitHub Release z ZIP-em oraz
+  notatkami z `CHANGELOG.md` (`release_tools/changelog_notes.py`),
+* **Lot ręczny (wtyczka `manual_flight`, wyłączalna)**: sterowanie klawiaturą na
+  żywo (strzałki, W/S, A/D - jak w `manual-control-pygame.py`), ściągawka
+  klawiszy, suwak prędkości, ruch w 3D i ostrzeżenia o zbliżeniu do przeszkód.
+  Fizyka liczona po stronie serwera tą samą klasą `Simulation`, więc nagranie
+  odtwarza się w skrypcie 1:1,
+* **Nagrywanie lotu ręcznego → skrypt** w dwóch wariantach: (a) wierne
+  odtworzenie `send_rc_control` + `time.sleep` (zgodność ≤ 5 cm w punktach
+  kontrolnych), (b) uproszczone `move_*`/`rotate_*` z limitami Tello 20-500 cm
+  i 1-360° (≤ 20 cm w punktach zatrzymań). Test: nagranie → skrypt →
+  symulator → porównanie torów,
+* **Edytor CodeMirror 6** (`app/static/vendor/codemirror`, bundle 402 kB, MIT,
+  bez CDN): kolorowanie Pythona, numery linii, podświetlanie wykonywanej linii.
+  Ukryta `textarea` pozostaje źródłem wartości, więc cały dotychczasowy kod
+  działa bez zmian,
+* **Podpowiedzi generowane z kodu** (`GET /api/completions`): 72 metody mocka
+  `djitellopy` i 24 metody `dronemoves` z sygnaturami (`inspect.signature`)
+  i pierwszym akapitem docstringa - bez ręcznej listy,
+* **Statyczna analiza skryptu** (`POST /api/check`, `ast` bez wykonywania kodu):
+  błąd składni z linią, stałe poza zakresem Tello, ruch przed `takeoff()` w
+  prostym przepływie, brak `land()` - jako ostrzeżenia z podkreśleniem linii
+  (nie blokują uruchomienia),
+* **Import lotu rzeczywistego i porównanie** (`app/realflight.py`): wgranie
+  pliku z `dronemoves.FlightRecorder` w Historii, raport odchyłek
+  (maks./średnia/p95/końcowa) z rozkładem na składową wzdłuż toru, w bok i w
+  pionie oraz konkretne podpowiedzi kalibracji; oba tory na jednej scenie 3D,
+* dokumentacja: sekcje o paczce, edytorze, locie ręcznym i porównaniu w README
+  i poradniku (rozdziały 9-11), nowe zrzuty `10-lot-reczny.png`,
+  `11-edytor-ostrzezenia.png`, `12-porownanie.png`.
+
+### Zmienione
+
+* **Kamera „Śledząca”** to teraz kamera pościgowa **z tyłu** drona (wcześniej
+  trzymała kąt z boku) - dzięki temu prawo drona = prawo ekranu, co jest
+  potrzebne do sterowania klawiaturą,
+* historia lotów pokazuje źródło lotu (`sim`/`real`) i oznacza loty rzeczywiste.
+
+### Naprawione
+
+* (patrz poprzednia sekcja - poprawki CI: grupa procesów i limity czasu)
+
 ## [Niewydane] - 2026-10-24
 
 ### Dodane

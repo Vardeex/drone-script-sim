@@ -16,7 +16,10 @@ a na końcu przejście na prawdziwego drona Tello.
 6. [Przejście na prawdziwego Tello](#6-przejście-na-prawdziwego-tello) · [tryb realistyczny](#66-tryb-realistyczny---po-co-i-czego-się-spodziewać)
 7. [Kamera z drona (FPV)](#7-kamera-z-drona-fpv)
 8. [Wtyczki](#8-wtyczki)
-9. [Słowniczek](#słowniczek)
+9. [Lot ręczny i nagrywanie lotu](#9-lot-ręczny-i-nagrywanie-lotu)
+10. [Edytor z podpowiedziami](#10-edytor-z-podpowiedziami)
+11. [Porównanie z prawdziwym dronem](#11-porównanie-z-prawdziwym-dronem)
+12. [Słowniczek](#słowniczek)
 
 ---
 
@@ -624,6 +627,123 @@ każdej wersja, autor, zależności i punkty rozszerzeń.*
 Przykładowa wtyczka `example_hello` dodaje zakładkę **Hello** z tekstem
 i przyciskiem, który pyta jej API. Własną wtyczkę piszesz wg
 [docs/plugins.md](plugins.md).
+
+---
+
+## 9. Lot ręczny i nagrywanie lotu
+
+Zakładka **Lot ręczny** pozwala polatać dronem z klawiatury i zapisać ten lot
+jako skrypt Pythona.
+
+![Lot ręczny](poradnik/10-lot-reczny.png)
+
+1. Kliknij **▶ Start** - dron wznosi się na 80 cm (jak `takeoff()` w Tello).
+2. Steruj klawiaturą (kliknij scenę, jeśli klawisze nie reagują):
+
+   | Klawisze | Ruch |
+   |---|---|
+   | ↑ / ↓ | przód / tył |
+   | ← / → | lewo / prawo |
+   | W / S | góra / dół |
+   | A / D | obrót w lewo / w prawo |
+
+3. Suwak **Prędkość** zmienia wychylenie RC (10-100; 100 = 50 cm/s w Tello).
+4. Przy zbliżeniu do przeszkody pojawia się pomarańczowe ostrzeżenie - dron
+   **nie zatrzyma się sam**, to tylko informacja (jak w analizie lotu).
+5. **⏬ Lądowanie** kończy lot, **■ Zakończ sesję** zamyka sesję i czyści ślad.
+
+### Zapis nagrania jako skrypt
+
+Po locie wybierz wariant i kliknij **Zapisz jako skrypt**:
+
+* **Wierne odtworzenie (`send_rc_control`)** - te same wychylenia i czasy co
+  w nagraniu; tor zgadza się w punktach kontrolnych do **5 cm**.
+* **Uproszczony (`move_*` / `rotate_*`)** - czytelniejszy skrypt: ruchy są
+  łączone, skos rozłożony na osie, odcinki krótsze niż 20 cm pomijane; tor jest
+  przybliżony do **20 cm** w punktach zatrzymań.
+
+Podgląd skryptu pojawia się pod przyciskiem; **Wklej do edytora** przenosi go do
+zakładki Skrypt, **Pobierz .py** zapisuje plik.
+
+> Nagrywanie obejmuje **tylko lot ręczny** (od Start do Lądowania). Jeśli
+> wyłączysz „Nagrywaj”, sesja dalej działa, ale nic nie trafi do skryptu.
+
+Wtyczkę wyłączysz w `config.json`:
+
+```json
+{ "features": { "manual_flight": { "enabled": false } } }
+```
+
+## 10. Edytor z podpowiedziami
+
+Pole skryptu to teraz pełny edytor (CodeMirror 6) z kolorowaniem Pythona,
+numerami linii i podpowiedziami.
+
+![Edytor z ostrzeżeniami](poradnik/11-edytor-ostrzezenia.png)
+
+* **Podpowiedzi**: wpisz `tello.` i poczekaj chwilę (albo Ctrl+Spacja) - lista
+  metod mocka `djitellopy`. Po `pilot.` pojawią się metody biblioteki
+  `dronemoves`. Podpowiedzi są generowane z kodu (sygnatury i docstringi), więc
+  zawsze odpowiadają zainstalowanej wersji.
+* **Ostrzeżenia przed uruchomieniem** - pod edytorem, z numerem linii:
+
+  | Ostrzeżenie | Przykład |
+  |---|---|
+  | odległość poza 20-500 cm | `tello.move_forward(600)` |
+  | kąt poza 1-360° | `tello.rotate_clockwise(0)` |
+  | prędkość poza 10-100 cm/s | `tello.set_speed(500)` |
+  | ruch przed `takeoff()` | `tello.move_forward(100)` w pierwszej linii |
+  | brak `land()` na końcu | skrypt kończy się po ostatnim ruchu |
+
+  Ostrzeżenia **nie blokują** uruchomienia - dron w symulatorze i tak odrzuci
+  komendę, a Ty widzisz to od razu, bez czekania na wynik.
+* **Błąd składni** jest zgłaszany jako błąd (czerwony) z numerem linii.
+* Podczas odtwarzania podświetlana jest aktualnie wykonywana linia (tak jak
+  w panelu „Wykonywana linia”).
+
+Analiza używa `ast`, więc **nie wykonuje** Twojego kodu.
+
+## 11. Porównanie z prawdziwym dronem
+
+Biblioteka `dronemoves` (0.3.0) ma rejestrator lotu: zapisuje, co dron
+rzeczywiście robił, żeby porównać to z symulacją i poprawić profil kalibracji.
+
+```python
+from djitellopy import Tello
+from dronemoves import FlightRecorder
+
+recorder = FlightRecorder(Tello())
+drone = recorder.proxy()          # komendy wysyła Twój kod, jak dotychczas
+
+with recorder:
+    drone.connect()
+    drone.takeoff()
+    drone.move_forward(100)
+    drone.land()
+
+recorder.save("lot_real.json")
+```
+
+> Rejestrator **nie steruje dronem** - tylko czyta stan (co 100 ms) i zapisuje
+> wywołane komendy. `djitellopy` nie jest modyfikowane.
+
+W aplikacji: **Historia → Importuj lot rzeczywisty** (wybierz `lot_real.json`),
+potem wskaż lot symulowany i kliknij **Porównaj**.
+
+![Porównanie lotów](poradnik/12-porownanie.png)
+
+Raport podaje maksymalną, średnią, 95. percentylową i końcową odchyłkę pozycji
+oraz rozkład błędu na składowe - **wzdłuż toru** (skala prędkości), **w bok**
+(kurs/obrót) i **w pionie** (wysokość). Pod spodem są konkretne podpowiedzi,
+np. „ustaw `max_speed_cm_s` razy 0,92”. Oba tory widać na jednej scenie 3D:
+pomarańczowy to dron, niebieski - symulacja.
+
+Dwie rzeczy warte zapamiętania:
+
+* pozycja lotu rzeczywistego jest **szacowana z prędkości** (Tello nie podaje
+  pozycji), więc z czasem narasta dryf - porównuj odcinki do 20-30 s,
+* rejestrator **nie był testowany na prawdziwym Tello**; przed lotem sprawdź na
+  małej wysokości, że `get_speed_x/y/z` zwraca sensowne wartości.
 
 ---
 
