@@ -15,7 +15,7 @@ zgodne z [SemVer](https://semver.org/lang/pl/).
   scenami, poradnikiem i `start.bat` używającym wbudowanego Pythona (nic nie
   instaluje w systemie). `verify_zip` pilnuje, żeby w paczce nie było `.git`,
   `.venv`, `tmp`, `flights`, `scenes/user`, `.pyc` ani ścieżek z nazwą
-  użytkownika. Paczka: 19,8 MB, budowa 19 s,
+  użytkownika. Paczka: 20,8 MB, budowa 24 s,
 * **`release_tools/smoke_portable.py`**: test dymny paczki (rozpakowanie, start na
   wolnym porcie, `/api/health`, `basic_square.py`, skrypt `dronemoves`) używany
   lokalnie i w CI,
