@@ -391,15 +391,119 @@ async function loadHistory() {
   }
 }
 
+// ------------------------------------- lot rzeczywisty: import i porównanie
+//: id ostatnio wgranego lotu rzeczywistego (porównujemy go z wybranym symulowanym)
+let realFlightId = null;
+
+async function onImportReal(event) {
+  const file = event.target?.files?.[0];
+  if (event.target) event.target.value = '';
+  if (!file) return;
+  const body = new FormData();
+  body.append('file', file);
+  try {
+    const response = await fetch('/api/flights/import-real', { method: 'POST', body });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || response.statusText);
+    realFlightId = data.id;
+    setStatus(`Wczytano lot rzeczywisty „${data.name}” (${data.samples} próbek, `
+      + `${fmtTime(data.duration)})`, 'ok');
+    await loadHistory();
+    await fillCompareSelect();
+  } catch (err) {
+    setStatus(`Import lotu rzeczywistego: ${err.message}`, 'error');
+  }
+}
+
+/** Wypełnij listę lotów symulowanych do porównania. */
+async function fillCompareSelect() {
+  if (!realFlightId) return;
+  try {
+    const items = (await api.flights(30))
+      .filter((item) => item.id !== realFlightId && item.source !== 'real');
+    const select = $('#compare-sim');
+    select.innerHTML = '';
+    for (const item of items) {
+      const when = (item.created_at || '').replace('T', ' ').slice(0, 19);
+      select.append(el('option', {
+        value: item.id, text: `${item.script_name || item.id} (${when})`,
+      }));
+    }
+    if (!items.length) {
+      select.append(el('option', { value: '', text: 'brak lotów symulowanych' }));
+    }
+    $('#compare-row').hidden = false;
+    $('#compare-result').hidden = true;
+  } catch (err) {
+    setStatus(`Lista lotów do porównania: ${err.message}`, 'error');
+  }
+}
+
+async function onCompare() {
+  const simId = $('#compare-sim').value;
+  if (!realFlightId || !simId) return;
+  try {
+    const response = await fetch('/api/flights/compare', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ real_id: realFlightId, sim_id: simId }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || response.statusText);
+    renderComparison(data);
+  } catch (err) {
+    setStatus(`Porównanie lotów: ${err.message}`, 'error');
+  }
+}
+
+/** Raport odchyłek + dwa tory na jednej scenie 3D. */
+function renderComparison(data) {
+  const box = $('#compare-result');
+  box.hidden = false;
+  box.innerHTML = '';
+  const report = data.report;
+  const metrics = [
+    ['Maks. odchyłka', `${report.max_error_cm} cm`],
+    ['Średnia', `${report.mean_error_cm} cm`],
+    ['95. percentyl', `${report.p95_error_cm} cm`],
+    ['Na końcu lotu', `${report.final_error_cm} cm`],
+    ['Droga drona', `${report.real_path_cm} cm`],
+    ['Droga symulacji', `${report.sim_path_cm} cm`],
+  ];
+  const grid = el('div', { class: 'stats-grid' });
+  for (const [label, value] of metrics) {
+    grid.append(el('div', { class: 'stat' }, [
+      el('div', { class: 'label', text: label }),
+      el('div', { class: 'value', text: value }),
+    ]));
+  }
+  box.append(grid);
+  const list = el('ul', { class: 'hint' });
+  for (const hint of report.hints) list.append(el('li', { text: hint }));
+  box.append(list);
+  box.append(el('div', {
+    class: 'hint',
+    text: 'Scena 3D: tor pomarańczowy = dron rzeczywisty, niebieski = symulacja.',
+  }));
+  // oba tory na jednej scenie (kolory jak w opisie wyżej)
+  scene?.setComparison?.({
+    real: (data.series || []).map((row) => row.real),
+    sim: (data.series || []).map((row) => row.sim),
+  });
+  setStatus('Porównanie gotowe - tory widać w scenie 3D.', 'ok');
+}
+
 function historyRow(item) {
   const row = el('div', { class: 'flight-item' });
+  const isReal = item.source === 'real';
   row.append(el('div', {}, [
-    el('div', { class: 'name', text: item.script_name || item.id }),
+    el('div', { class: 'name', text: (isReal ? '🛰 ' : '') + (item.script_name || item.id) }),
     el('div', {
       class: 'meta',
       text: `${(item.created_at || '').replace('T', ' ').slice(0, 19)} · `
         + `${fmtTime(item.duration)} · ${item.events} komend · `
-        + `${item.errors || 0} bł. · ${item.warnings || 0} ostr.`,
+        + `${item.errors || 0} bł. · ${item.warnings || 0} ostr.`
+        + (isReal ? ' · lot rzeczywisty' : ''),
     }),
   ]));
   row.append(el('div', { class: 'actions row' }, [
@@ -636,6 +740,9 @@ function bindUi() {
     e.target.value = '';
   });
   $('#btn-refresh-history').addEventListener('click', loadHistory);
+  $('#btn-import-real').addEventListener('click', () => $('#import-real-input').click());
+  $('#import-real-input').addEventListener('change', onImportReal);
+  $('#btn-compare').addEventListener('click', onCompare);
 }
 
 function bindCanvasPicking() {

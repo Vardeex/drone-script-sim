@@ -483,3 +483,24 @@ table.data tr.status-ok td:first-child { border-left: 3px solid transparent; }
   font-weight: 600;
 }
 
+
+/* Porównanie lotu rzeczywistego z symulowanym (zakładka Historia). */
+
+.compare-result {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--line, #253049);
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.compare-result ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.compare-result li {
+  margin-bottom: 4px;
+}
+
+

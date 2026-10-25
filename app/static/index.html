@@ -253,6 +253,26 @@ opóźnienie RC i niedokładność ruchów (założenia modelu)">Realizm:
         </div>
         <div id="history-list"><div class="empty">Brak zapisanych lotów.</div></div>
       </div>
+      <div class="section">
+        <h2>Lot rzeczywisty (z prawdziwego Tello)</h2>
+        <p class="hint">
+          Wgraj plik zapisany przez <code>dronemoves.FlightRecorder</code>
+          (flaga <code>"source": "real"</code>). Rejestrator tylko czyta stan drona,
+          nie steruje nim. Pozycja jest szacowana z prędkości, więc porównuj krótkie
+          odcinki (do ~20-30 s).
+        </p>
+        <div class="row">
+          <button id="btn-import-real">📂 Importuj lot rzeczywisty</button>
+          <input type="file" id="import-real-input" accept=".json,application/json" hidden>
+        </div>
+        <div class="row" id="compare-row" hidden>
+          <label class="hint">Porównaj z:
+            <select id="compare-sim" style="width:auto"></select>
+          </label>
+          <button id="btn-compare" class="ghost">📊 Porównaj</button>
+        </div>
+        <div id="compare-result" class="compare-result" hidden></div>
+      </div>
     </section>
 
     <section class="tab-content" id="tab-plugins" hidden>

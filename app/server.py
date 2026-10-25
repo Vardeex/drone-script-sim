@@ -434,6 +434,52 @@ def api_health() -> str:
     return "ok"
 
 
+# ------------------------------------------- lot rzeczywisty: import i porównanie
+class CompareRequest(BaseModel):
+    """Porównanie lotu rzeczywistego z symulowanym."""
+
+    real_id: str = Field(..., description="Id lotu rzeczywistego (source: real)")
+    sim_id: str = Field(..., description="Id lotu symulowanego")
+
+
+@app.post("/api/flights/import-real")
+async def api_import_real(file: UploadFile = File(...)) -> Dict[str, Any]:
+    """Wgraj lot rzeczywisty (JSON z ``dronemoves.flightlog``) do historii."""
+    from . import realflight
+
+    raw = await file.read()
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(400, f"Plik nie jest poprawnym JSON: {exc}") from exc
+    try:
+        realflight.validate_real(payload)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    saved = storage.save_imported(payload)
+    return {"id": saved["id"], "source": saved.get("source"),
+            "samples": len(saved.get("samples") or []),
+            "duration": saved.get("duration"),
+            "name": saved.get("script_name")}
+
+
+@app.post("/api/flights/compare")
+def api_compare_flights(request: CompareRequest) -> Dict[str, Any]:
+    """Porównaj lot rzeczywisty z symulowanym: odchyłki + podpowiedzi kalibracji."""
+    from . import realflight
+
+    real = storage.load(request.real_id)
+    sim = storage.load(request.sim_id)
+    if real is None or sim is None:
+        raise HTTPException(404, "Nie znaleziono jednego z lotów.")
+    if real.get("source") != "real":
+        raise HTTPException(400, "Pierwszy lot nie jest lotem rzeczywistym.")
+    try:
+        return realflight.compare(real, sim)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 # ------------------------------------------------------- edytor: podpowiedzi i analiza
 class CheckRequest(BaseModel):
     """Skrypt do sprawdzenia statycznie (bez uruchamiania)."""

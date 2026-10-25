@@ -442,6 +442,57 @@ export class DroneScene {
     this.overlayLayers.push(instance);
   }
 
+  /**
+   * Pokaż na scenie **dwa** tory: lot rzeczywisty i symulowany (porównanie).
+   *
+   * Rysuje dwie linie w metrach (telemetria w cm -> scena), a ``null``/pusta
+   * lista czyści porównanie. Kolory: rzeczywisty = pomarańczowy, symulowany
+   * = niebieski (jak reszta UI).
+   */
+  setComparison(payload) {
+    if (!this._comparisonGroup) {
+      this._comparisonGroup = new THREE.Group();
+      this._comparisonGroup.name = 'comparison';
+      this.scene.add(this._comparisonGroup);
+    }
+    for (const child of this._comparisonGroup.children.slice()) {
+      this._comparisonGroup.remove(child);
+      child.geometry?.dispose?.();
+      child.material?.dispose?.();
+    }
+    const build = (points, color) => {
+      if (!points || points.length < 2) return null;
+      const positions = new Float32Array(points.length * 3);
+      points.forEach((point, index) => {
+        positions[index * 3] = point[0] / M;
+        positions[index * 3 + 1] = point[2] / M;
+        positions[index * 3 + 2] = -point[1] / M;
+      });
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      return new THREE.Line(geometry, new THREE.LineBasicMaterial({ color }));
+    };
+    if (!payload) return;
+    const real = build(payload.real, 0xf59e0b);
+    const sim = build(payload.sim, 0x38bdf8);
+    for (const line of [real, sim]) {
+      if (line) {
+        line.frustumCulled = false;
+        this._comparisonGroup.add(line);
+      }
+    }
+    // kadr na oba tory (żeby było widać różnicę od razu)
+    const box = new THREE.Box3().setFromObject(this._comparisonGroup);
+    if (!box.isEmpty()) {
+      const sphere = box.getBoundingSphere(new THREE.Sphere());
+      const distance = Math.max(sphere.radius * 3.2, 1.2);
+      this.controls.target.copy(sphere.center);
+      this.camera.position.copy(sphere.center)
+        .add(new THREE.Vector3(0.35, 1.0, 0.55).setLength(distance));
+      this.controls.update?.();
+    }
+  }
+
   /** Docelowa odległość kamery śledzącej zależna od skali modelu (×1 → ~1,2 m, ×10 → ~5 m). */
   _followDistance() {
     return 0.95 + 0.38 * Math.max(1, this.droneModelScale);

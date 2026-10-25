@@ -297,6 +297,52 @@ mierzesz taśmą dystans (lub kąt) i zapisujesz profil — w symulatorze użyj
 Profil jest **współdzielony z symulatorem** — ten sam model RC liczy trajektorię
 i ruch drona w 3D, więc wyniki odpowiadają temu, co zakłada biblioteka.
 
+## Rejestrator lotu (`FlightRecorder`, 0.3.0)
+
+`FlightRecorder` zapisuje lot **prawdziwego** Tello do pliku JSON w formacie
+symulatora (flaga `"source": "real"`), żeby porównać dron z symulacją i poprawić
+profil kalibracji.
+
+> **Rejestrator NIE steruje dronem.** Tylko czyta jego stan publicznym API
+> `djitellopy` (co 100 ms) i zapisuje komendy, które wywołał Twój kod.
+> `djitellopy` nie jest modyfikowane — `recorder.proxy()` to przezroczyste
+> opakowanie obiektu `Tello`.
+
+```python
+from djitellopy import Tello
+from dronemoves import FlightRecorder
+
+recorder = FlightRecorder(Tello())
+drone = recorder.proxy()          # komendy wysyła Twój kod, jak dotychczas
+
+with recorder:                     # start próbkowania w tle (100 ms)
+    drone.connect()
+    drone.takeoff()
+    drone.move_forward(100)
+    drone.rotate_clockwise(90)
+    drone.move_forward(100)
+    drone.land()
+
+recorder.save("lot_real.json")
+```
+
+Zapisywane pola: `get_height`, `get_yaw`, `get_speed_x/y/z`, `get_battery`,
+`get_flight_time`, `get_acceleration_x/y/z`, `get_distance_tof` oraz
+`get_mission_pad_id`, gdy maty są włączone (`mission_pads=True`).
+
+**Pozycja jest szacowana z prędkości** — Tello nie podaje pozycji — więc błąd
+rośnie w czasie (dryf). Do porównań używaj krótkich odcinków (do ~20–30 s).
+
+Plik wczytasz w symulatorze: **Historia → Importuj lot rzeczywisty**, a potem
+**Porównaj** z lotem symulowanym. Raport pokazuje maksymalną/średnią odchyłkę,
+rozkład błędu (wzdłuż toru / w bok / w pionie) i konkretne podpowiedzi, który
+parametr profilu zmienić.
+
+> **Status:** rejestrator **nie był testowany na prawdziwym Tello** — testy
+> używają `FakeDrone` z szumem pomiarów (te same pola i komendy co `djitellopy`).
+> Przed lotem sprawdź na małej wysokości, że `get_speed_*` zwraca sensowne
+> wartości (niektóre egzemplarze zwracają 0 przy braku ruchu).
+
 ## Własny dron / SDK
 
 Zaimplementuj `MotionBackend` (`rc`, `stop`, opcjonalnie `go`, `curve`)

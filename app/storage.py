@@ -113,6 +113,8 @@ def _index_entry(payload: Dict[str, Any]) -> Dict[str, Any]:
         "script_name": payload.get("script_name"),
         "adapter": payload.get("adapter"),
         "status": payload.get("status"),
+        #: "sim" = lot z symulatora, "real" = rejestrator prawdziwego Tello
+        "source": payload.get("source") or "sim",
         "duration": payload.get("duration"),
         "events": len(payload.get("events") or []),
         "warnings": len(payload.get("warnings") or []),

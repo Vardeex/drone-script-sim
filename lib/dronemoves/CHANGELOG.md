@@ -3,6 +3,29 @@
 Forma zgodna z [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/),
 wersjonowanie zgodne z [SemVer](https://semver.org/lang/pl/).
 
+## [Niewydane] - 2026-10-25
+
+### Dodane
+
+- **`FlightRecorder` - rejestrator lotu prawdziwego Tello** (`flightlog.py`):
+  w tle (co 100 ms) czyta **publiczne** API `djitellopy` (`get_height`,
+  `get_yaw`, `get_speed_x/y/z`, `get_battery`, `get_flight_time`,
+  `get_acceleration_x/y/z`, `get_distance_tof`, `get_mission_pad_id` gdy maty
+  są włączone) i zapisuje wywołane komendy. `recorder.proxy()` zwraca
+  przezroczyste opakowanie drona - **rejestrator nie steruje dronem**, tylko
+  obserwuje; `djitellopy` nie jest modyfikowane.
+- Zapis w formacie lotu symulatora z flagą `"source": "real"` - plik wczytuje
+  się w aplikacji (Historia → Importuj lot rzeczywisty) i służy do porównania
+  z lotem symulowanym oraz do kalibracji profilu.
+- Pozycja jest **szacowana z prędkości** (Tello nie podaje pozycji), więc dryf
+  rośnie z czasem - do porównań nadają się loty do kilkudziesięciu sekund.
+- `RecordedTello` eksportowany w `__all__`.
+
+### Uwagi
+
+- Rejestrator **nie był testowany na prawdziwym Tello** - testy używają
+  `FakeDrone` z szumem (te same pola, co `djitellopy`).
+
 ## [Niewydane] - 2026-10-24
 
 ### Dokumentacja
