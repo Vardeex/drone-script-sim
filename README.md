@@ -288,6 +288,63 @@ Długie trasy (punkty ponad 500 cm od startu) i „Wróć do startu” **działa
 w tym samym wywołaniu `path`, a powrót robi `pilot.return_home()`. Zmierzone na
 trasie `(600, 0) → (600, 100)` + powrót: punkty 0,1 / 0,7 cm, powrót 0,5 cm.
 
+## Słaby komputer? Tryb lekki i wydanie `for_potatoes`
+
+Aplikacja ma dwa tryby pracy sceny 3D. **Pełny** to dotychczasowy wygląd
+(kamery, cienie, etykiety, wektor prędkości, animowane śmigła). **Lekki** rysuje
+mniej i tylko wtedy, gdy coś się zmieniło - dla komputerów bez wydajnego GPU
+lub z wolnym procesorem.
+
+**Jak włączyć tryb lekki** (edycja standardowa):
+
+* lista **Wydajność** na dole okna: `Automatycznie` / `Pełna` / `Lekka`
+  (wybór jest zapamiętywany w przeglądarce),
+* `Automatycznie` mierzy ~2 s klatek po starcie i jeśli wychodzi mniej niż
+  30 FPS, proponuje tryb lekki w pasku stanu (Tak / Nie / Nie pytaj więcej),
+* parametr adresu `http://127.0.0.1:8765/?lite=1` wymusza tryb lekki bez
+  zapisywania ustawienia (przydatne do testów i na cudzym komputerze).
+
+| Co | Tryb pełny | Tryb lekki |
+|---|---|---|
+| rysowanie | każda klatka | tylko przy zmianach, maks. 30 FPS |
+| cienie, mgła, oświetlenie | tak | nie |
+| model drona | pełny Tello | kilka brył, płaskie śmigła |
+| etykiety 3D i pionowe linie | tak | nie (dane w panelach i dymkach) |
+| rozdzielczość | do 2x DPR + AA | 1x, 75% (adaptacyjnie do 50%), bez AA |
+| panele | każda klatka | 10 razy na sekundę |
+
+Zmiana nie dotyka **danych**: telemetria, kolizje, planer i eksport działają
+identycznie w obu trybach. Pomiary i ich wpływ na wydajność:
+**[docs/wydajnosc.md](docs/wydajnosc.md)**.
+
+### Wydanie „for_potatoes” (ten sam kod, inne opakowanie)
+
+Jeśli komputer jest naprawdę słaby, pobierz z
+**[Releases](https://github.com/Vardeex/drone-script-sim/releases)** plik
+`DroneSim-Setup-<wersja>-for_potatoes.exe` (albo paczkę
+`DroneSim-portable-<wersja>-for_potatoes-win64.zip`). To **ta sama wersja**
+aplikacji w wydaniu dla słabych komputerów:
+
+* startuje od razu w trybie lekkim (bez pytania i bez pomiaru FPS),
+* domyślnie wyłączone są mało przydatne dodatki: wtyczka `example_hello`,
+  kamera FPV, tryb realistyczny i przerywana linia planu - każdy z nich można
+  włączyć w zakładce **Wtyczki** / w ustawieniach,
+* w nagłówku i stopce widać „Drone Script Simulator 0.4.0 for_potatoes”,
+* instaluje się **obok** wersji standardowej (inny katalog, inna nazwa
+  w „Aplikacjach i funkcje”, skrót „DroneSim for_potatoes”), ale **korzysta
+  z tych samych danych** w `%LOCALAPPDATA%\DroneSim`,
+* przełączenie na tryb pełny nadal jest możliwe (lista „Wydajność”) - z gorszą
+  płynnością na słabym sprzęcie.
+
+Wszystkie główne funkcje działają bez zmian: edytor z podpowiedziami,
+uruchamianie i odtwarzanie lotów, przeszkody i kolizje, planer, lot ręczny,
+mission pady, historia i eksport.
+
+![Tryb lekki](docs/poradnik/13-tryb-lekki.png)
+
+*Zrzut: ten sam lot w trybie lekkim - prostszy model drona, bez etykiet 3D
+i pionowych linii, rzadsza siatka podłoża.*
+
 ## Punkty rozszerzeń
 
 Funkcje dodatkowe (**wtyczki**) nie są wkompilowane w rdzeń - rdzeń odkrywa je

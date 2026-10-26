@@ -38,12 +38,16 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.middleware.gzip import GZipMiddleware
 
-from . import paths, runner, storage
+from . import edition, paths, runner, storage
 from .adapters.base import detect_adapter, get_adapter, list_adapters
 from .features import plugin_model, registry
 
 app = FastAPI(title="Drone Script Simulator", version="0.4.0")
+# Lot z tysiącami próbek to kilka MB JSON-a. Gzip zmniejsza transfer ~10x
+# (dane, wyniki i pliki na dysku pozostają bez zmian - to tylko transport).
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 
 # ------------------------------------------- punkt rozszerzeń nr 1: wtyczki
@@ -126,6 +130,8 @@ def api_plugins() -> Dict[str, Any]:
     """
     return {
         "app_version": registry.app_version(),
+        "edition": edition.read_edition(),
+        "display_name": edition.info()["display_name"],
         "restart_required": True,
         "extension_points": [
             {"id": key, "description": value}
@@ -432,6 +438,16 @@ def api_delete_flight(flight_id: str) -> Dict[str, Any]:
 @app.get("/api/health", response_class=PlainTextResponse)
 def api_health() -> str:
     return "ok"
+
+
+@app.get("/api/edition")
+def api_edition() -> Dict[str, Any]:
+    """Edycja wydania (``standard`` albo ``for_potatoes``) i domyślne ustawienia.
+
+    Bez pliku ``edition.json`` w katalogu programu zwraca edycję standardową,
+    więc zachowanie aplikacji z gita się nie zmienia.
+    """
+    return edition.info()
 
 
 # ------------------------------------------- lot rzeczywisty: import i porównanie

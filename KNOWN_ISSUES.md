@@ -189,6 +189,51 @@ PowerShella i `tasklist` (patrz `tests/proc_helpers.py`) - watchdog w sandboxie
 działał na POSIX już wcześniej (`os.kill(pid, 0)`, `killpg`, `start_new_session`),
 ale test tego nie sprawdzał.
 
+---
+
+## KI-7: „klatki rysowane na sekundę” niższe niż 30 w trzech scenariuszach
+
+**Objaw.** W trybie lekkim na profilu „ziemniak” (CPU 6x wolniej, SwiftShader,
+1280x720) liczba **faktycznie narysowanych** klatek wynosi ok. 30/s przy
+odtwarzaniu (limit trybu lekkiego), ale jest niższa w scenariuszach, w których
+zmiany przychodzą rzadziej niż 30 razy na sekundę:
+
+| Scenariusz | Klatki rysowane/s | Skąd ta liczba |
+|---|---|---|
+| przewijanie suwakiem | 20,0 | 20 zdarzeń `input` na sekundę w teście - każde przesunięcie to jedna klatka |
+| lot ręczny | 10,2 | serwer wysyła stan lotu ręcznego 10 razy na sekundę (tick symulacji) |
+| planer (przeciąganie) | 47,7 (1% najg.: 9,1) | redraw planera + podgląd z debounce; „1% najgorszych” łapie pauzy między ruchami myszy |
+
+**Dlaczego tak zostaje.** Tryb lekki rysuje **tylko wtedy, gdy coś się zmieniło**
+(render on demand). Pętla animacji i cały interfejs działają w tym czasie
+z pełną prędkością (59-60 FPS, zmierzone), więc użytkownik nie widzi zacięć -
+niższą liczbę klatek „rysowanych” widać tylko w profilu, nie w użyciu.
+
+**Co by pomogło, gdyby to komuś przeszkadzało.** Wymuszenie stałego rysowania
+30 razy na sekundę także bez zmian (kosztem ~2x większego zużycia CPU), albo
+podniesienie częstotliwości ticku lotu ręcznego (dziś 10 Hz po stronie serwera -
+to wartość z symulacji, nie z renderowania). Oba warianty pogorszyłyby wynik
+w scenariuszach statycznych, dlatego ich nie wprowadzamy.
+
+---
+
+## KI-8: start w trybie lekkim w edycji `for_potatoes` nie zmienia antyaliasingu
+
+**Objaw.** Tryb lekki włączony **po** starcie (ustawienie, `?lite=1` z adresu
+albo edycja `for_potatoes`) nie wyłącza antyaliasingu kontekstu WebGL, bo
+`WebGLRenderer` tworzy kontekst raz i nie da się go zmienić bez wymiany kanwy.
+Reszta ustawień (cienie, mgła, pixelRatio, materiały, model, trasa) jest
+przełączana normalnie.
+
+**Skutek.** Pierwsze klatki (i cała sesja w edycji `for_potatoes`) mają AA
+włączone, co kosztuje kilka procent wydajności; nie zmienia to wyników pomiarów
+z `docs/wydajnosc.md`, bo profil „ziemniak” i tak korzysta z renderowania
+programowego. `?lite=1` od pierwszego żądania działa w pełni (AA od startu
+wyłączone).
+
+**Co by pomogło.** Ponowne utworzenie `WebGLRenderer` przy zmianie trybu
+(nowa kanwa, utrata kontekstu) - zmiana większa niż zysk, więc odłożona.
+
 jest grupa `route-planner` z markerami.
 
 ---

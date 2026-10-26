@@ -37,6 +37,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import json
 import time
 import urllib.request
 import zipfile
@@ -418,6 +419,18 @@ def assemble(package_dir: Path, embedded: Path) -> None:
     write_readme_first(package_dir, app_version())
 
 
+def write_edition_file(package_dir: Path, edition: str) -> None:
+    """Zapisz ``edition.json`` w paczce (bez pliku = edycja standardowa).
+
+    Aplikacja czyta ten plik przez ``/api/edition``: edycja ``for_potatoes``
+    startuje w trybie lekkim i ma domyślnie wyłączone dodatki.
+    """
+    payload = {"edition": edition}
+    (package_dir / "edition.json").write_text(
+        json.dumps(payload, ensure_ascii=False) + "\n", encoding="utf-8")
+    _print(f"edycja wydania: {edition} (edition.json w paczce)")
+
+
 def make_zip(package_dir: Path, zip_path: Path, root_name: str) -> None:
     """Spakuj katalog paczki (z katalogiem najwyższego poziomu ``root_name``)."""
     zip_path.parent.mkdir(parents=True, exist_ok=True)
@@ -481,6 +494,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Buduje paczkę przenośną dla Windows")
     parser.add_argument("--version", default=None,
                         help="wersja w nazwie pliku (domyślnie app/__init__.py)")
+    parser.add_argument("--edition", default="standard",
+                        choices=["standard", "for_potatoes"],
+                        help="edycja wydania (for_potatoes = dla słabych komputerów)")
     parser.add_argument("--out", default=str(DEFAULT_OUT), help="katalog wynikowy")
     parser.add_argument("--keep", action="store_true",
                         help="zostaw rozpakowany katalog roboczy (diagnostyka)")
@@ -488,7 +504,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     version = args.version or app_version()
     started = time.perf_counter()
-    root_name = f"DroneSim-portable-{version}-win64"
+    edition_suffix = "" if args.edition == "standard" else f"-{args.edition}"
+    root_name = f"DroneSim-portable-{version}{edition_suffix}-win64"
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
     zip_path = out_dir / f"{root_name}.zip"
@@ -497,9 +514,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     work = Path(tempfile.mkdtemp(prefix="portable_build_", dir=str(ROOT / "tmp")))
     package_dir = work / root_name
     try:
-        _print(f"wersja aplikacji: {version}, dronemoves: {dronemoves_version()}")
+        _print(f"wersja aplikacji: {version}, dronemoves: {dronemoves_version()}, "
+               f"edycja: {args.edition}")
         embedded = fetch_embedded_python()
         assemble(package_dir, embedded)
+        if args.edition != "standard":
+            write_edition_file(package_dir, args.edition)
         _print("pakuję ZIP…")
         make_zip(package_dir, zip_path, root_name)
         problems = verify_zip(zip_path)

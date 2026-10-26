@@ -8,6 +8,7 @@
 // Ścieżki liczone od adresu serwowanego modułu (/static/features/<id>/panel.js),
 // nie od położenia pliku w repo - dlatego '../../js/' zamiast '../../../'.
 import { $, el, fmt } from '../../js/util.js';
+import { isLite } from '../../js/perf.js';
 
 
 const KIND_LABELS = {
@@ -51,11 +52,14 @@ function newId(kind) {
 }
 
 function loadSettings() {
+  // w trybie lekkim etykiety nazw przeszkód są domyślnie wyłączone
+  // (to sprite'y rysowane przy każdej przeszkodzie - patrz docs/wydajnosc.md)
+  const labelsDefault = !isLite();
   try {
-    return { margin: 20, view: 'ghost', labels: true, stopOnCollision: false,
+    return { margin: 20, view: 'ghost', labels: labelsDefault, stopOnCollision: false,
       ...JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') };
   } catch (_) {
-    return { margin: 20, view: 'ghost', labels: true, stopOnCollision: false };
+    return { margin: 20, view: 'ghost', labels: labelsDefault, stopOnCollision: false };
   }
 }
 

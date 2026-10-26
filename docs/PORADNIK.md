@@ -19,7 +19,8 @@ a na końcu przejście na prawdziwego drona Tello.
 9. [Lot ręczny i nagrywanie lotu](#9-lot-ręczny-i-nagrywanie-lotu)
 10. [Edytor z podpowiedziami](#10-edytor-z-podpowiedziami)
 11. [Porównanie z prawdziwym dronem](#11-porównanie-z-prawdziwym-dronem)
-12. [Słowniczek](#słowniczek)
+12. [Słaby komputer: tryb lekki i wydanie for_potatoes](#12-słaby-komputer-tryb-lekki-i-wydanie-for_potatoes)
+13. [Słowniczek](#słowniczek)
 
 ---
 
@@ -791,6 +792,73 @@ Dwie rzeczy warte zapamiętania:
   pozycji), więc z czasem narasta dryf - porównuj odcinki do 20-30 s,
 * rejestrator **nie był testowany na prawdziwym Tello**; przed lotem sprawdź na
   małej wysokości, że `get_speed_x/y/z` zwraca sensowne wartości.
+
+---
+
+## 12. Słaby komputer: tryb lekki i wydanie for_potatoes
+
+Symulator rysuje scenę 3D w przeglądarce. Na komputerze bez wydajnego GPU
+(typowy laptop biurowy, stary sprzęt, maszyna wirtualna) pełny widok potrafi
+spadać do kilkunastu klatek na sekundę. Dlatego są **dwa tryby pracy sceny**:
+
+| Co | Tryb pełny (domyślny) | Tryb lekki |
+|---|---|---|
+| rysowanie | każda klatka | tylko przy zmianach, maks. 30 FPS, pauza gdy karta w tle |
+| cienie / mgła / oświetlenie | tak | nie (proste materiały) |
+| model drona | pełny Tello z osłonami | kilka brył, płaskie śmigła |
+| etykiety 3D (numery komend), pionowe linie | tak | nie |
+| trasa | wszystkie próbki + cień na podłożu | uproszczona do rysowania (1 cm), bez cienia |
+| rozdzielczość | do 2x + antyaliasing | 1x, 75% (w razie potrzeby 50%), bez AA |
+| panele (telemetria, komendy) | każda klatka | 10 razy na sekundę |
+
+**Co się NIE zmienia:** dane lotu, telemetria, wykrywanie kolizji, bramki,
+planer trasy, lot ręczny, historia i eksport działają identycznie. Tryb lekki
+zmienia tylko sposób rysowania.
+
+### Jak włączyć tryb lekki
+
+1. Na dole okna jest lista **Wydajność**: `Automatycznie`, `Pełna`, `Lekka`.
+   Wybór jest pamiętany w przeglądarce (także po restarcie komputera).
+2. `Automatycznie` po starcie mierzy ~2 s klatek. Jeśli wynik jest niższy niż
+   30 FPS, w pasku stanu pojawia się pytanie **„Twój komputer działa wolno -
+   włączyć tryb lekki?”** z przyciskami *Tak*, *Nie*, *Nie pytaj więcej*.
+3. Adres `http://127.0.0.1:8765/?lite=1` wymusza tryb lekki na jedną sesję
+   (bez zmiany zapamiętanego ustawienia).
+
+### Wydanie „for_potatoes”
+
+To **to samo wydanie aplikacji** (ta sama wersja, ten sam kod) przygotowane dla
+słabych komputerów. Pobierz z
+[Releases](https://github.com/Vardeex/drone-script-sim/releases) plik
+`DroneSim-Setup-0.4.0-for_potatoes.exe` albo paczkę
+`DroneSim-portable-0.4.0-for_potatoes-win64.zip`.
+
+Co jest inne:
+
+* program **startuje od razu w trybie lekkim** (bez pytania i bez pomiaru FPS),
+* domyślnie wyłączone są dodatki, które na słabym sprzęcie tylko przeszkadzają:
+  przykładowa wtyczka `example_hello`, kamera **FPV**, **tryb realistyczny**
+  i przerywana **linia planu** w planerze,
+* w nagłówku i stopce widać „Drone Script Simulator 0.4.0 for_potatoes”,
+* instaluje się **obok** wersji standardowej - inny katalog programu, inna nazwa
+  w „Aplikacjach i funkcje” i skrót „DroneSim for_potatoes”. **Dane użytkownika
+  są wspólne** (`%LOCALAPPDATA%\DroneSim`): loty i sceny z jednej edycji widać
+  w drugiej.
+
+Jak włączyć wyłączone dodatki: zakładka **Wtyczki** (włącz `example_hello`),
+lista **Kamera** (FPV) oraz przełącznik w planerze (**Linia planu**) - po
+włączeniu działają normalnie. Możesz też wrócić do trybu pełnego listą
+**Wydajność**, ale na słabym komputerze będzie mniej płynnie.
+
+![Tryb lekki](poradnik/13-tryb-lekki.png)
+
+*Zrzut: ten sam lot w trybie lekkim - prostszy model drona, brak etykiet 3D,
+rzadsza siatka podłoża, panele odświeżane 10 razy na sekundę.*
+
+**Jeśli nadal jest wolno:** zmniejsz okno przeglądarki (mniej pikseli to mniej
+pracy dla karty graficznej), zamknij inne karty z animacjami 3D i sprawdź, czy
+w tle nie działa antywirus skanujący pliki symulatora. Pomiary i wąskie gardła
+opisuje [docs/wydajnosc.md](wydajnosc.md).
 
 ---
 

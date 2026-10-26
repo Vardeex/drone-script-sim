@@ -82,7 +82,8 @@ export async function renderPlugins() {
   if (meta) {
     const enabled = plugins.filter((p) => p.state === 'enabled').length;
     const broken = plugins.filter((p) => p.state === 'error').length;
-    meta.textContent = `Aplikacja ${data.app_version} · wtyczek: ${plugins.length}`
+    meta.textContent = `Aplikacja ${data.display_name || data.app_version}`
+      + ` · wtyczek: ${plugins.length}`
       + ` · włączonych: ${enabled}` + (broken ? ` · z błędem: ${broken}` : '');
   }
   if (points) {

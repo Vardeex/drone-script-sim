@@ -101,8 +101,44 @@ jobs:
       - name: Chromium
         run: python -m playwright install --with-deps chromium
 
-      - name: Testy przeglądarkowe
+      - name: Testy przeglądarkowe (tryb pełny)
         run: python -m pytest -p no:cacheprovider -v --durations=20 -m browser
+
+      - name: Testy przeglądarkowe (tryb lekki)
+        # Ten sam zestaw testów, ale każda strona startuje w trybie lekkim
+        # (conftest.py wstrzykuje ustawienie do localStorage). Dzięki temu
+        # oba tryby są sprawdzane bez duplikowania testów.
+        env:
+          DRONESIM_TEST_LITE: "1"
+        run: python -m pytest -p no:cacheprovider -v --durations=20 -m browser
+
+  # -------------------------------------------- wydajność (tylko ręcznie)
+  # Test z markerem `perf` mierzy profil „ziemniak” (CPU 6x wolniej,
+  # renderowanie programowe, 1280x720) i sprawdza cel wydania: ≥30 FPS średnio
+  # i ≥20 FPS w 1% najgorszych klatek w trybie lekkim. Trwa ~1 min, więc nie
+  # blokuje zwykłych testów - uruchamiany z przycisku „Run workflow”.
+  perf:
+    name: Wydajność — tryb lekki na profilu „ziemniak”
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Zależności aplikacji + Playwright
+        run: python -m pip install --upgrade pip -r requirements.txt playwright
+
+      - name: Chromium
+        run: python -m playwright install --with-deps chromium
+
+      - name: Test wydajności (marker perf)
+        run: python -m pytest -p no:cacheprovider -v -m perf --tb=short
 
   # ------------------------------------------------------------- paczka biblioteki
   package:

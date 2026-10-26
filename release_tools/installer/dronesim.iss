@@ -18,8 +18,26 @@
 #ifndef SourceDir
   #define SourceDir "..\..\dist\portable-package"
 #endif
-#define AppName "Drone Script Simulator"
-#define AppShortName "DroneSim"
+; Edycja wydania: "" (standardowa) albo "for_potatoes" (słabe komputery).
+; Instalator for_potatoes instaluje się OBOK standardowego: inny AppId, inny
+; katalog programu i inna nazwa w „Aplikacjach i funkcje”, ale te same dane
+; użytkownika (%LOCALAPPDATA%\DroneSim).
+#ifndef Edition
+  #define Edition ""
+#endif
+
+#if Edition == "for_potatoes"
+  #define AppName "Drone Script Simulator for_potatoes"
+  #define AppShortName "DroneSim for_potatoes"
+  #define AppId "{{2B8F6C14-53D9-4F0A-8E27-C1A4B9D7E512}"
+  #define OutputName "DroneSim-Setup-" + AppVersion + "-for_potatoes"
+#else
+  #define AppName "Drone Script Simulator"
+  #define AppShortName "DroneSim"
+  #define AppId "{{6F1C3B52-8E4A-4D1E-9C3B-7A5D2E8F0A11}"
+  #define OutputName "DroneSim-Setup-" + AppVersion
+#endif
+
 #define AppPublisher "Vardeex"
 #define AppExeName "DroneSim.exe"
 #define ProjectDir "..\.."
@@ -27,7 +45,7 @@
 [Setup]
 ; AppId musi zostać ten sam w kolejnych wersjach - po nim Windows rozpoznaje
 ; aktualizację (instalacja nowszej wersji na starszą bez deinstalacji).
-AppId={{6F1C3B52-8E4A-4D1E-9C3B-7A5D2E8F0A11}
+AppId={#AppId}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
@@ -51,7 +69,7 @@ UsePreviousAppDir=yes
 UsePreviousTasks=yes
 AllowNoIcons=yes
 OutputDir={#ProjectDir}\dist
-OutputBaseFilename=DroneSim-Setup-{#AppVersion}
+OutputBaseFilename={#OutputName}
 SetupIconFile={#ProjectDir}\release_tools\assets\dronesim.ico
 UninstallDisplayIcon={app}\{#AppExeName}
 UninstallDisplayName={#AppName} {#AppVersion}

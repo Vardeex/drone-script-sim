@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -122,25 +123,47 @@ def test_installer_keeps_user_data_outside_program_dir():
 
 
 def test_installer_has_stable_app_id():
-    """Ten sam AppId w kolejnych wersjach = aktualizacja bez deinstalacji."""
+    """Stały AppId (osobny dla edycji) = aktualizacja bez deinstalacji."""
     text = ISS.read_text(encoding="utf-8")
-    app_id = [line for line in text.splitlines() if line.startswith("AppId=")]
-    assert len(app_id) == 1, app_id
-    assert "{{6F1C3B52" in app_id[0]               # stały GUID (nie losowy)
+    # [Setup] korzysta z dyrektywy wybranej przez #if Edition == ...
+    assert "AppId={#AppId}" in text
+    standard = re.search(r'#define AppId "\{\{([0-9A-F-]+)\}"', text)
+    assert standard, "brak stałego AppId edycji standardowej"
+    guids = re.findall(r'#define AppId "\{\{([0-9A-F-]+)\}"', text)
+    assert len(guids) == 2, guids                       # standard + for_potatoes
+    assert len(set(guids)) == 2, "edycje muszą mieć różne AppId (instalacja obok)"
+
+
+def test_installer_supports_for_potatoes_edition():
+    """Edycja for_potatoes: inny katalog/nazwa/plik, te same dane użytkownika."""
+    text = ISS.read_text(encoding="utf-8")
+    assert '#if Edition == "for_potatoes"' in text
+    assert "Drone Script Simulator for_potatoes" in text
+    assert "DroneSim for_potatoes" in text
+    assert "DroneSim-Setup-" in text and "-for_potatoes" in text
+    # dane użytkownika wspólne dla obu edycji
+    assert text.count("DefaultDataDir = '{localappdata}\\DroneSim'") == 1
 
 
 # ----------------------------------------------------------------- workflow
 def test_release_workflow_publishes_three_files():
-    """Wydanie publikuje instalator, paczkę i SHA256SUMS.txt (po testach dymnych)."""
+    """Wydanie publikuje instalator, paczkę i sumy SHA256 (po testach dymnych).
+
+    Obsługuje oba tagi: ``v<wersja>`` (edycja standardowa) i
+    ``v<wersja>-for_potatoes`` (edycja dla słabych komputerów).
+    """
     text = RELEASE_YML.read_text(encoding="utf-8")
     assert "build_exe.py" in text
     assert "build_portable.py" in text
     assert "build_installer.py" in text
     assert "smoke_portable.py" in text
     assert "smoke_installer.py" in text
-    assert "SHA256SUMS.txt" in text
-    assert "innosetup-6.7.3.exe" in text           # Inno Setup: wersja przypięta
+    assert "SHA256SUMS$suffix.txt" in text          # SHA256SUMS / -for_potatoes
+    assert "innosetup-6.7.3.exe" in text            # Inno Setup: wersja przypięta
     assert "gh release create $tag $setup $zip $sums" in text
+    # edycja wybierana z tagu
+    assert '$tag.EndsWith("-for_potatoes")' in text
+    assert "--edition $env:EDITION" in text
     # kolejność: launcher przed paczką (paczka zawiera DroneSim.exe)
     assert text.index("build_exe.py") < text.index("build_portable.py")
     # testy dymne przed publikacją

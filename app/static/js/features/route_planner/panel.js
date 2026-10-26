@@ -6,6 +6,8 @@
 //   getScene()       - trasa do zapisania razem ze sceną (`routes`).
 // Trasa jest edytowana w panelu i rysowana w warstwie 3D (scene_layer.js).
 
+import { isLite, onPerfChange } from '../../js/perf.js';
+
 const API = '/api/route_planner';
 const MODES = [
   { id: 'simple', label: 'Prosta (djitellopy)' },
@@ -30,6 +32,8 @@ export const store = {
   scene: null,
   layer: null,
   ctx: null,
+  //: czy rysować linię planu (null = decyduje tryb wydajności)
+  showPreview: null,
 };
 
 function blankRoute() {
@@ -105,7 +109,18 @@ function updatePoint(index, patch) {
   // nie przerysowujemy listy: użytkownik właśnie edytuje pole i utraciłby fokus
   if (store.layer) store.layer.setRoute(store.route);
   clearTimeout(previewTimer);
-  previewTimer = setTimeout(refreshPreview, 220);
+  previewTimer = setTimeout(refreshPreview, previewDelay());
+}
+
+/** Opóźnienie podglądu: w trybie lekkim 300 ms (mniej zapytań przy przeciąganiu). */
+function previewDelay() {
+  return isLite() ? 300 : 220;
+}
+
+/** Czy rysować zieloną linię planu (w trybie lekkim domyślnie nie). */
+function showPlanLine() {
+  if (store.showPreview !== null) return store.showPreview;
+  return !isLite();
 }
 
 /** Po każdej zmianie trasy: warstwa 3D, lista, podgląd (debounce). */
@@ -117,7 +132,7 @@ function changed() {
   }
   renderPoints();
   clearTimeout(previewTimer);
-  previewTimer = setTimeout(refreshPreview, 220);
+  previewTimer = setTimeout(refreshPreview, previewDelay());
 }
 
 // --------------------------------------------------------------- podgląd
@@ -150,7 +165,9 @@ async function refreshPreview() {
     if (request !== previewRequest) return;   // przyszła nowsza odpowiedź
     store.preview = preview;
     store.validation = validation;
-    if (store.layer && preview.points) store.layer.setPreview(preview.points);
+    if (store.layer && preview.points) {
+      store.layer.setPreview(showPlanLine() ? preview.points : []);
+    }
     renderStats(preview);
     renderProblems(validation.problems || []);
     updateWarning();
@@ -435,6 +452,8 @@ function template() {
     <input id="route-yaw" type="number" min="-180" max="360" step="15" value="0">
     <label for="route-return">Wróć do startu</label>
     <input id="route-return" type="checkbox">
+    <label for="route-preview" title="Zielona przerywana linia planu na scenie 3D (w trybie lekkim domyślnie wyłączona)">Linia planu</label>
+    <input id="route-preview" type="checkbox" checked>
   </div>
   <div class="route-warning" id="route-mode-hint" hidden>
     Tryb „płynna” jest <b>eksperymentalny</b>: korzysta z biblioteki dronemoves
@@ -491,6 +510,21 @@ function bind() {
   on('route-return', 'change', (e) => {
     store.route.return_home = e.target.checked;
     changed();
+  });
+  // linia planu: w trybie lekkim domyślnie wyłączona, ale można ją włączyć
+  const previewBox = el('route-preview');
+  if (previewBox) {
+    previewBox.checked = showPlanLine();
+    on('route-preview', 'change', (e) => {
+      store.showPreview = e.target.checked;
+      if (store.preview?.points && store.layer) {
+        store.layer.setPreview(e.target.checked ? store.preview.points : []);
+      }
+    });
+  }
+  // zmiana trybu wydajności: linia planu wraca do domyślnej widoczności
+  onPerfChange(() => {
+    if (store.showPreview === null && previewBox) previewBox.checked = showPlanLine();
   });
   on('route-generate', 'click', () => generateCode(true));
   on('route-preview-code', 'click', async () => {

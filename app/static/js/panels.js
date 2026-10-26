@@ -1,5 +1,6 @@
 // Panele boczne: tabela komend, podgląd skryptu, konsola, problemy, statystyki.
 import { $, el, fmt, fmtTime, formatArgs, STATUS_LABEL } from './util.js';
+import { isLite } from './perf.js';
 
 /**
  * Panele dostarczone przez funkcje (wtyczki): id -> API panelu.
@@ -66,6 +67,24 @@ export function commandRowIndexAt(timeline, t) {
   return index;
 }
 
+//: powyżej tylu wierszy tryb lekki rysuje tylko okno tabeli (wirtualne przewijanie)
+const VIRTUAL_THRESHOLD = 400;
+const VIRTUAL_WINDOW = 240;
+//: aktualnie narysowane okno wierszy tabeli komend
+let rowWindow = { start: 0, count: 0 };
+//: dane ostatniego renderowania (potrzebne, by przesunąć okno)
+let lastRender = null;
+let activeRowIndex = -1;
+
+/** Okno wierszy tabeli komend (tryb lekki: ogranicz liczbę elementów DOM). */
+function commandWindow(total) {
+  if (!isLite() || total <= VIRTUAL_THRESHOLD) return { start: 0, count: total };
+  const center = activeRowIndex >= 0 ? activeRowIndex : 0;
+  const start = Math.max(0, Math.min(center - Math.floor(VIRTUAL_WINDOW / 2),
+    total - VIRTUAL_WINDOW));
+  return { start, count: VIRTUAL_WINDOW };
+}
+
 export function renderCommands(timeline, onSeek) {
   const tbody = $('#commands-table tbody');
   const empty = $('#commands-empty');
@@ -74,8 +93,16 @@ export function renderCommands(timeline, onSeek) {
   const rows = buildCommandRows(timeline);
   timeline._commandRows = rows;
   empty.hidden = rows.length > 0;
+  // Tryb lekki + bardzo długi lot: rysujemy okno wierszy wokół aktywnego
+  // miejsca (wirtualne przewijanie), żeby nie tworzyć tysięcy elementów DOM.
+  const window = commandWindow(rows.length);
+  const visible = window.count ? rows.slice(window.start, window.start + window.count) : rows;
+  rowWindow = window;
+  lastRender = { timeline, onSeek, rows };
+  activeRowIndex = -1;
   const fragment = document.createDocumentFragment();
-  rows.forEach((row, index) => {
+  visible.forEach((row, localIndex) => {
+    const index = window.start + localIndex;
     if (row.kind === 'maneuver') {
       const duration = Math.max(row.tEnd - row.t, 0);
       const tr = el('tr', { class: `clickable maneuver status-${row.status}` });
@@ -130,12 +157,23 @@ export function renderCommands(timeline, onSeek) {
 }
 
 export function highlightCommandRow(index) {
-  const rows = $('#commands-table tbody').children;
-  for (let i = 0; i < rows.length; i += 1) {
-    rows[i].classList.toggle('active', i === index);
+  // tryb lekki z wirtualnym przewijaniem: przesuń okno, gdy aktywny wiersz
+  // wyjechał poza nie (inaczej podświetlenie nie miałoby czego pokazać)
+  const windowed = rowWindow.count > 0 && lastRender
+    && rowWindow.count < lastRender.rows.length;
+  if (windowed && (index < rowWindow.start
+      || index >= rowWindow.start + rowWindow.count)) {
+    activeRowIndex = index;
+    renderCommands(lastRender.timeline, lastRender.onSeek);
   }
-  if (index >= 0 && rows[index]) {
-    const row = rows[index];
+  const rows = $('#commands-table tbody').children;
+  const local = index - rowWindow.start;
+  for (let i = 0; i < rows.length; i += 1) {
+    rows[i].classList.toggle('active', i === local);
+  }
+  activeRowIndex = index;
+  if (local >= 0 && rows[local]) {
+    const row = rows[local];
     const container = $('#tab-commands');
     if (!container.hidden) {
       const top = row.offsetTop - container.clientHeight / 2;

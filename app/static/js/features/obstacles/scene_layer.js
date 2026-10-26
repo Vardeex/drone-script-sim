@@ -25,9 +25,15 @@ export function toScenePoint(x, y, z) {
   return new THREE.Vector3(x / M, z / M, -y / M);
 }
 
-function kindMaterial(kind, opacity) {
+function kindMaterial(kind, opacity, lite = false) {
+  const color = KIND_COLOR[kind] || 0x60a5fa;
+  // tryb lekki: pełny, prosty materiał bez oświetlenia i bez przezroczystości
+  // (mniej pracy dla programowego rasteryzatora; kształt i kolor bez zmian)
+  if (lite) {
+    return new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide });
+  }
   return new THREE.MeshStandardMaterial({
-    color: KIND_COLOR[kind] || 0x60a5fa,
+    color,
     transparent: true,
     opacity,
     roughness: 0.55,
@@ -101,6 +107,7 @@ export function createLayer({ scene: droneScene } = {}) {
     callbacks: {},
     markers: [],
     t: 0,
+    litCount: -1,
     labels: true,
   };
 
@@ -185,7 +192,7 @@ export function createLayer({ scene: droneScene } = {}) {
     for (const obstacle of state.scene.obstacles || []) {
       const base = new THREE.Group();
       const selected = state.selection === obstacle.id;
-      const body = buildMesh(obstacle, kindMaterial(obstacle.kind, opacity));
+      const body = buildMesh(obstacle, kindMaterial(obstacle.kind, opacity, droneScene.lite));
       base.add(body);
       addEdges(body, selected ? 0x38bdf8 : 0x0f172a, selected ? 1 : 0.5);
       if (state.hitIds.has(obstacle.id)) {
@@ -325,8 +332,21 @@ export function createLayer({ scene: droneScene } = {}) {
     },
     /** Podkreśl znaczniki zdarzeń do chwili t (sekundy). */
     setMarkersTime(t) {
-      state.t = Number(t) || 0;
-      rebuildMarkers();
+      const value = Number(t) || 0;
+      if (Math.abs(value - state.t) < 1e-9) return;
+      state.t = value;
+      // Przebudowa znaczników jest kosztowna (siatki + tekstury etykiet), a w
+      // odtwarzaniu wołana jest co klatkę. Wystarczy przebudować, gdy zmieni się
+      // liczba „miniętych” znaczników - wygląd jest identyczny, a pracy mniej.
+      let lit = 0;
+      for (const marker of state.markers) {
+        if ((marker.t || 0) <= value + 1e-6) lit += 1;
+      }
+      if (lit !== state.litCount) {
+        state.litCount = lit;
+        rebuildMarkers();
+      }
+      droneScene.requestRender?.();
     },
     /** Tryb edycji: przeciąganie przeszkód po podłożu. */
     setEditMode(enabled, callbacks = {}) {
@@ -347,6 +367,10 @@ export function createLayer({ scene: droneScene } = {}) {
     },
     /** Wywoływane przy każdej klatce (na razie nic nie robi). */
     tick() {},
+    /** Zmiana trybu wydajności: przebuduj przeszkody w nowym materiale. */
+    setQuality() {
+      rebuild();
+    },
     /** Usuń warstwę ze sceny. */
     dispose() {
       canvas.removeEventListener('pointerdown', onPointerDown);

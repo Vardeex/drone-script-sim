@@ -86,7 +86,8 @@ def unpack(zip_path: Path) -> Path:
     return package
 
 
-def build(zip_path: Path, out_dir: Path, iscc: Optional[str]) -> Path:
+def build(zip_path: Path, out_dir: Path, iscc: Optional[str],
+          edition: str = "standard") -> Path:
     """Zbuduj instalator i zwróć ścieżkę pliku."""
     version = app_version()
     compiler = find_iscc(iscc)
@@ -101,9 +102,12 @@ def build(zip_path: Path, out_dir: Path, iscc: Optional[str]) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     print(f"[instalator] Inno Setup: {compiler}")
     print(f"[instalator] źródło: {package}")
+    print(f"[instalator] edycja: {edition}")
     run([str(compiler), f"/DSourceDir={package}", f"/DAppVersion={version}",
+         f"/DEdition={'' if edition == 'standard' else edition}",
          f"/O{out_dir}", str(ISS)])
-    target = out_dir / f"DroneSim-Setup-{version}.exe"
+    suffix = "" if edition == "standard" else f"-{edition}"
+    target = out_dir / f"DroneSim-Setup-{version}{suffix}.exe"
     if not target.exists():
         raise SystemExit(f"Inno Setup nie utworzył {target}")
     print(f"[instalator] gotowe: {target} "
@@ -123,15 +127,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--zip", default=None, help="paczka przenośna (ZIP)")
     parser.add_argument("--out", default=str(DEFAULT_OUT))
     parser.add_argument("--iscc", default=None, help="ścieżka do ISCC.exe")
+    parser.add_argument("--edition", default="standard",
+                        choices=["standard", "for_potatoes"],
+                        help="edycja wydania")
     parser.add_argument("--check", action="store_true",
                         help="tylko sprawdź, czy ISCC jest dostępny")
     args = parser.parse_args(list(argv) if argv is not None else None)
     if args.check:
         return check(args.iscc)
     version = app_version()
+    suffix = "" if args.edition == "standard" else f"-{args.edition}"
     zip_path = (Path(args.zip) if args.zip
-                else ROOT / "dist" / f"DroneSim-portable-{version}-win64.zip")
-    build(zip_path, Path(args.out), args.iscc)
+                else ROOT / "dist" / f"DroneSim-portable-{version}{suffix}-win64.zip")
+    build(zip_path, Path(args.out), args.iscc, args.edition)
     return 0
 
 

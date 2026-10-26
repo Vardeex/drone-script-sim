@@ -38,17 +38,32 @@ jobs:
       - name: Zależności (do zbudowania paczki i testu dymnego)
         run: python -m pip install --upgrade pip -r requirements.txt
 
-      - name: Sprawdź, czy tag odpowiada wersji aplikacji
+      - name: Ustal wersję i edycję z tagu
+        # Tag `v0.4.0` = edycja standardowa, `v0.4.0-for_potatoes` = edycja dla
+        # słabych komputerów. Wersja aplikacji (app/__init__.py) jest ta sama -
+        # „for_potatoes” to wydanie tego samego kodu, nie nowy numer wersji.
         shell: pwsh
         run: |
-          $version = python -c "from app import __version__; print(__version__)"
-          $tag = "${{ github.ref_name }}".TrimStart('v')
-          Write-Host "tag=$tag wersja aplikacji=$version"
-          if ($version -ne $tag) {
+          $tag = "${{ github.ref_name }}"
+          $isPotatoes = $tag.EndsWith("-for_potatoes")
+          $version = ($tag -replace '^v', '') -replace '-for_potatoes$', ''
+          $edition = if ($isPotatoes) { "for_potatoes" } else { "standard" }
+          $suffix = if ($isPotatoes) { "-for_potatoes" } else { "" }
+          $titleSuffix = if ($isPotatoes) { " for_potatoes" } else { "" }
+          $appVersion = python -c "from app import __version__; print(__version__)"
+          Write-Host "tag=$tag wersja=$version edycja=$edition (aplikacja $appVersion)"
+          if ($appVersion -ne $version) {
             # `throw` (a nie Write-Error) zawsze przerywa krok, niezależnie od
             # $ErrorActionPreference - wydanie nie może wyjść z niespójnym tagiem
-            throw "Tag ${{ github.ref_name }} nie odpowiada wersji w app/__init__.py ($version). Podnieś wersję albo popraw tag."
+            throw "Tag $tag nie odpowiada wersji w app/__init__.py ($appVersion). Podnieś wersję albo popraw tag."
           }
+          "VERSION=$version" >> $env:GITHUB_ENV
+          "EDITION=$edition" >> $env:GITHUB_ENV
+          "SUFFIX=$suffix" >> $env:GITHUB_ENV
+          "SETUP=DroneSim-Setup-$version$suffix.exe" >> $env:GITHUB_ENV
+          "ZIP=DroneSim-portable-$version$suffix-win64.zip" >> $env:GITHUB_ENV
+          "SUMS=SHA256SUMS$suffix.txt" >> $env:GITHUB_ENV
+          "RELEASE_TITLE=Drone Script Simulator $version$titleSuffix" >> $env:GITHUB_ENV
 
       - name: Zbuduj launcher DroneSim.exe (PyInstaller)
         # PyInstaller instaluje się do osobnego środowiska w tools/ (wersja
@@ -60,8 +75,8 @@ jobs:
       - name: Zbuduj paczkę przenośną (z DroneSim.exe w środku)
         shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}".TrimStart('v')
-          python release_tools/build_portable.py --version $version --out dist
+          python release_tools/build_portable.py --version $env:VERSION `
+            --edition $env:EDITION --out dist
 
       - name: Zainstaluj Inno Setup (oficjalne wydanie, wersja przypięta)
         # windows-latest nie ma Inno Setup. Bierzemy oficjalny instalator
@@ -85,23 +100,25 @@ jobs:
         shell: pwsh
         env:
           ISCC: ${{ runner.temp }}\innosetup\ISCC.exe
-        run: python release_tools/build_installer.py --out dist
+        run: python release_tools/build_installer.py --edition $env:EDITION --out dist
 
       - name: Test dymny paczki (start, /api/health, dwa przykłady)
         shell: pwsh
         run: |
-          $zip = (Get-ChildItem dist/DroneSim-portable-*-win64.zip | Select-Object -First 1).FullName
-          Write-Host "test dymny: $zip"
+          $zip = Join-Path (Resolve-Path dist) $env:ZIP
+          Write-Host "test dymny: $zip (edycja $env:EDITION)"
           python release_tools/smoke_portable.py --zip $zip
 
       - name: Test dymny instalatora (cicha instalacja, API, deinstalacja)
         # instaluje w katalogu tymczasowym runnera i z osobnym katalogiem danych,
-        # więc nie rusza prawdziwych danych użytkownika
+        # więc nie rusza prawdziwych danych użytkownika; edycja for_potatoes musi
+        # wystartować w trybie lekkim (sprawdza /api/edition)
         shell: pwsh
         run: |
-          $setup = (Get-ChildItem dist/DroneSim-Setup-*.exe | Select-Object -First 1).FullName
-          Write-Host "test dymny: $setup"
-          python release_tools/smoke_installer.py --installer $setup
+          $setup = Join-Path (Resolve-Path dist) $env:SETUP
+          Write-Host "test dymny: $setup (edycja $env:EDITION)"
+          python release_tools/smoke_installer.py --installer $setup `
+            --edition $env:EDITION
 
       - name: Notatki wydania z CHANGELOG (UTF-8, polskie znaki)
         # Skrypt zapisuje plik jako UTF-8 bez BOM i sam sprawdza, że czyta się
@@ -114,14 +131,15 @@ jobs:
         # pobrany instalator/paczkę: certutil -hashfile <plik> SHA256
         shell: pwsh
         run: |
-          $files = @()
-          $files += Get-ChildItem dist/DroneSim-Setup-*.exe
-          $files += Get-ChildItem dist/DroneSim-portable-*-win64.zip
+          $files = @(
+            (Join-Path (Resolve-Path dist) $env:SETUP),
+            (Join-Path (Resolve-Path dist) $env:ZIP)
+          )
           $lines = foreach ($file in $files) {
-            $hash = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLower()
-            "$hash  $($file.Name)"
+            $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
+            "$hash  $(Split-Path $file -Leaf)"
           }
-          $path = Join-Path (Resolve-Path dist) "SHA256SUMS.txt"
+          $path = Join-Path (Resolve-Path dist) $env:SUMS
           # UTF-8 bez BOM - czyta się w każdym edytorze i w `sha256sum -c`
           [System.IO.File]::WriteAllText($path, ($lines -join "`n") + "`n",
             (New-Object System.Text.UTF8Encoding($false)))
@@ -134,7 +152,7 @@ jobs:
           path: |
             dist/*.zip
             dist/DroneSim-Setup-*.exe
-            dist/SHA256SUMS.txt
+            dist/SHA256SUMS*.txt
             release_notes.md
           if-no-files-found: error
           retention-days: 14
@@ -145,10 +163,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $tag = "${{ github.ref_name }}"
-          $zip = (Get-ChildItem dist/DroneSim-portable-*-win64.zip | Select-Object -First 1).FullName
-          $setup = (Get-ChildItem dist/DroneSim-Setup-*.exe | Select-Object -First 1).FullName
-          $sums = (Resolve-Path dist/SHA256SUMS.txt).Path
+          $zip = Join-Path (Resolve-Path dist) $env:ZIP
+          $setup = Join-Path (Resolve-Path dist) $env:SETUP
+          $sums = Join-Path (Resolve-Path dist) $env:SUMS
+          Write-Host "wydanie: $env:RELEASE_TITLE (tag $tag)"
           gh release create $tag $setup $zip $sums `
-            --title "Drone Script Simulator $tag" `
+            --title $env:RELEASE_TITLE `
             --notes-file release_notes.md `
             --verify-tag

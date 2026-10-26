@@ -47,6 +47,7 @@ export function createLayer({ scene: droneScene } = {}) {
       geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
       geometry.computeBoundingSphere();
       line.visible = points.length > 1;
+      droneScene.requestRender?.();       // tryb lekki: rysuj po zmianie śladu
     },
 
     /** Liczba punktów śladu (diagnostyka/testy). */

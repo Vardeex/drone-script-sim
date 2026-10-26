@@ -9,9 +9,21 @@ import { registerFeatures, attachSceneLayers } from './boot.js';
 import { renderPlugins } from './plugins_tab.js';
 import { mountEditor, setEditorValue } from './editor.js';
 import { isTypingTarget } from './keys.js';
+import {
+  addApplyHook, autoDetect, fetchEdition, getMode, initPerf, isForced, isLite,
+  onPerfChange, setMode,
+} from './perf.js';
 
 //: wersja modułów funkcji (cache-busting lokalnego serwera statyków)
-export const ASSET_VERSION = 'v26';
+export const ASSET_VERSION = 'v27';
+
+//: edycja wydania - „for_potatoes” startuje w trybie lekkim (patrz edition.json)
+export const edition = await fetchEdition();
+//: ustawienie wydajności (localStorage + ?lite=1), zanim powstanie scena 3D
+const perfState = initPerf();
+if (edition.lite_default && !isForced() && getMode() === 'auto') {
+  setMode('lite');
+}
 
 const state = {
   adapter: 'tello',
@@ -24,7 +36,7 @@ const state = {
 };
 
 const timeline = new FlightTimeline();
-const scene = new DroneScene($('#viewport'));
+const scene = new DroneScene($('#viewport'), { lite: isLite() });
 const player = new Player(timeline, (t) => onFrame(t));
 const marks = { row: -2, line: -1 };
 
@@ -161,6 +173,100 @@ function switchTab(id) {
   if (id === 'tab-plugins') renderPlugins();
 }
 
+/** Informacje o wersji i edycji w nagłówku, stopce i tytule okna. */
+function applyEditionInfo() {
+  const name = edition.display_name || edition.version || '';
+  const label = name ? `Drone Script Simulator ${name}` : 'Drone Script Simulator';
+  document.title = label;
+  const footer = $('#footer-edition');
+  if (footer) footer.textContent = label;
+  const badge = $('#edition-badge');
+  if (badge) {
+    badge.hidden = edition.edition !== 'for_potatoes';
+    badge.textContent = edition.edition === 'for_potatoes' ? 'for_potatoes' : '';
+    badge.title = 'Wydanie dla słabych komputerów (tryb lekki domyślnie)';
+  }
+}
+
+/** Opcje wyłączone domyślnie w edycji for_potatoes (można włączyć ręcznie). */
+function applyEditionDefaults() {
+  const features = edition.features || {};
+  if (!features.fpv) {
+    const select = $('#camera-select');
+    const fpv = select ? select.querySelector('option[value="fpv"]') : null;
+    if (fpv) fpv.disabled = true;
+  }
+  if (!features.realism) {
+    // tryb realistyczny zostaje dostępny, ale domyślnie „idealny”
+    const select = $('#opt-realism');
+    if (select) select.value = 'ideal';
+  }
+}
+
+// ---------------------------------------------------------- tryb wydajności
+/** Odstęp odświeżania paneli w trybie lekkim (10 razy na sekundę). */
+const LITE_UI_INTERVAL_MS = 100;
+let lastUiUpdate = 0;
+
+/** Opcje kamery niedostępne w trybie lekkim (FPV = dodatkowa praca co klatkę). */
+function updateCameraOptions(lite) {
+  const select = $('#camera-select');
+  const fpv = select ? select.querySelector('option[value="fpv"]') : null;
+  if (!select || !fpv) return;
+  fpv.disabled = lite;
+  fpv.textContent = lite ? 'FPV (wyłączone w trybie lekkim)' : 'FPV (z drona)';
+  if (lite && select.value === 'fpv') {
+    select.value = 'orbit';
+    scene.setCameraMode('orbit');
+  }
+}
+
+/** Odśwież interfejs po zmianie trybu (select, kamera, panele funkcji). */
+export function applyLiteUi(lite) {
+  const select = $('#perf-mode');
+  if (select) select.value = lite ? 'lite' : (isForced() ? 'lite' : getMode());
+  updateCameraOptions(lite);
+  document.body.classList.toggle('lite-mode', Boolean(lite));
+  $$('.perf-hint').forEach((node) => { node.hidden = !lite; });
+  lastUiUpdate = 0;                 // po zmianie trybu odśwież panele od razu
+  if (timeline.samples && timeline.samples.length) {
+    onFrame(player.t || 0);
+  }
+}
+
+/** Propozycja trybu lekkiego w pasku stanu (nie zasłania interfejsu). */
+function proposeLite({ fps, enable, disable, neverAsk }) {
+  const text = $('#status-text');
+  const extra = $('#status-extra');
+  if (!text || !extra) return;
+  text.textContent = `Twój komputer działa wolno (${Math.round(fps)} FPS) `
+    + '- włączyć tryb lekki?';
+  extra.innerHTML = '';
+  const add = (label, handler, primary) => {
+    const button = el('button', { class: primary ? 'primary' : 'ghost', text: label });
+    button.style.marginLeft = '6px';
+    button.addEventListener('click', () => {
+      handler();
+      extra.innerHTML = '';
+      text.textContent = isLite()
+        ? 'Tryb lekki włączony - możesz go zmienić w „Wydajność” na dole.'
+        : 'Tryb pełny - ustawienie zapamiętane.';
+      applyLiteUi(isLite());
+    });
+    extra.append(button);
+  };
+  add('Tak', enable, true);
+  add('Nie', disable, false);
+  add('Nie pytaj więcej', neverAsk, false);
+}
+
+//: scena i panele reagują na zmianę trybu wydajności
+addApplyHook((lite) => {
+  scene.setQuality(lite);
+  applyLiteUi(lite);
+});
+onPerfChange(() => applyLiteUi(isLite()));
+
 function onFrame(t) {
   const sample = timeline.sampleAt(t);
   scene.update(sample);
@@ -178,6 +284,14 @@ function onFrame(t) {
       setStatus(`Kolizja: ${hit.message}`, 'error');
     }
   }
+  // tryb lekki: panele (telemetria, komendy) odświeżamy najwyżej 10 razy na
+  // sekundę. Poza odtwarzaniem (pauza, przewijanie) zawsze od razu, żeby
+  // suwak i etykiety były dokładne.
+  const now = performance.now();
+  if (isLite() && player.playing && now - lastUiUpdate < LITE_UI_INTERVAL_MS) {
+    return;
+  }
+  lastUiUpdate = now;
   const scrub = $('#scrub');
   if (scrub) scrub.value = String(t);
   const label = $('#time-label');
@@ -644,6 +758,19 @@ function bindUi() {
     player.speed = Number(e.target.value);
     scene.setPlaybackRate(player.speed);
   });
+  // tryb wydajności: Automatycznie / Pełna / Lekka (zapamiętywane lokalnie)
+  const perfSelect = $('#perf-mode');
+  if (perfSelect) {
+    perfSelect.value = isLite() ? 'lite' : getMode();
+    perfSelect.addEventListener('change', (e) => {
+      setMode(e.target.value);
+      setStatus(e.target.value === 'lite'
+        ? 'Tryb lekki: mniej szczegółów, więcej FPS.'
+        : (e.target.value === 'full'
+          ? 'Tryb pełny: wszystkie efekty włączone.'
+          : 'Wydajność: automatycznie (pomiar przy starcie).'), '');
+    });
+  }
   $('#camera-select').addEventListener('change', (e) => {
     const mode = e.target.value;
     scene.setCameraMode(mode);
@@ -842,6 +969,17 @@ async function init() {
       script_source: $('#editor-area').value, script_name: currentScriptName(),
     }, {});
     setStatus('Gotowy. Wybierz przykład albo wgraj skrypt i uruchom symulację.');
+    applyEditionInfo();
+    applyEditionDefaults();
+    // tryb automatyczny: po starcie (~1,2 s) zmierz FPS i ewentualnie
+    // zaproponuj tryb lekki. W edycji for_potatoes nie ma pomiaru ani pytania.
+    if (!edition.lite_default && !isForced() && getMode() === 'auto') {
+      setTimeout(() => {
+        autoDetect(proposeLite).catch((err) => {
+          console.error('perf: pomiar FPS nie powiódł się', err);
+        });
+      }, 1200);
+    }
   } catch (err) {
     console.error(err);
     setStatus(`Błąd inicjalizacji interfejsu: ${err.message}`, 'error');

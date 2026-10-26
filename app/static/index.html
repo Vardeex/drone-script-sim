@@ -23,6 +23,7 @@
     <header>
       <h1>Drone <span>Script</span> Simulator</h1>
       <span class="badge" id="adapter-badge">DJI Tello</span>
+      <span class="badge edition-badge" id="edition-badge" hidden></span>
       <span class="spacer"></span>
       <label class="hint" for="adapter-select">Dron:</label>
       <select id="adapter-select" title="Adapter drona"></select>
@@ -78,6 +79,12 @@
         <option value="3">×3</option>
         <option value="5" selected>×5</option>
         <option value="10">×10</option>
+      </select>
+      <label class="hint" for="perf-mode">Wydajność</label>
+      <select id="perf-mode" title="Tryb wydajności: automatycznie, pełna lub lekka (dla słabych komputerów)">
+        <option value="auto">Automatycznie</option>
+        <option value="full">Pełna</option>
+        <option value="lite">Lekka</option>
       </select>
       <button id="btn-guards" class="ghost toggle on" title="Osłony śmigieł (włącz/wyłącz)">⛨ Osłony</button>
       <button id="btn-shadow-arrow" class="ghost toggle" title="Strzałka kierunku przodu na cieniu drona">➤ Cień</button>
@@ -305,7 +312,8 @@ opóźnienie RC i niedokładność ruchów (założenia modelu)">Realizm:
 
 <!-- Stopka aplikacji: poza #app, żeby nie zasłaniać sceny 3D, osi czasu ani paneli -->
 <footer id="app-footer">
-  Development by <a href="mailto:vardeex.exe@gmail.com?subject=Drone%20Script%20Simulator"
+  <span id="footer-edition">Drone Script Simulator</span>
+  &middot; Development by <a href="mailto:vardeex.exe@gmail.com?subject=Drone%20Script%20Simulator"
                     title="Kontakt: vardeex.exe@gmail.com">Vardeex</a>
 </footer>
 <script>
@@ -314,7 +322,7 @@ opóźnienie RC i niedokładność ruchów (założenia modelu)">Realizm:
     console.error('[dronesim] błąd UI:', event.message, event.filename, event.lineno);
   });
 </script>
-<script type="module" src="/static/js/app.js?v=26"></script>
+<script type="module" src="/static/js/app.js?v=27"></script>
 </body>
 </html>
 

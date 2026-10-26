@@ -342,6 +342,31 @@ def main() -> int:
             finally:
                 real_path.unlink(missing_ok=True)
 
+            # 13. tryb lekki (słaby komputer): ten sam lot, mniej szczegółów.
+            #    Najpierw pusta scena („Nowa”), żeby kadr pokazywał sam lot,
+            #    potem strona z ?lite=1 - dokument pokazuje różnicę.
+            page.click("#tab-btn-obstacles")
+            page.click("#obs-new")
+            page.wait_for_timeout(300)
+            page.goto(base + "/?lite=1", wait_until="domcontentloaded")
+            page.wait_for_function("() => Boolean(window.__scene) && window.__scene.lite",
+                                   timeout=TIMEOUT_MS)
+            page.wait_for_function("() => Boolean(window.__featuresReady)",
+                                   timeout=TIMEOUT_MS)
+            page.select_option("#example-select", "basic_square.py")
+            page.wait_for_function(
+                "() => document.querySelector('#editor-area').value.includes('takeoff')",
+                timeout=TIMEOUT_MS)
+            page.click("#btn-run")
+            page.wait_for_function(
+                "() => { const el = document.querySelector('#status-text');"
+                "  return Boolean(el) && /Gotowe/.test(el.textContent); }",
+                timeout=TIMEOUT_MS)
+            page.wait_for_timeout(600)
+            page.mouse.move(800, 930)
+            page.wait_for_timeout(300)
+            shot("13-tryb-lekki.png")
+
             browser.close()
     finally:
         # tylko proces serwera (nie grupa): uvicorn nie ma potomków, a grupa

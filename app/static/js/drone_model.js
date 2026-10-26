@@ -354,6 +354,49 @@ function orientAlong(mesh, dir) {
 //: Rejestr modeli dronów (adaptery) - nowe modele dodaje się tutaj
 export const DRONE_MODELS = { tello: createTello };
 
+/**
+ * Uproszczony model drona dla trybu lekkiego (kilka brył, jeden materiał).
+ *
+ * Wygląd wystarcza do orientacji w locie (korpus + ramiona + płaskie krążki
+ * śmigieł), ale koszt rysowania jest wielokrotnie mniejszy niż pełnego modelu:
+ * 5 siatek zamiast kilkudziesięciu, brak animowanych śmigieł i osłon.
+ *
+ * @param {object} [options]
+ * @param {number} [options.accent] - kolor korpusu
+ * @returns {{group: THREE.Group, rotors: THREE.Object3D[], size: THREE.Vector3}}
+ */
+export function createSimpleDrone({ accent = 0x38bdf8 } = {}) {
+  const group = new THREE.Group();
+  group.name = 'tello-lite';
+  // jeden materiał na wszystko - mniej zmian stanu w WebGL
+  const material = new THREE.MeshBasicMaterial({ color: accent });
+  const dark = new THREE.MeshBasicMaterial({ color: 0x1f2937 });
+
+  // korpus 45 x 20 x 45 mm, dno w y = 0 (jak model pełny)
+  const body = new THREE.Mesh(new THREE.BoxGeometry(mm(45), mm(20), mm(45)), material);
+  body.position.set(0, mm(16), 0);
+  group.add(body);
+
+  // ramiona (cienkie walce wzdłuż przekątnych)
+  const armGeometry = new THREE.BoxGeometry(mm(70), mm(3), mm(5));
+  for (const angle of [Math.PI / 4, -Math.PI / 4]) {
+    const arm = new THREE.Mesh(armGeometry, dark);
+    arm.position.set(0, mm(20), 0);
+    arm.rotation.y = angle;
+    group.add(arm);
+  }
+
+  // cztery płaskie krążki śmigieł (bez animacji obrotu)
+  const discGeometry = new THREE.CylinderGeometry(mm(24), mm(24), mm(1.5), 10);
+  for (const [x, z] of [[-36, -36], [-36, 36], [36, -36], [36, 36]]) {
+    const disc = new THREE.Mesh(discGeometry, dark);
+    disc.position.set(mm(x), mm(24), mm(z));
+    group.add(disc);
+  }
+
+  return { group, rotors: [], size: measure(group) };
+}
+
 export function createDroneModel(type = 'tello', options = {}) {
   const factory = DRONE_MODELS[type] || createTello;
   return factory(options);

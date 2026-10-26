@@ -195,7 +195,8 @@ def uninstall(app_dir: Path, delete_data: bool = False) -> None:
         raise SystemExit("deinstalator nie usunął DroneSim.exe")
 
 
-def start_and_test(app_dir: Path, data_dir: Path, port: int) -> None:
+def start_and_test(app_dir: Path, data_dir: Path, port: int,
+                   edition: str = "standard") -> None:
     """Uruchom DroneSim.exe, sprawdź health + dwa skrypty, zamknij grzecznie."""
     stop_file = WORK / "stop.txt"
     stop_file.unlink(missing_ok=True)
@@ -209,6 +210,13 @@ def start_and_test(app_dir: Path, data_dir: Path, port: int) -> None:
         if not wait_health(port):
             raise SystemExit("serwer nie odpowiedział na /api/health")
         say("health: ok")
+        info = http_json(f"http://127.0.0.1:{port}/api/edition")
+        say(f"edycja: {info.get('edition')} ({info.get('display_name')}), "
+            f"tryb lekki domyślnie: {info.get('lite_default')}")
+        if info.get("edition") != edition:
+            raise SystemExit(f"oczekiwano edycji {edition}, jest {info.get('edition')}")
+        if edition == "for_potatoes" and not info.get("lite_default"):
+            raise SystemExit("edycja for_potatoes musi startować w trybie lekkim")
 
         basic = (ROOT / "examples" / "basic_square.py").read_text(encoding="utf-8")
         first = run_script(port, basic, "basic_square.py")
@@ -239,13 +247,17 @@ def start_and_test(app_dir: Path, data_dir: Path, port: int) -> None:
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Test dymny instalatora DroneSim")
     parser.add_argument("--installer", default=None, help="plik DroneSim-Setup-*.exe")
+    parser.add_argument("--edition", default="standard",
+                        choices=["standard", "for_potatoes"],
+                        help="edycja wydania (for_potatoes = słabe komputery)")
     parser.add_argument("--keep", action="store_true",
                         help="zostaw katalogi testowe (diagnostyka)")
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     version = app_version()
+    suffix = "" if args.edition == "standard" else f"-{args.edition}"
     installer = (Path(args.installer) if args.installer
-                 else ROOT / "dist" / f"DroneSim-Setup-{version}.exe")
+                 else ROOT / "dist" / f"DroneSim-Setup-{version}{suffix}.exe")
     if not installer.exists():
         raise SystemExit(f"brak instalatora {installer} - uruchom build_installer.py")
     size_mb = installer.stat().st_size / 1024 / 1024
@@ -260,7 +272,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     started = time.perf_counter()
     try:
         install(installer, app_dir, data_dir)
-        start_and_test(app_dir, data_dir, port)
+        start_and_test(app_dir, data_dir, port, args.edition)
 
         # deinstalacja NIE może skasować danych użytkownika
         uninstall(app_dir)

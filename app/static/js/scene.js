@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { colorForHeight, clamp } from './util.js';
 import { toScene } from './timeline.js';
-import { createDroneModel } from './drone_model.js';
+import { createDroneModel, createSimpleDrone } from './drone_model.js';
 
 const M = 100; // 1 skala sceny = 100 cm (1 m)
 //: pole widzenia kamery drona - Tello: 82,6° (specyfikacja DJI); scena używa 50°
@@ -12,18 +12,78 @@ const DEFAULT_FOV_DEG = 50;
 //: kamera drona siedzi w nosie, 2 cm nad środkiem korpusu (model: 45 x 26 x 20 mm)
 const FPV_CAMERA_FORWARD_M = 0.045;
 const FPV_CAMERA_HEIGHT_M = 0.02;
+//: tryb lekki: renderowanie w 75% rozdzielczości i limit 30 FPS
+const LITE_RENDER_SCALE = 0.75;
+//: Limit 30 FPS z zapasem: przy 60 Hz kolejna klatka wypada ~33,3 ms, a jitter
+//: potrafi dać 33,0 ms - bez zapasu co druga klatka wypadałaby i wychodziło 20 FPS.
+const LITE_FPS_CAP_MS = (1000 / 30) * 0.9;
+//: powyżej tego średniego odstępu klatek tryb lekki zmniejsza rozdzielczość
+const LITE_TARGET_FRAME_MS = 36;
+//: tolerancja uproszczenia trasy w trybie lekkim (1 cm - tylko wizualizacja)
+const LITE_TRAIL_TOLERANCE_M = 0.01;
+
+/**
+ * Uproszczenie linii algorytmem Ramera-Douglasa-Peuckera.
+ *
+ * Działa **tylko na kopii do rysowania** - dane lotu, telemetria i pomiary
+ * pozostają nietknięte. Zwraca podzbiór punktów (zawsze z pierwszym i ostatnim).
+ */
+export function simplifyPath(points, tolerance = LITE_TRAIL_TOLERANCE_M) {
+  if (tolerance <= 0 || points.length < 3) return points.slice();
+  const keep = new Array(points.length).fill(false);
+  keep[0] = true;
+  keep[points.length - 1] = true;
+
+  const segmentDistance = (p, a, b) => {
+    const abx = b.x - a.x;
+    const aby = b.y - a.y;
+    const abz = b.z - a.z;
+    const lengthSq = abx * abx + aby * aby + abz * abz;
+    if (lengthSq === 0) {
+      return Math.hypot(p.x - a.x, p.y - a.y, p.z - a.z);
+    }
+    let t = ((p.x - a.x) * abx + (p.y - a.y) * aby + (p.z - a.z) * abz) / lengthSq;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(p.x - (a.x + abx * t), p.y - (a.y + aby * t),
+      p.z - (a.z + abz * t));
+  };
+
+  const stack = [[0, points.length - 1]];
+  while (stack.length) {
+    const [start, end] = stack.pop();
+    let farthest = -1;
+    let maxDistance = 0;
+    for (let i = start + 1; i < end; i += 1) {
+      const distance = segmentDistance(points[i], points[start], points[end]);
+      if (distance > maxDistance) {
+        maxDistance = distance;
+        farthest = i;
+      }
+    }
+    if (maxDistance > tolerance && farthest > 0) {
+      keep[farthest] = true;
+      stack.push([start, farthest], [farthest, end]);
+    }
+  }
+  return points.filter((_, index) => keep[index]);
+}
 
 export class DroneScene {
-  constructor(container) {
+  constructor(container, options = {}) {
     this.container = container;
     this.pickables = [];       // znaczniki komend (raycast)
     this.cameraMode = 'orbit';
     this.showTrail = true;
+    //: tryb lekki (słaby komputer) - patrz perf.js
+    this.lite = Boolean(options.lite);
+    this.renderScale = this.lite ? LITE_RENDER_SCALE : 1;
+    this._needsRender = true;
+    this._lastRender = 0;
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer = new THREE.WebGLRenderer({ antialias: !this.lite });
+    this.renderer.setPixelRatio(this.lite ? 1 : Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(container.clientWidth, container.clientHeight);
-    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.enabled = !this.lite;
     container.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
@@ -57,51 +117,119 @@ export class DroneScene {
     this._clock = new THREE.Clock();
     this._lastSample = null;
 
+    // w trybie lekkim rysujemy tylko wtedy, gdy coś się zmieniło
+    this.controls.addEventListener('change', () => this.requestRender());
+    if (this.lite) this.setQuality(true);
+
     window.addEventListener('resize', () => this.resize());
     new ResizeObserver(() => this.resize()).observe(container);
     this._animate();
   }
 
+  /** Zażądaj narysowania klatki (tryb lekki: render on demand). */
+  requestRender() {
+    this._needsRender = true;
+  }
+
+  /**
+   * Włącz/wyłącz tryb lekki w locie.
+   *
+   * Nie zmienia danych lotu ani pomiarów - tylko sposób rysowania: brak cieni,
+   * brak siatki 10 cm, prostszy model drona, brak etykiet-sprite'ów, trasa
+   * uproszczona do rysowania, renderowanie na żądanie z limitem 30 FPS.
+   */
+  setQuality(lite) {
+    const value = Boolean(lite);
+    const changed = this.lite !== value;
+    this.lite = value;
+    this.renderScale = value ? LITE_RENDER_SCALE : 1;
+    this.renderer.shadowMap.enabled = !value;
+    if (this.keyLight) this.keyLight.castShadow = !value;
+    if (this._fineGrid) this._fineGrid.visible = !value;
+    if (this.ground) {
+      this.ground.receiveShadow = !value;
+      if (this.ground.material) this.ground.material.needsUpdate = true;
+    }
+    if (this.velocityArrow) this.velocityArrow.visible = false;
+    // tryb lekki: bez mgły i bez świateł (wszystkie materiały są „basic”)
+    this.scene.fog = value ? null : new THREE.Fog(0x0d1117, 18, 46);
+    if (this.lights) this.lights.visible = !value;
+    this._applyGroundMaterial();
+    this._applyRendererSize();
+    if (changed) {
+      this._rebuildDroneModel();
+      if (this.samples && this.samples.length) {
+        this._buildTrail();
+        this._buildMarkers();
+      }
+      // warstwy funkcji (przeszkody, planer) też rysują inaczej w trybie lekkim
+      for (const layer of this.overlayLayers) layer.setQuality?.(value);
+    }
+    this.requestRender();
+    return this.lite;
+  }
+
 
   // ------------------------------------------------------------- konstrukcja
   _buildLights() {
-    this.scene.add(new THREE.HemisphereLight(0xbfd8ff, 0x0a0f16, 1.1));
+    // światła w grupie - w trybie lekkim cała grupa jest wyłączona
+    // (wszystkie materiały są wtedy „basic”, więc światła nic nie wnoszą)
+    this.lights = new THREE.Group();
+    this.lights.add(new THREE.HemisphereLight(0xbfd8ff, 0x0a0f16, 1.1));
     const key = new THREE.DirectionalLight(0xffffff, 1.6);
     key.position.set(6, 12, 5);
-    key.castShadow = true;
+    key.castShadow = !this.lite;
     key.shadow.mapSize.set(1024, 1024);
     key.shadow.camera.left = -10;
     key.shadow.camera.right = 10;
     key.shadow.camera.top = 10;
     key.shadow.camera.bottom = -10;
-    this.scene.add(key);
+    this.lights.add(key);
     const rim = new THREE.DirectionalLight(0x38bdf8, 0.5);
     rim.position.set(-8, 4, -6);
-    this.scene.add(rim);
+    this.lights.add(rim);
+    this.lights.visible = !this.lite;
+    this.scene.add(this.lights);
     this.keyLight = key;
   }
 
-  _buildGround() {
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(120, 120),
-      new THREE.MeshStandardMaterial({ color: 0x111a24, roughness: 1, metalness: 0 }),
-    );
-    ground.rotation.x = -Math.PI / 2;
-    ground.receiveShadow = true;
-    this.scene.add(ground);
+  /** Podmień materiał podłoża (tryb lekki: bez oświetlenia). */
+  _applyGroundMaterial() {
+    if (!this.ground) return;
+    const previous = this.ground.material;
+    this.ground.material = this.lite
+      ? new THREE.MeshBasicMaterial({ color: 0x111a24 })
+      : new THREE.MeshStandardMaterial({ color: 0x111a24, roughness: 1, metalness: 0 });
+    this.ground.receiveShadow = !this.lite;
+    previous?.dispose?.();
+  }
 
-    // siatka co 1 m (główna) i co 10 cm (drobna, subtelna)
+  _buildGround() {
+    // tryb lekki: materiał bez oświetlenia (tańszy cień i rasteryzacja)
+    const material = this.lite
+      ? new THREE.MeshBasicMaterial({ color: 0x111a24 })
+      : new THREE.MeshStandardMaterial({ color: 0x111a24, roughness: 1, metalness: 0 });
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(120, 120), material);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = !this.lite;
+    this.scene.add(ground);
+    this.ground = ground;
+
+    // siatka co 1 m (główna)
     const grid = new THREE.GridHelper(40, 40, 0x3a4a5e, 0x223041);
     grid.material.opacity = 0.85;
     grid.material.transparent = true;
     this.scene.add(grid);
+    this._grid = grid;
 
+    // siatka co 10 cm (drobna, subtelna) - w trybie lekkim wyłączona
     const fine = new THREE.GridHelper(20, 200, 0x1b2634, 0x1b2634);
     fine.material.opacity = 0.5;
     fine.material.transparent = true;
     fine.position.y = 0.001;
     this.scene.add(fine);
     this._groundGrid = fine;
+    this._fineGrid = fine;
   }
 
   // Etykiety HTML (ostre, niezależne od rozdzielczości) rzutowane z kamery.
@@ -185,7 +313,11 @@ export class DroneScene {
         if (node.material) node.material.dispose();
       });
     }
-    const model = createDroneModel('tello', this.droneOptions);
+    // tryb lekki: kilka prostych brył z jednym materiałem, śmigła jako płaskie
+    // krążki (bez animacji obrotu) - wygląd wystarcza do orientacji w locie
+    const model = this.lite
+      ? createSimpleDrone(this.droneOptions)
+      : createDroneModel('tello', this.droneOptions);
     this.drone = model.group;
     this.engines = model.rotors;
     this.droneSize = model.size;
@@ -214,10 +346,16 @@ export class DroneScene {
 
   _buildOverlays() {
     // pionowa kreska od drona do ziemi (wysokość)
+    const heightGeometry = new THREE.BufferGeometry()
+      .setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 1, 0)]);
+    // w trybie lekkim linia jest ciągła - materiał przerywany wymaga
+    // przeliczania odległości wzdłuż linii przy KAŻDEJ klatce (kosztowne)
     this.heightLine = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 1, 0)]),
-      new THREE.LineDashedMaterial({ color: 0x38bdf8, dashSize: 0.06, gapSize: 0.05,
-        transparent: true, opacity: 0.75 }),
+      heightGeometry,
+      this.lite
+        ? new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.75 })
+        : new THREE.LineDashedMaterial({ color: 0x38bdf8, dashSize: 0.06, gapSize: 0.05,
+          transparent: true, opacity: 0.75 }),
     );
     this.heightLine.computeLineDistances();
     this.scene.add(this.heightLine);
@@ -264,6 +402,7 @@ export class DroneScene {
     this.maxHeight = Math.max(maxHeight || 0, 100);
     this._buildTrail();
     this._buildMarkers();
+    this.requestRender();
   }
 
   _disposeGroup(group) {
@@ -285,9 +424,12 @@ export class DroneScene {
     this._disposeGroup(this.trailGroup);
     const samples = this.samples;
     if (samples.length < 2) return;
+    // tryb lekki: trasa uproszczona do rysowania (RDP, 1 cm).
+    // Dane lotu, telemetria i pomiary NIE są zmieniane - to tylko linia.
+    const source = this.lite ? simplifyPath(samples, LITE_TRAIL_TOLERANCE_M) : samples;
     const positions = [];
     const colors = [];
-    for (const s of samples) {
+    for (const s of source) {
       const p = toScene(s);
       positions.push(p.x / M, p.y / M + 0.02, p.z / M);
       const c = colorForHeight(s.z, this.maxHeight);
@@ -299,21 +441,32 @@ export class DroneScene {
     this.trailGroup.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({ vertexColors: true })));
 
     // "cień" trasy na podłożu
-    const groundPositions = [];
-    for (const s of samples) {
-      const p = toScene(s);
-      groundPositions.push(p.x / M, 0.006, p.z / M);
+    // (w trybie lekkim pomijamy - druga linia to dodatkowe rysowanie)
+    if (!this.lite) {
+      const groundPositions = [];
+      for (const s of source) {
+        const p = toScene(s);
+        groundPositions.push(p.x / M, 0.006, p.z / M);
+      }
+      const gGeo = new THREE.BufferGeometry();
+      gGeo.setAttribute('position', new THREE.Float32BufferAttribute(groundPositions, 3));
+      this.trailGroup.add(new THREE.Line(gGeo, new THREE.LineBasicMaterial({
+        color: 0x2c3b4d, transparent: true, opacity: 0.9,
+      })));
     }
-    const gGeo = new THREE.BufferGeometry();
-    gGeo.setAttribute('position', new THREE.Float32BufferAttribute(groundPositions, 3));
-    this.trailGroup.add(new THREE.Line(gGeo, new THREE.LineBasicMaterial({
-      color: 0x2c3b4d, transparent: true, opacity: 0.9,
-    })));
   }
 
   _buildMarkers() {
     this._disposeGroup(this.markerGroup);
     this.pickables = [];
+    this._markerEvents = [];
+    // tryb lekki: wszystkie znaczniki jako JEDEN InstancedMesh (1 draw call
+    // zamiast kilkunastu), prosty materiał bez oświetlenia, bez numerów-sprite'ów
+    // i bez pionowych linii wysokości dla każdego punktu
+    if (this.lite) {
+      this._buildLiteMarkers();
+      return;
+    }
     for (const event of this.events) {
       const p = toScene(event);
       const color = event.status === 'error' ? 0xef4444
@@ -352,6 +505,33 @@ export class DroneScene {
     }
   }
 
+  /** Znaczniki komend w trybie lekkim: jeden InstancedMesh (1 draw call). */
+  _buildLiteMarkers() {
+    const events = this.events;
+    if (!events.length) return;
+    const geometry = new THREE.SphereGeometry(0.024, 6, 4);
+    const material = new THREE.MeshBasicMaterial();
+    const mesh = new THREE.InstancedMesh(geometry, material, events.length);
+    mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+    const matrix = new THREE.Matrix4();
+    const color = new THREE.Color();
+    events.forEach((event, index) => {
+      const p = toScene(event);
+      matrix.makeTranslation(p.x / M, p.y / M + 0.03, p.z / M);
+      mesh.setMatrixAt(index, matrix);
+      color.setHex(event.status === 'error' ? 0xef4444
+        : event.status === 'warning' ? 0xf59e0b : 0x38bdf8);
+      mesh.setColorAt(index, color);
+      this._markerEvents[index] = event;
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    mesh.userData.kind = 'marker-instances';
+    this.markerGroup.add(mesh);
+    this.pickables.push(mesh);
+  }
+
+  /** Numer komendy na znaczniku (sprite z kanwy 2D) - tylko tryb pełny. */
   _numberLabel(index, color) {
     const canvas = document.createElement('canvas');
     canvas.width = 128;
@@ -401,12 +581,12 @@ export class DroneScene {
 
     const flying = sample.state === 'airborne' || sample.z > 1;
 
-    // linia wysokości
+    // linia wysokości (w trybie lekkim bez przeliczania odległości linii)
     const linePos = this.heightLine.geometry.attributes.position;
     linePos.setXYZ(0, position.x, 0.005, position.z);
     linePos.setXYZ(1, position.x, position.y, position.z);
     linePos.needsUpdate = true;
-    this.heightLine.computeLineDistances();
+    if (!this.lite) this.heightLine.computeLineDistances();
     this.heightLine.visible = position.y > 0.02;
 
     const faint = clamp(1 - position.y / 3, 0.2, 1);
@@ -420,10 +600,10 @@ export class DroneScene {
       c.material.opacity = 0.85 * faint;
     });
 
-    // wektor prędkości (w układzie sceny)
+    // wektor prędkości (w układzie sceny) - w trybie lekkim wyłączony
     const v = [sample.vx, sample.vz, -sample.vy];
     const speed = Math.hypot(v[0], v[1], v[2]);
-    if (speed > 1) {
+    if (!this.lite && speed > 1) {
       this.velocityArrow.visible = true;
       const dir = new THREE.Vector3(v[0], v[1], v[2]).normalize();
       this.velocityArrow.position.copy(position);
@@ -434,12 +614,15 @@ export class DroneScene {
     }
 
     this._flying = flying;
+    this.requestRender();
   }
 
   /** Dodaj warstwę dostarczoną przez funkcję (punkt rozszerzeń nr 4). */
   addOverlayLayer(instance) {
     if (!instance) return;
     this.overlayLayers.push(instance);
+    // warstwa od razu wie, w jakim trybie rysować (lekki/pełny)
+    instance.setQuality?.(this.lite);
   }
 
   /**
@@ -540,8 +723,10 @@ export class DroneScene {
   setPlaybackRate(rate) {
     const fast = rate >= 4;
     this._lowDetail = fast;
-    if (this._groundGrid) this._groundGrid.visible = !fast;
-    if (this.velocityArrow) this.velocityArrow.visible = this.velocityArrow.visible && !fast;
+    // w trybie lekkim drobna siatka jest wyłączona na stałe
+    if (this._groundGrid) this._groundGrid.visible = !fast && !this.lite;
+    if (this.velocityArrow && (fast || this.lite)) this.velocityArrow.visible = false;
+    this.requestRender();
   }
 
   /** Ustaw tryb kamery śledzącej z odległością dopasowaną do skali modelu. */
@@ -678,12 +863,26 @@ export class DroneScene {
     this.controls.update();
   }
 
+  /** Ustaw rozmiar bufora rysowania (tryb lekki: 75% i rozciągnięcie przez CSS). */
+  _applyRendererSize() {
+    const width = Math.max(1, this.container.clientWidth);
+    const height = Math.max(1, this.container.clientHeight);
+    const scale = this.renderScale;
+    this.renderer.setPixelRatio(this.lite ? 1 : Math.min(window.devicePixelRatio, 2));
+    this.renderer.setSize(Math.round(width * scale), Math.round(height * scale), false);
+    // CSS trzyma pełny rozmiar - mniejszy bufor jest skalowany przez przeglądarkę
+    const canvas = this.renderer.domElement;
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    this.camera.aspect = width / height;
+    this.camera.updateProjectionMatrix();
+  }
+
   resize() {
     const { clientWidth: width, clientHeight: height } = this.container;
     if (!width || !height) return;
-    this.renderer.setSize(width, height);
-    this.camera.aspect = width / height;
-    this.camera.updateProjectionMatrix();
+    this._applyRendererSize();
+    this.requestRender();
   }
 
   // ------------------------------------------------------------------ raycast
@@ -696,15 +895,24 @@ export class DroneScene {
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(ndc, this.camera);
     const hits = raycaster.intersectObjects(this.pickables, false);
-    return hits.length ? hits[0].object.userData.event : null;
+    if (!hits.length) return null;
+    const hit = hits[0];
+    // tryb lekki: znaczniki to jeden InstancedMesh - zdarzenie po instanceId
+    if (hit.object.isInstancedMesh && typeof hit.instanceId === 'number') {
+      return this._markerEvents?.[hit.instanceId] || null;
+    }
+    return hit.object.userData.event || null;
   }
 
   _animate = () => {
     requestAnimationFrame(this._animate);
     const dt = this._clock.getDelta();
+    // karta w tle: nie rysujemy i nie liczymy animacji (oszczędza CPU/baterię)
+    if (this.lite && document.hidden) return;
     // warstwy funkcji (wtyczek) - własna animacja / porządki
     for (const layer of this.overlayLayers) layer.tick?.(dt);
     // wirniki: szybki obrót w locie, zatrzymane na ziemi
+    // (uproszczony model w trybie lekkim nie ma animowanych śmigieł)
     const spin = this._flying ? 28 * dt : 0;
     this._spinner += spin;
     if (this.engines) {
@@ -732,7 +940,36 @@ export class DroneScene {
       this._updateFpvCamera();
     }
     this.controls.update();
+    // tryb lekki: rysuj tylko gdy coś się zmieniło, maksymalnie 30 FPS.
+    // Przy 60 Hz rysujemy co drugą klatkę (stabilne 30 FPS), a gdy pętla zwalnia,
+    // decyduje czas - inaczej jitter wypadałby co trzecią klatkę (20 FPS).
+    if (this.lite) {
+      if (!this._needsRender) return;
+      const now = performance.now();
+      const since = now - this._lastRender;
+      this._tickCount = (this._tickCount || 0) + 1;
+      const evenTick = this._tickCount % 2 === 0;
+      if (!(since >= LITE_FPS_CAP_MS || (since >= 16 && evenTick))) return;
+    }
     this.renderer.render(this.scene, this.camera);
+    const rendered = performance.now();
+    if (this.lite) {
+      // adaptacyjna rozdzielczość: na bardzo słabym sprzęcie zejdź niżej
+      // (0,75 -> 0,6 -> 0,5), żeby utrzymać ~30 FPS; nigdy nie wracamy w górę
+      if (this._lastRender) {
+        const delta = rendered - this._lastRender;
+        this._renderAvg = this._renderAvg ? this._renderAvg * 0.85 + delta * 0.15 : delta;
+      }
+      if (rendered - (this._adaptAt || 0) > 1500) {
+        this._adaptAt = rendered;
+        if (this._renderAvg > LITE_TARGET_FRAME_MS && this.renderScale > 0.5) {
+          this.renderScale = Math.max(0.5, this.renderScale - 0.15);
+          this._applyRendererSize();
+        }
+      }
+    }
+    this._lastRender = rendered;
+    this._needsRender = false;
     if (this.labels) this._updateLabels();
   };
 }

@@ -189,6 +189,23 @@ export function createLayer({ scene: droneScene } = {}) {
   canvas.addEventListener('pointermove', onMove);
   window.addEventListener('pointerup', onUp);
 
+  // Hook diagnostyczny (testy, benchmark wydajności): liczba punktów trasy
+  // i ich pozycja na ekranie, żeby dało się złapać punkt kursorem.
+  window.__routePlanner = {
+    count: () => (state.route?.points || []).length,
+    screenOf: (index) => {
+      const marker = markers.children.find(
+        (child) => child.userData.index === index);
+      if (!marker) return null;
+      const projected = marker.position.clone().project(droneScene.camera);
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: rect.left + (projected.x * 0.5 + 0.5) * rect.width,
+        y: rect.top + (1 - (projected.y * 0.5 + 0.5)) * rect.height,
+      };
+    },
+  };
+
   return {
     setRoute(route) {
       state.route = route || null;

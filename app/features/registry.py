@@ -271,12 +271,21 @@ def sort_by_dependencies(records: List[PluginRecord]) -> List[PluginRecord]:
 
 
 # ---------------------------------------------------------------- włącz / wyłącz
+#: wtyczki wyłączone **domyślnie** w edycji ``for_potatoes`` (mało przydatne
+#: dodatki; użytkownik może je włączyć w zakładce „Wtyczki” - nadpisanie
+#: z ``config.json`` ma pierwszeństwo, więc ten warunek dotyczy tylko domyślnej
+#: wartości)
+POTATOES_DISABLED = {"example_hello"}
+
+
 def is_enabled(manifest: Dict[str, Any],
                settings: Optional[Dict[str, Any]] = None) -> bool:
     """Czy wtyczka jest włączona: manifest + nadpisanie z ``config.json``.
 
     Pole ``enabled`` w ``config.json`` (sekcja ``features``) ma pierwszeństwo
     przed manifestem - pozwala wyłączyć wtyczkę bez ruszania jej plików.
+    W edycji ``for_potatoes`` dodatki z :data:`POTATOES_DISABLED` są domyślnie
+    wyłączone (edycja standardowa działa dokładnie jak dotąd).
     """
     settings = config.features() if settings is None else settings
     override = settings.get(manifest["id"])
@@ -284,6 +293,10 @@ def is_enabled(manifest: Dict[str, Any],
         return bool(override["enabled"])
     if isinstance(override, bool):
         return override
+    from .. import edition
+
+    if edition.is_potatoes() and manifest.get("id") in POTATOES_DISABLED:
+        return False
     return bool(manifest.get("enabled", True))
 
 
