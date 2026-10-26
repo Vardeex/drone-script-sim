@@ -270,6 +270,11 @@ def main() -> int:
             page.wait_for_function(
                 "() => window.__manualFlight && window.__manualFlight.state.flying === true",
                 timeout=TIMEOUT_MS)
+            # sterowanie klawiaturą wymaga kliknięcia w scenę 3D
+            page.mouse.click(120, 120)
+            page.wait_for_function(
+                "() => window.__manualFlight.state.controlActive === true",
+                timeout=TIMEOUT_MS)
             page.keyboard.down("ArrowUp")
             page.wait_for_timeout(700)
             page.keyboard.up("ArrowUp")

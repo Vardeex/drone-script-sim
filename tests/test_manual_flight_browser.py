@@ -76,6 +76,12 @@ def _start_flight(page) -> None:
     page.wait_for_function(
         "() => window.__manualFlight && window.__manualFlight.state.flying === true",
         timeout=TIMEOUT_MS)
+    # Sterowanie klawiaturą działa tylko przy aktywnej scenie 3D (kliknięcie) -
+    # patrz zadanie 1: klawisze nie mogą sterować dronem, gdy piszesz w polach.
+    page.mouse.click(120, 120)
+    page.wait_for_function(
+        "() => window.__manualFlight.state.controlActive === true",
+        timeout=TIMEOUT_MS)
 
 
 def _drone_position(page):

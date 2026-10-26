@@ -94,3 +94,27 @@
 .mf-error {
   color: #f87171;
 }
+
+/* Sterowanie klawiaturą aktywne tylko po kliknięciu sceny 3D. */
+#viewport.mf-control-active {
+  outline: 2px solid #38bdf8;
+  outline-offset: -2px;
+  box-shadow: inset 0 0 0 2px rgba(56, 189, 248, 0.35);
+}
+
+.mf-control-badge {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  z-index: 5;
+  padding: 6px 12px;
+  border: 1px solid #38bdf8;
+  border-radius: 999px;
+  background: rgba(8, 47, 73, 0.92);
+  color: #e0f2fe;
+  font-size: 12px;
+  font-weight: 600;
+  pointer-events: none;
+}
+

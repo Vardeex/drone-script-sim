@@ -8,6 +8,7 @@ import * as panels from './panels.js';
 import { registerFeatures, attachSceneLayers } from './boot.js';
 import { renderPlugins } from './plugins_tab.js';
 import { mountEditor, setEditorValue } from './editor.js';
+import { isTypingTarget } from './keys.js';
 
 //: wersja modułów funkcji (cache-busting lokalnego serwera statyków)
 export const ASSET_VERSION = 'v26';
@@ -770,14 +771,15 @@ function bindCanvasPicking() {
 
 function bindKeyboard() {
   document.addEventListener('keydown', (e) => {
-    const tag = document.activeElement?.tagName;
-    const typing = ['TEXTAREA', 'INPUT', 'SELECT'].includes(tag);
+    // Ctrl/Cmd+Enter uruchamia skrypt także z edytora - to świadomy skrót globalny
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
       e.preventDefault();
       runSimulation();
       return;
     }
-    if (typing) return;
+    // Piszesz w edytorze/polu/oknie dialogowym? Klawisz należy do pola:
+    // bez preventDefault, bez play/pauzy i bez przewijania.
+    if (isTypingTarget(e)) return;
     if (e.key === ' ') {
       e.preventDefault();
       player.toggle();

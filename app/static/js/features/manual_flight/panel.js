@@ -9,6 +9,7 @@
 // wysyłane co ~100 ms razem z `dt`.
 
 import { el } from '../../js/util.js';
+import { isTypingTarget } from '../../js/keys.js';
 
 const API = '/api/manual_flight';
 //: jak często wysyłamy wychylenia RC [ms] - 10 Hz jak w przykładzie djitellopy
@@ -82,7 +83,7 @@ const PANEL_HTML = `
       <button type="button" data-mf-copy>Wklej do edytora</button>
       <button type="button" class="ghost" data-mf-download>Pobierz .py</button>
     </div>
-    <div class="hint" data-mf-info>Kliknij „Start”, żeby wznieść drona na 80 cm.</div>
+    <div class="hint" data-mf-info>Kliknij <b>Start</b>, potem <b>kliknij scenę 3D</b> - dopiero wtedy działa sterowanie klawiaturą (Esc lub kliknięcie poza sceną je wyłącza).</div>
   </div>
 `;
 
@@ -100,8 +101,17 @@ export function registerPanel({ panels, feature, scene, player, getLayer,
     lastTick: 0,
     script: '',
     error: null,
+    //: czy scena 3D jest aktywna (kliknięcie = przejęcie sterowania klawiaturą)
+    controlActive: false,
   };
   let dom = null;
+  //: element sceny 3D i pływająca plakietka „Sterowanie aktywne”
+  const viewport = document.querySelector('#viewport');
+  const badge = el('div', {
+    class: 'mf-control-badge',
+    hidden: true,
+    text: 'Sterowanie aktywne – kliknij poza sceną, by wyłączyć (Esc też kończy)',
+  });
 
   const layer = () => {
     if (typeof getLayer !== 'function') return null;
@@ -291,10 +301,41 @@ export function registerPanel({ panels, feature, scene, player, getLayer,
   }
 
   // ------------------------------------------------------------- klawiatura
+  // Sterowanie działa TYLKO gdy scena 3D jest aktywna (kliknięcie w scenę).
+  // Dzięki temu pisanie w edytorze ani w polach formularzy nie rusza dronem.
+  function activateControl() {
+    if (state.controlActive) return;
+    state.controlActive = true;
+    badge.hidden = false;
+    viewport?.classList.add('mf-control-active');
+  }
+
+  function deactivateControl() {
+    if (!state.controlActive) return;
+    state.controlActive = false;
+    state.pressed.clear();              // nie zostawiaj wciśniętego RC
+    badge.hidden = true;
+    viewport?.classList.remove('mf-control-active');
+  }
+
+  function onPointerDown(event) {
+    const inScene = Boolean(event.target?.closest?.('#viewport'));
+    if (inScene) activateControl();
+    else deactivateControl();
+  }
+
   function onKeyDown(event) {
-    if (!KEYS[event.code] || !state.session) return;
-    const tag = (event.target?.tagName || '').toLowerCase();
-    if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+    // Esc wychodzi ze sterowania (i nie robi nic więcej)
+    if (event.key === 'Escape' && state.controlActive) {
+      deactivateControl();
+      return;
+    }
+    // Fokus w polu/edytorze -> klawisz należy do pola, sterowanie wyłączamy
+    if (isTypingTarget(event)) {
+      deactivateControl();
+      return;
+    }
+    if (!state.controlActive || !KEYS[event.code] || !state.session) return;
     event.preventDefault();
     state.pressed.add(event.code);
   }
@@ -368,6 +409,8 @@ export function registerPanel({ panels, feature, scene, player, getLayer,
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('blur', onBlur);
+    document.addEventListener('pointerdown', onPointerDown);
+    viewport?.append(badge);
     // diagnostyka i testy przeglądarkowe (stan tylko do odczytu + pomocnicze akcje)
     window.__manualFlight = {
       get state() { return { ...state, pressed: [...state.pressed] }; },
