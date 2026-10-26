@@ -281,6 +281,7 @@ def test_manual_flight_keys_require_scene_focus(server):
             "() => window.__manualFlight.state.lastState.x > 3",
             timeout=TIMEOUT_MS)
         page.keyboard.up("ArrowUp")
+        page.wait_for_timeout(400)      # dogaszanie odcinków RC wysłanych w locie
         moved = page.evaluate("() => window.__manualFlight.state.lastState")
 
         # 3) Esc wychodzi ze sterowania

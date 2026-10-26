@@ -57,6 +57,14 @@ skrypt by się rozbił, a nie poprawiać lot.
 
 ![Przeszkody w symulatorze](docs/obstacles.png)
 
+Zasady scen:
+
+* **pierwsze uruchomienie daje pustą scenę roboczą** (tylko podłoże, osie
+  i punkt startu) - bez bramek i przeszkód; przykładowe sceny wybierasz z listy,
+* aplikacja **pamięta ostatnio wybraną scenę** (`localStorage`) i wraca do niej
+  po odświeżeniu; „✚ Nowa” czyści to wspomnienie,
+* lot wczytany z historii przywraca **własną** scenę zapisaną razem z lotem.
+
 ### Jak używać edytora
 
 Zakładka **Przeszkody** w panelu po prawej (jest tylko wtedy, gdy funkcja jest

@@ -22,6 +22,8 @@ const PRESETS = {
   mission_pad: { size: [30, 30, 1], name: 'mata' },
 };
 const STORAGE_KEY = 'dronesim.obstacles.settings';
+//: nazwa ostatnio wybranej sceny (localStorage) - po restarcie wracamy do niej
+const SCENE_KEY = 'dronesim.obstacles.scene';
 
 async function api(path, options = {}) {
   const response = await fetch(`/api/obstacles${path}`, options);
@@ -61,6 +63,22 @@ function saveSettings(settings) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
   } catch (_) { /* prywatny tryb przeglądarki */ }
+}
+
+/** Nazwa ostatnio wybranej sceny (``null`` = brak zapamiętanej / brak storage). */
+function loadScenePreference() {
+  try {
+    return localStorage.getItem(SCENE_KEY) || null;
+  } catch (_) {
+    return null;                 // prywatny tryb: po prostu pusta scena
+  }
+}
+
+function saveScenePreference(name) {
+  try {
+    if (name) localStorage.setItem(SCENE_KEY, name);
+    else localStorage.removeItem(SCENE_KEY);
+  } catch (_) { /* brak localStorage nie jest błędem */ }
 }
 
 function sceneDistance(obstacle) {
@@ -409,6 +427,7 @@ export function registerPanel(ctx) {
       store.name = name;
       store.isUserScene = Boolean(store.list.find((s) => s.name === name && s.user));
       store.selectedId = null;
+      saveScenePreference(name);        // po restarcie wracamy do tej sceny
       notifySaved();
       applyToScene();
       renderSceneList();
@@ -428,6 +447,7 @@ export function registerPanel(ctx) {
       store.name = result.name;
       store.isUserScene = true;
       store.scene.name = result.scene.name;
+      saveScenePreference(result.name);
       notifySaved();
       await refreshScenes();
       renderList();
@@ -446,6 +466,7 @@ export function registerPanel(ctx) {
         store.isUserScene = false;
         markDirty();
       }
+      if (loadScenePreference() === name) saveScenePreference(null);
       await refreshScenes();
       setStatus(`Usunięto scenę „${name}”.`, 'ok');
     } catch (err) {
@@ -460,6 +481,7 @@ export function registerPanel(ctx) {
       store.name = '';
       store.isUserScene = false;
       store.selectedId = null;
+      saveScenePreference(null);        // „Nowa scena” = pusta, także po restarcie
       notifySaved();
       applyToScene();
       setStatus('Nowa pusta scena - dodaj przeszkody.', '');
@@ -621,8 +643,12 @@ export function registerPanel(ctx) {
   async function init() {
     bindSettings();
     await refreshScenes();
-    const preferred = store.list.find((s) => s.name === 'gate_slalom') || store.list[0];
-    if (preferred) await loadScene(preferred.name);
+    // Pierwsze uruchomienie: pusta scena robocza (bez bramek ani przeszkód).
+    // Dopiero gdy użytkownik wcześniej wybrał scenę - wracamy do niej.
+    const remembered = loadScenePreference();
+    const known = Boolean(remembered)
+      && store.list.some((item) => item.name === remembered);
+    if (known) await loadScene(remembered);
     else await newScene();
     if (getLayer()) {
       syncLayer();

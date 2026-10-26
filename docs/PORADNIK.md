@@ -249,8 +249,16 @@ się i nie zatrzymuje; aplikacja tylko pokazuje, co by się stało.
 
 ### 3.1. Sceny
 
-* **Scena** = plik JSON z listą przeszkód (`scenes/*.json`). Wbudowane:
-  `obstacle_course`, `gate_slalom`, `room_with_furniture`.
+* **Pierwsze uruchomienie to pusta scena robocza** - w 3D widać tylko podłoże,
+  osie i punkt startu (bez bramek ani przeszkód). To celowe: symulator ma
+  pokazywać Twój lot, a nie cudzą scenę.
+* **Scena** = plik JSON z listą przeszkód (`scenes/*.json`). Wbudowane przykłady:
+  `obstacle_course` (tor przeszkód), `gate_slalom` (slalom z bramkami),
+  `room_with_furniture` (pokój) i `mission_pads` (maty Tello EDU). Wybierasz je
+  z listy po lewej stronie zakładki.
+* Aplikacja **pamięta ostatnio wybraną scenę** (w `localStorage` przeglądarki) -
+  po odświeżeniu wracasz do niej. „✚ Nowa” czyści to wspomnienie i daje znowu
+  pustą scenę.
 * **Twoje sceny** zapisujesz w `scenes/user/` (ten katalog jest w `.gitignore`,
   więc nie trafi do repozytorium).
 * „✚ Nowa” tworzy pustą scenę 4 × 4 × 2,5 m. „💾 Zapisz” / „💾 Zapisz jako”

@@ -130,9 +130,26 @@ def main() -> int:
                     "  return Boolean(node) && node.textContent.includes(text); }",
                     arg=[selector, fragment], timeout=timeout)
 
-            # 1. ekran startowy - czekamy, aż wczytają się wtyczki (zakładka Planer)
+            # 1. ekran startowy - czekamy, aż wczytają się wtyczki (zakładka Planer).
+            #    Pierwsze uruchomienie ma PUSTĄ scenę roboczą (bez bramek) - to
+            #    właśnie dokumentuje ten zrzut.
             page.locator("#tab-btn-route").wait_for(state="visible", timeout=TIMEOUT_MS)
+            wait_text("#obs-title", "Nowa scena")
             shot("01-start.png")
+
+            # Od tego miejsca poradnik pokazuje scenę przykładową z bramkami:
+            # zapamiętujemy ją w localStorage (tak jak zrobiłby to użytkownik)
+            # i przeładowujemy stronę.
+            page.evaluate("""() => {
+              try { localStorage.setItem('dronesim.obstacles.scene', 'gate_slalom'); }
+              catch (_) { /* brak storage - zrzuty będą na pustej scenie */ }
+            }""")
+            page.reload(wait_until="domcontentloaded")
+            page.wait_for_function("() => Boolean(window.__featuresReady)",
+                                   timeout=TIMEOUT_MS)
+            wait_text("#obs-title", "Slalom")
+            page.mouse.move(800, 930)
+            page.wait_for_timeout(300)
 
             # 2. przykładowy lot - czekamy na wynik symulacji, nie na czas
             page.select_option("#example-select", "basic_square.py")
