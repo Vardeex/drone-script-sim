@@ -159,11 +159,13 @@ def test_lite_mode_from_url(server, query):
         state = scene_state(page)
         body_class = page.evaluate("() => document.body.classList.contains('lite-mode')")
         select = page.input_value("#perf-mode")
+        stored = page.evaluate("() => localStorage.getItem('dronesim.perf')")
         browser.close()
     assert errors == [], errors
     assert state["lite"] is True
     assert body_class is True
     assert select == "lite"
+    assert stored is None, "?lite=1 nie powinien zapisywać ustawienia"
     assert state["shadows"] is False
     assert state["pixelRatio"] == 1
 
