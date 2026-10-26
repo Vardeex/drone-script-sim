@@ -331,6 +331,7 @@ class TrayIcon:
         self._guid = guid_from_text(TRAY_GUID_TEXT)
         self._use_guid = True
         self._version4 = False
+        self._stop_requested = False
         self.taskbar_created = 0
         self._proc = _WNDPROC(self._wndproc)      # trzymamy referencję (GC!)
         # nazwa klasy musi być unikalna w procesie (testy tworzą kilka ikon)
@@ -503,6 +504,9 @@ class TrayIcon:
         self.on_open = on_open
         self.on_quit = on_quit
         self.create()
+        if self._stop_requested:           # stop() przed utworzeniem okna
+            self.destroy()
+            return
         try:
             message = wintypes.MSG()
             while self.user32.GetMessageW(ctypes.byref(message), None, 0, 0) > 0:
@@ -512,7 +516,13 @@ class TrayIcon:
             self.destroy()
 
     def stop(self) -> None:
-        """Zamknij pętlę komunikatów (wywoływane np. przez ``--stop-file``)."""
+        """Zamknij pętlę komunikatów i usuń ikonę (``NIM_DELETE`` w ``destroy``).
+
+        Wywoływane przez ``--stop-file``, przez pozycję „Zakończ DroneSim”
+        w menu ikony **oraz przez launcher, gdy proces serwera zakończy się
+        sam** (np. ``POST /api/shutdown`` z przycisku w aplikacji).
+        """
+        self._stop_requested = True
         if self.hwnd:
             self.user32.PostMessageW(self.hwnd, self.WM_CLOSE, 0, 0)
 
@@ -976,9 +986,37 @@ def main(argv: Optional[List[str]] = None) -> int:
                 time.sleep(0.25)
             log("koniec pętli (bez zasobnika)")
         else:
+            # Zasobnik działa w OSOBNYM wątku, żeby launcher mógł pilnować
+            # procesu serwera. Gdy serwer zakończy się sam (np. POST
+            # /api/shutdown z przycisku „Zakończ program”), pętla komunikatów
+            # musi zostać zamknięta, a ikona usunięta (NIM_DELETE w destroy()).
+            # Wcześniej tray.run() blokował do wyboru „Zakończ” w menu ikony,
+            # więc DroneSim.exe zostawał w tle razem z ikoną przy zegarze.
             tray = TrayIcon(f"{APP_TITLE} - działa", _icon_path(root))
-            tray.run(on_open=lambda: open_browser(args.port, log),
-                     on_quit=stop_event.set)
+
+            def run_tray() -> None:
+                try:
+                    tray.run(on_open=lambda: open_browser(args.port, log),
+                             on_quit=stop_event.set)
+                except Exception as exc:        # noqa: BLE001 - nie zabijaj launchera
+                    log(f"błąd zasobnika: {exc}")
+
+            tray_thread = threading.Thread(target=run_tray, name="tray", daemon=True)
+            tray_thread.start()
+            try:
+                while not stop_event.is_set() and process.poll() is None:
+                    if not tray_thread.is_alive():
+                        log("zasobnik zamknięty - kończę launcher")
+                        stop_event.set()
+                        break
+                    time.sleep(0.25)
+                if process.poll() is not None:
+                    log(f"serwer zakończył się (kod {process.returncode}) "
+                        "- zamykam launcher i usuwam ikonę")
+                    stop_event.set()
+            finally:
+                tray.stop()                     # WM_CLOSE -> destroy -> NIM_DELETE
+                tray_thread.join(timeout=3)
             log("zamknięto zasobnik")
         return code
     except KeyboardInterrupt:

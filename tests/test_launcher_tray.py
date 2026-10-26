@@ -186,3 +186,60 @@ def test_tray_icon_is_registered_visible_with_guid():
         assert right > 0 and bottom > 0 and left < screen[0] and top < screen[1], rect
     finally:
         tray.destroy()
+
+
+@WINDOWS
+def test_stop_before_run_skips_message_loop():
+    """``stop()`` przed ``run()`` nie zostawia ikony ani blokady."""
+    tray = launcher.TrayIcon("DroneSim - test")
+    tray.stop()
+    started = time.time()
+    tray.run(on_open=lambda: None, on_quit=lambda: None)
+    assert time.time() - started < 2.0
+    assert tray._data is None          # ikona usunięta (NIM_DELETE)
+    assert tray.hwnd is None
+
+
+@WINDOWS
+def test_stop_closes_message_loop_and_removes_icon():
+    """``stop()`` w trakcie pracy kończy pętlę i usuwa ikonę (NIM_DELETE).
+
+    Dokładnie to robi launcher, gdy proces serwera zakończy się sam - np. po
+    ``POST /api/shutdown`` z przycisku „Zakończ program”.
+    """
+    import threading
+
+    tray = launcher.TrayIcon("DroneSim - test")
+    done = threading.Event()
+
+    def run() -> None:
+        tray.run(on_open=lambda: None, on_quit=lambda: None)
+        done.set()
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    deadline = time.time() + 3
+    while time.time() < deadline and tray.hwnd is None:
+        time.sleep(0.02)
+    assert tray.hwnd, "okno ikony nie powstało"
+    assert tray._data is not None, "ikona nie została dodana"
+
+    tray.stop()
+    assert done.wait(timeout=3), "pętla komunikatów nie zakończyła się po stop()"
+    assert tray._data is None and tray.hwnd is None
+
+
+def test_launcher_watches_server_process_and_stops_tray():
+    """Launcher pilnuje procesu serwera i zamyka zasobnik (regresja 0.4.2).
+
+    Wcześniej ``tray.run()`` blokował do wyboru „Zakończ” w menu ikony, więc po
+    ``/api/shutdown`` serwer kończył się, ale ``DroneSim.exe`` dalej działał
+    z ikoną przy zegarze.
+    """
+    source = (ROOT / "release_tools" / "launcher" /
+              "dronesim_launcher.py").read_text(encoding="utf-8")
+    assert "tray_thread = threading.Thread" in source
+    assert "if not tray_thread.is_alive()" in source
+    assert "process.poll() is not None" in source
+    assert "tray.stop()" in source
+    assert "tray_thread.join(timeout=3)" in source

@@ -3,7 +3,7 @@
 Format: [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/); wersjonowanie
 zgodne z [SemVer](https://semver.org/lang/pl/).
 
-## [0.4.1] - 2026-10-26
+## [0.4.2] - 2026-10-26
 
 ### Dodane
 
@@ -44,6 +44,19 @@ zgodne z [SemVer](https://semver.org/lang/pl/).
     ponownie (wcześniej znikała na zawsze).
 * Menu ikony ma czytelne pozycje **„Otwórz DroneSim”** i **„Zakończ DroneSim”**
   (było „Otwórz” / „Zakończ”).
+* **Po zamknięciu serwera launcher kończy się i usuwa ikonę z zasobnika.**
+  Wcześniej `tray.run()` blokował pętlę do wyboru „Zakończ” w menu ikony, więc
+  po `POST /api/shutdown` (przycisk „Zakończ program”, menu „Zakończ DroneSim”,
+  skrót „Zamknij DroneSim”) serwer się zatrzymywał, ale `DroneSim.exe` dalej
+  działał z ikoną przy zegarze. Teraz zasobnik pracuje w osobnym wątku,
+  a launcher pilnuje procesu serwera: gdy serwer zakończy się z dowolnego
+  powodu, woła `tray.stop()` → `WM_CLOSE` → `Shell_NotifyIcon(NIM_DELETE)`
+  i kończy proces (zmierzone: **0,5 s** od `POST /api/shutdown`).
+* **Ustawienie trybu wydajności jest pamiętane osobno dla każdej edycji**:
+  klucz w `localStorage` zawiera edycję (`dronesim.perf:standard`,
+  `dronesim.perf:for_potatoes`). Tryb lekki zapisany w wydaniu `for_potatoes`
+  nie włącza się już w edycji standardowej (i odwrotnie); dotyczy to także
+  odpowiedzi „nie pytaj więcej”.
 
 ## [0.4.0-for_potatoes] - 2026-10-26
 

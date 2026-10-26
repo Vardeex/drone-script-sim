@@ -21,10 +21,11 @@ def force_lite_mode():
     """Uruchom testy przeglądarkowe w trybie lekkim (parametr całego zestawu).
 
     Tryb lekki włącza się w aplikacji z ``localStorage`` (klucz
-    ``dronesim.perf``), więc wystarczy wstrzyknąć tę wartość przed wczytaniem
-    strony - bez zmian w adresach URL i w wywołaniach API w testach. Dzięki
-    temu **każdy** test przeglądarkowy (także przyszły) przechodzi w obu trybach:
-    wystarczy uruchomić pytest drugi raz z ``DRONESIM_TEST_LITE=1``.
+    ``dronesim.perf:standard`` - z edycją wydania), więc wystarczy wstrzyknąć tę
+    wartość przed wczytaniem strony - bez zmian w adresach URL i w wywołaniach API
+    w testach. Dzięki temu **każdy** test przeglądarkowy (także przyszły)
+    przechodzi w obu trybach: wystarczy uruchomić pytest drugi raz z
+    ``DRONESIM_TEST_LITE=1``.
     """
     if os.environ.get(LITE_ENV) != "1":
         yield
@@ -40,7 +41,7 @@ def force_lite_mode():
         def new_page(self, *args, **kwargs):
             page = original(self, *args, **kwargs)
             page.add_init_script(
-                "try { localStorage.setItem('dronesim.perf', 'lite'); }"
+                "try { localStorage.setItem('dronesim.perf:standard', 'lite'); }"
                 " catch (e) { /* brak storage */ }")
             return page
 

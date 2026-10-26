@@ -15,12 +15,14 @@ import {
 } from './perf.js';
 
 //: wersja modułów funkcji (cache-busting lokalnego serwera statyków)
-export const ASSET_VERSION = 'v28';
+export const ASSET_VERSION = 'v29';
 
 //: edycja wydania - „for_potatoes” startuje w trybie lekkim (patrz edition.json)
 export const edition = await fetchEdition();
-//: ustawienie wydajności (localStorage + ?lite=1), zanim powstanie scena 3D
-const perfState = initPerf();
+//: ustawienie wydajności (localStorage + ?lite=1), zanim powstanie scena 3D.
+//: Klucz w localStorage zawiera edycję, więc tryb lekki zapisany w wydaniu
+//: „for_potatoes” nie przechodzi do edycji standardowej.
+const perfState = initPerf({ edition: edition.edition || 'standard' });
 if (edition.lite_default && !isForced() && getMode() === 'auto') {
   setMode('lite');
 }

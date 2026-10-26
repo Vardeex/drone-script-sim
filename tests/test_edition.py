@@ -87,3 +87,18 @@ def test_api_edition_endpoint(potatoes: Path):
     plugins = client.get("/api/plugins").json()
     assert plugins["edition"] == "for_potatoes"
     assert plugins["display_name"].endswith("for_potatoes")
+
+
+def test_lite_setting_key_contains_edition():
+    """Klucz ustawienia trybu wydajności zawiera edycję (brak przecieku).
+
+    Tryb lekki zapisany w wydaniu ``for_potatoes`` nie może włączać się
+    w edycji standardowej - ustawienie jest pamiętane osobno dla każdej edycji.
+    """
+    root = Path(__file__).resolve().parent.parent
+    perf = (root / "app" / "static" / "js" / "perf.js").read_text(encoding="utf-8")
+    app_js = (root / "app" / "static" / "js" / "app.js").read_text(encoding="utf-8")
+    conftest = (root / "tests" / "conftest.py").read_text(encoding="utf-8")
+    assert "`${STORAGE_PREFIX}:${edition}`" in perf
+    assert "initPerf({ edition:" in app_js
+    assert "dronesim.perf:standard" in conftest

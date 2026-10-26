@@ -45,7 +45,7 @@ from . import edition, paths, runner, storage
 from .adapters.base import detect_adapter, get_adapter, list_adapters
 from .features import plugin_model, registry
 
-app = FastAPI(title="Drone Script Simulator", version="0.4.1")
+app = FastAPI(title="Drone Script Simulator", version="0.4.2")
 # Lot z tysiącami próbek to kilka MB JSON-a. Gzip zmniejsza transfer ~10x
 # (dane, wyniki i pliki na dysku pozostają bez zmian - to tylko transport).
 app.add_middleware(GZipMiddleware, minimum_size=1024)

@@ -5,16 +5,34 @@
 // zapamiętywane w localStorage (w try/catch - brak storage nie jest błędem),
 // a parametr adresu `?lite=1` wymusza tryb lekki bez zapisu.
 //
+// Klucz ustawienia zawiera **edycję** wydania (`dronesim.perf:standard` albo
+// `dronesim.perf:for_potatoes`): tryb lekki zapisany w wydaniu „for_potatoes”
+// nie przechodzi do edycji standardowej (i odwrotnie).
+//
 // Automatycznie: po wczytaniu aplikacji mierzymy ~2 s klatek; jeśli wychodzi
 // mniej niż 30 FPS, proponujemy tryb lekki (Tak / Nie / Nie pytaj więcej).
 
-const STORAGE_KEY = 'dronesim.perf';
-//: klucz „nie pytaj więcej o tryb lekki”
-const ASK_KEY = 'dronesim.perf.ask';
+//: prefiks klucza; pełny klucz to ``<prefiks>:<edycja>``
+const STORAGE_PREFIX = 'dronesim.perf';
+//: przyrostek klucza „nie pytaj więcej o tryb lekki” (też z edycją)
+const ASK_SUFFIX = '.ask';
 //: poniżej tylu FPS proponujemy tryb lekki
 export const SLOW_FPS = 30;
 //: czas pomiaru w trybie automatycznym [ms]
 const PROBE_MS = 2000;
+
+//: edycja wydania ustawiana na starcie (``initPerf({ edition })``)
+let editionKey = 'standard';
+
+/** Klucz ustawienia trybu wydajności dla danej edycji. */
+export function storageKey(edition = editionKey) {
+  return `${STORAGE_PREFIX}:${edition}`;
+}
+
+/** Klucz „nie pytaj więcej” dla danej edycji. */
+export function askKey(edition = editionKey) {
+  return `${STORAGE_PREFIX}${ASK_SUFFIX}:${edition}`;
+}
 
 const listeners = new Set();
 let mode = 'auto';          // ustawienie użytkownika: auto | full | lite
@@ -59,11 +77,17 @@ function saveToStorage(key, value) {
   } catch (_) { /* prywatny tryb przeglądarki */ }
 }
 
-/** Wczytaj zapamiętane ustawienie i wymuszenie z adresu (bez mierzenia FPS). */
-export function initPerf() {
+/** Wczytaj zapamiętane ustawienie i wymuszenie z adresu (bez mierzenia FPS).
+ *
+ * @param {object} [options]
+ * @param {string} [options.edition] - edycja wydania (``standard`` /
+ *   ``for_potatoes``); ustawienie jest pamiętane **osobno** dla każdej edycji
+ */
+export function initPerf(options = {}) {
+  if (options.edition) editionKey = String(options.edition);
   const params = new URLSearchParams(window.location.search);
   const query = (params.get('lite') || '').toLowerCase();
-  const stored = loadFromStorage(STORAGE_KEY, 'auto');
+  const stored = loadFromStorage(storageKey(), 'auto');
   mode = ['auto', 'full', 'lite'].includes(stored) ? stored : 'auto';
   if (query === '1' || query === 'true') {
     forced = true;
@@ -71,7 +95,7 @@ export function initPerf() {
   }
   if (mode === 'lite') apply(true, { silent: true });
   else if (mode === 'full') apply(false, { silent: true });
-  return { mode, forced };
+  return { mode, forced, key: storageKey() };
 }
 
 /** Zapisz wybór użytkownika i zastosuj tryb (``auto`` = decyzja przy starcie). */
@@ -79,7 +103,7 @@ export function setMode(next, options = {}) {
   const value = ['auto', 'full', 'lite'].includes(next) ? next : 'auto';
   mode = value;
   forced = false;
-  saveToStorage(STORAGE_KEY, value === 'auto' ? null : value);
+  saveToStorage(storageKey(), value === 'auto' ? null : value);
   if (value === 'full') apply(false, options);
   else if (value === 'lite') apply(true, options);
   else apply(autoDecision(), options);
@@ -87,12 +111,12 @@ export function setMode(next, options = {}) {
 
 /** Czy użytkownik wyłączył pytanie o tryb lekki? */
 export function askingDisabled() {
-  return loadFromStorage(ASK_KEY, '0') === '1';
+  return loadFromStorage(askKey(), '0') === '1';
 }
 
 /** Zapamiętaj „nie pytaj więcej”. */
 export function disableAsking() {
-  saveToStorage(ASK_KEY, '1');
+  saveToStorage(askKey(), '1');
 }
 
 /** Zapamiętaj decyzję z propozycji trybu lekkiego (Tak/Nie + opcjonalnie „nie pytaj”). */

@@ -159,7 +159,7 @@ def test_lite_mode_from_url(server, query):
         state = scene_state(page)
         body_class = page.evaluate("() => document.body.classList.contains('lite-mode')")
         select = page.input_value("#perf-mode")
-        stored = page.evaluate("() => localStorage.getItem('dronesim.perf')")
+        stored = page.evaluate("() => localStorage.getItem('dronesim.perf:standard')")
         browser.close()
     assert errors == [], errors
     assert state["lite"] is True
@@ -181,7 +181,7 @@ def test_lite_mode_from_settings_and_persisted(server):
         page.select_option("#perf-mode", "lite")
         page.wait_for_function("() => Boolean(window.__scene.lite)", timeout=TIMEOUT_MS)
         state = scene_state(page)
-        stored = page.evaluate("() => localStorage.getItem('dronesim.perf')")
+        stored = page.evaluate("() => localStorage.getItem('dronesim.perf:standard')")
         page.reload(wait_until="domcontentloaded")
         page.wait_for_function("() => Boolean(window.__scene)", timeout=TIMEOUT_MS)
         page.wait_for_function("() => Boolean(window.__scene.lite)", timeout=TIMEOUT_MS)
@@ -261,4 +261,32 @@ def test_lite_renders_on_demand(server):
     lite = frames_for("?lite=1")
     assert lite <= 6, f"tryb lekki narysował {lite} klatek bez zmian (oczekiwane <= 6)"
     assert full > lite, (full, lite)
+
+
+def test_lite_setting_does_not_leak_between_editions(server):
+    """Tryb lekki zapisany w wydaniu for_potatoes nie włącza się w standardzie.
+
+    Klucz ustawienia zawiera edycję (``dronesim.perf:<edycja>``), więc wybór
+    „Lekka” zrobiony w wydaniu dla słabych komputerów nie zmienia edycji
+    standardowej.
+    """
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        context = browser.new_context(viewport={"width": 1280, "height": 720})
+        page = context.new_page()
+        errors = open_app(page, server)              # zwykłe wejście (origin)
+        page.evaluate("""() => {
+            localStorage.setItem('dronesim.perf:for_potatoes', 'lite');
+            localStorage.removeItem('dronesim.perf:standard');
+        }""")
+        page.reload(wait_until="domcontentloaded")
+        page.wait_for_function("() => Boolean(window.__scene)", timeout=TIMEOUT_MS)
+        state = scene_state(page)
+        select = page.input_value("#perf-mode")
+        standard = page.evaluate("() => localStorage.getItem('dronesim.perf:standard')")
+        browser.close()
+    assert errors == [], errors
+    assert state["lite"] is False, "klucz for_potatoes nie może włączać trybu lekkiego"
+    assert select == "auto", select
+    assert standard is None
 
