@@ -1,7 +1,13 @@
-"""Ścieżki projektu - wszystkie liczone względem katalogu repozytorium.
+"""Ścieżki projektu - liczone względem katalogu repozytorium.
 
 Nie używamy ścieżek bezwzględnych, aby projekt można było sklonować w dowolne
 miejsce (na Windows, macOS i Linux).
+
+Dane użytkownika (loty, własne sceny, ``config.json``) leżą domyślnie
+w katalogu projektu - tak działa wersja z git i ``start.bat``. Wersja
+instalowana (``DroneSim-Setup.exe``) ustawia zmienną środowiskową
+:data:`DATA_DIR_ENV`, dzięki czemu dane są w ``%LOCALAPPDATA%\\DroneSim``
+i przeżywają aktualizację oraz deinstalację.
 """
 
 from __future__ import annotations
@@ -17,14 +23,39 @@ STATIC_DIR: Path = APP_DIR / "static"
 ADAPTERS_DIR: Path = APP_DIR / "adapters"
 TEMPLATES_DIR: Path = APP_DIR / "templates"
 
-FLIGHTS_DIR: Path = PROJECT_ROOT / "flights"
-EXAMPLES_DIR: Path = PROJECT_ROOT / "examples"
-TESTS_DIR: Path = PROJECT_ROOT / "tests"
-UPLOADS_DIR: Path = FLIGHTS_DIR / "_uploads"
+#: zmienna środowiskowa z katalogiem danych użytkownika (ustawia launcher/instalator)
+DATA_DIR_ENV = "DRONESIM_DATA_DIR"
 
 IS_WINDOWS: bool = os.name == "nt"
 VENV_DIR: Path = PROJECT_ROOT / ".venv"
 VENV_PYTHON: Path = VENV_DIR / ("Scripts/python.exe" if IS_WINDOWS else "bin/python")
+
+
+def data_dir() -> Path:
+    """Katalog danych użytkownika (loty, sceny, konfiguracja).
+
+    Kolejność: ``DRONESIM_DATA_DIR`` (launcher/instalator) -> katalog projektu.
+    Wersja z git nie ustawia zmiennej, więc zachowanie jest jak dotąd.
+    """
+    override = os.environ.get(DATA_DIR_ENV)
+    if override:
+        try:
+            return Path(override).expanduser().resolve()
+        except (OSError, RuntimeError):
+            pass
+    return PROJECT_ROOT
+
+
+#: katalog danych (obliczony przy imporcie - launcher ustawia zmienną przed startem)
+DATA_ROOT: Path = data_dir()
+FLIGHTS_DIR: Path = DATA_ROOT / "flights"
+EXAMPLES_DIR: Path = PROJECT_ROOT / "examples"
+TESTS_DIR: Path = PROJECT_ROOT / "tests"
+UPLOADS_DIR: Path = FLIGHTS_DIR / "_uploads"
+#: własne sceny użytkownika (przykładowe zostają w ``PROJECT_ROOT/scenes``)
+SCENES_USER_DIR: Path = DATA_ROOT / "scenes" / "user"
+#: plik konfiguracji aplikacji (domyślnie w katalogu danych)
+CONFIG_FILE: Path = DATA_ROOT / "config.json"
 
 
 def ensure_dirs() -> None:

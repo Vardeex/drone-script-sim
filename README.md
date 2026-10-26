@@ -317,12 +317,40 @@ trafia do stanu „błąd” z komunikatem w zakładce **Wtyczki**.
 Gotowy wzór: [`plugins/example_hello/`](plugins/example_hello/).
 Opis krok po kroku: **[docs/plugins.md](docs/plugins.md)**.
 
-## Najprościej: pobierz gotową paczkę (Windows)
+## Instalacja (Windows)
 
-Jeśli nie chcesz nic instalować: na stronie
+**Zalecane: instalator.** Na stronie
 **[Releases](https://github.com/Vardeex/drone-script-sim/releases)** pobierz
+`DroneSim-Setup-<wersja>.exe` i uruchom go. Instalacja jest **dla bieżącego
+użytkownika, bez uprawnień administratora** (`%LOCALAPPDATA%\Programs\DroneSim`),
+dodaje skrót w menu Start i opcjonalnie na pulpicie, a po instalacji może od razu
+uruchomić program.
+
+Program uruchamia się jako `DroneSim.exe` (launcher): startuje serwer bez okna
+konsoli, czeka na `/api/health`, otwiera przeglądarkę i pokazuje ikonę
+w zasobniku z menu **Otwórz** / **Zakończ** („Zakończ” zatrzymuje serwer razem
+z procesami potomnymi). Jeśli serwer już działa, launcher tylko otwiera
+przeglądarkę.
+
+> **SmartScreen:** plik nie jest podpisany certyfikatem, więc Windows może
+> pokazać „Windows chronił Twój komputer” → **Więcej informacji → Uruchom mimo
+> to**.
+>
+> **Antywirus:** niepodpisane pliki `.exe` bywają oznaczane jako podejrzane
+> (brak reputacji, nie zawartość). Sumy SHA-256 są w `SHA256SUMS.txt`:
+> `certutil -hashfile DroneSim-Setup-<wersja>.exe SHA256`.
+
+**Dane użytkownika** (loty, własne sceny, `config.json`) są w
+`%LOCALAPPDATA%\DroneSim` - poza katalogiem programu, więc aktualizacja ich nie
+nadpisuje, a deinstalacja nie kasuje (kreator pyta, czy je usunąć).
+
+**Odinstalowanie:** Ustawienia → Aplikacje → Zainstalowane aplikacje → „Drone
+Script Simulator” → Odinstaluj.
+
+**Wersja przenośna (bez instalatora):** pobierz
 `DroneSim-portable-<wersja>-win64.zip`, rozpakuj **cały** ZIP i kliknij dwa razy
-`start.bat`. Przeglądarka otworzy się na `http://127.0.0.1:8765/`.
+`DroneSim.exe` (launcher) albo `start.bat` (wersja z oknem konsoli). Przeglądarka
+otworzy się na `http://127.0.0.1:8765/`.
 
 Paczka zawiera własny Python 3.11 (oficjalny *embeddable package* z python.org)
 i wszystkie zależności, więc **nic nie jest instalowane w systemie** - usunięcie
@@ -332,11 +360,17 @@ programu to skasowanie katalogu. W środku są też przykłady, sceny i ten pora
 |---|---|
 | instrukcja na start | `PRZECZYTAJ.txt` w rozpakowanym katalogu |
 | poradnik krok po kroku | `docs\PORADNIK.md` |
-| inny port | `set PORT=9000` przed uruchomieniem `start.bat` |
+| inny port | `DroneSim.exe --port 9000` albo `set PORT=9000` + `start.bat` |
+| dane (instalator) | `%LOCALAPPDATA%\DroneSim` |
+| dane (portable/git) | katalog programu (`flights\`, `scenes\user\`, `config.json`) |
 
-Paczkę buduje `release_tools/build_portable.py` (pobiera Pythona z weryfikacją
-sumy SHA-256/MD5 z python.org), a wydanie publikuje workflow `release.yml` -
-uruchamiany **tylko** po wypchnięciu tagu `v*`.
+Pliki wydania budują: `release_tools/build_exe.py` (launcher, PyInstaller
+onedir), `release_tools/build_portable.py` (ZIP z wbudowanym Pythonem,
+weryfikacja sumy SHA-256/MD5 z python.org) i `release_tools/build_installer.py`
+(instalator Inno Setup 6). Workflow `release.yml` uruchamia się **tylko** po
+wypchnięciu tagu `v*` i publikuje trzy pliki: instalator, paczkę i
+`SHA256SUMS.txt` - każdy po teście dymnym (`smoke_portable.py`,
+`smoke_installer.py`).
 
 ### Jak wydać nową wersję (dla autora)
 

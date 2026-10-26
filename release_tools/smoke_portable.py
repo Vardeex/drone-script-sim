@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -118,6 +119,43 @@ def run_script(base: str, source: str, name: str) -> Dict[str, Any]:
     raise AssertionError(f"skrypt {name} nie zakończył się w {TIMEOUT_RUN_S:.0f} s")
 
 
+def _check_launcher(package: Path, port: int) -> None:
+    """Sprawdź ``DroneSim.exe`` z paczki: start serwera, health, zamknięcie."""
+    exe = package / "DroneSim.exe"
+    assert exe.exists(), "w paczce brak DroneSim.exe (launcher)"
+    contents = package / "_launcher"
+    assert contents.is_dir(), "w paczce brak katalogu _launcher (PyInstaller onedir)"
+    icon = package / "dronesim.ico"
+    assert icon.exists(), "w paczce brak ikony dronesim.ico"
+
+    stop_file = package.parent / "launcher-stop.txt"
+    stop_file.unlink(missing_ok=True)
+    data_dir = package.parent / "launcher-data"
+    _print(f"launcher: {exe.name} (start, health, stop-file)")
+    process = subprocess.Popen(
+        [str(exe), "--no-tray", "--no-browser", "--port", str(port),
+         "--data-dir", str(data_dir), "--stop-file", str(stop_file)],
+        cwd=str(package))
+    try:
+        health = wait_health(f"http://127.0.0.1:{port}")
+        assert health == "ok", f"launcher: /api/health = {health!r}"
+        # dane użytkownika idą do wskazanego katalogu, nie do paczki
+        assert (data_dir / "logs").is_dir(), "launcher nie utworzył logów w danych"
+        stop_file.write_text("stop", encoding="utf-8")
+        code = process.wait(timeout=180)
+        assert code == 0, f"launcher zakończył się kodem {code}"
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=15)
+    time.sleep(1.5)
+    with socket.socket() as sock:
+        sock.settimeout(0.5)
+        assert sock.connect_ex(("127.0.0.1", port)) != 0, \
+            "launcher zostawił serwer (port nadal zajęty)"
+    _print("launcher: serwer zatrzymany, brak sierot")
+
+
 def smoke(zip_path: Path, port: int, keep: bool = False) -> None:
     """Pełny test dymny: rozpakowanie, start, dwa skrypty, sprzątanie."""
     (ROOT / "tmp").mkdir(exist_ok=True)
@@ -157,6 +195,10 @@ def smoke(zip_path: Path, port: int, keep: bool = False) -> None:
         assert "DRONEMOVES_OK" in text, text[:400]
         assert flight["samples"], "brak telemetrii ze skryptu dronemoves"
         _print(f"dronemoves: {len(flight['samples'])} próbek")
+
+        # launcher z paczki: serwer + grzeczne zamknięcie (ten sam mechanizm
+        # co „Zakończ” w zasobniku; sprawdzamy też brak procesów sierotnych)
+        _check_launcher(package, port + 1)
         _print("TEST DYMNY OK")
     finally:
         if process is not None and process.poll() is None:

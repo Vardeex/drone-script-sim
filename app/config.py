@@ -27,9 +27,13 @@ CONFIG_NAME = "config.json"
 
 
 def config_path() -> Path:
-    """Ścieżka pliku konfiguracji (domyślnie ``<projekt>/config.json``)."""
+    """Ścieżka pliku konfiguracji.
+
+    Kolejność: ``DRONESIM_CONFIG_FILE`` (testy) -> ``<dane>/config.json``
+    (katalog projektu albo ``%LOCALAPPDATA%\\DroneSim`` w wersji instalowanej).
+    """
     override = os.environ.get("DRONESIM_CONFIG_FILE")
-    return Path(override) if override else paths.PROJECT_ROOT / CONFIG_NAME
+    return Path(override) if override else paths.CONFIG_FILE
 
 
 def load() -> Dict[str, Any]:

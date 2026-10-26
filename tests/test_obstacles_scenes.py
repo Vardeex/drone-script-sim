@@ -7,17 +7,25 @@ from pathlib import Path
 
 import pytest
 
+from app import paths
 from app.features.obstacles import store
 from app.features.obstacles.model import Obstacle, Scene, SceneError
 
 
 @pytest.fixture()
 def scenes_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Sceny w katalogu tymczasowym (przykładowe + użytkownika)."""
+    """Sceny w katalogu tymczasowym (przykładowe + użytkownika).
+
+    Od wersji 0.4 własne sceny leżą w katalogu danych użytkownika
+    (``paths.SCENES_USER_DIR``, w instalatorze ``%LOCALAPPDATA%\\DroneSim``),
+    a nie w ``scenes/user`` w katalogu programu - dlatego podmieniamy oba.
+    """
     root = tmp_path / "scenes"
     root.mkdir()
-    (root / store.USER_DIR_NAME).mkdir()
+    user = root / store.USER_DIR_NAME
+    user.mkdir()
     monkeypatch.setattr(store, "SCENES_DIR", root)
+    monkeypatch.setattr(paths, "SCENES_USER_DIR", user)
     return root
 
 

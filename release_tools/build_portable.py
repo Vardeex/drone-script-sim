@@ -349,16 +349,45 @@ def write_readme_first(package_dir: Path, version: str) -> None:
 ================================================================
 
 1. Rozpakuj CALY plik ZIP do dowolnego katalogu (np. D:\\DroneSim).
-2. Kliknij dwa razy `start.bat`.
+2. Kliknij dwa razy `DroneSim.exe` (launcher: serwer + przegladarka + ikona
+   w zasobniku) ALBO `start.bat` (wersja "klasyczna", okno konsoli).
 3. Przegladarka otworzy sie na http://127.0.0.1:8765/
 
 Nic nie jest instalowane w systemie - Python jest w katalogu `python\\`.
 Aby usunac program, skasuj katalog z rozpakowana paczka.
 
+Jesli Windows pokaze ostrzezenie SmartScreen: "Wiecej informacji" ->
+"Uruchom mimo to" (plik nie jest podpisany certyfikatem).
+
 Dokumentacja: `docs\\PORADNIK.md` (krok po kroku) i `README.md`.
 """
     (package_dir / "PRZECZYTAJ.txt").write_text(text.replace("\n", "\r\n"),
                                                 encoding="utf-8", newline="")
+
+
+def copy_launcher(package_dir: Path) -> None:
+    """Wstaw ``DroneSim.exe`` (+ katalog ``_launcher``) do paczki przenośnej.
+
+    Launcher buduje ``build_exe.py``. Gdy go nie ma, paczka nadal działa przez
+    ``start.bat`` - wypisujemy wtedy ostrzeżenie (zamiast przerywać budowę).
+    """
+    source = ROOT / "dist" / "launcher"
+    exe = source / "DroneSim.exe"
+    if not exe.exists():
+        _print("UWAGA: brak dist/launcher/DroneSim.exe - uruchom build_exe.py; "
+               "paczka bedzie miala tylko start.bat")
+        return
+    shutil.copy2(exe, package_dir / "DroneSim.exe")
+    contents = source / "_launcher"
+    target = package_dir / "_launcher"
+    if target.exists():
+        shutil.rmtree(target, ignore_errors=True)
+    if contents.is_dir():
+        shutil.copytree(contents, target)
+    icon = source / "dronesim.ico"
+    if icon.exists():
+        shutil.copy2(icon, package_dir / "dronesim.ico")
+    _print("dodano launcher DroneSim.exe (+ katalog _launcher)")
 
 
 # ------------------------------------------------------------------- pakowanie
@@ -385,6 +414,7 @@ def assemble(package_dir: Path, embedded: Path) -> None:
         shutil.copy2(source, destination)
 
     write_start_bat(package_dir)
+    copy_launcher(package_dir)
     write_readme_first(package_dir, app_version())
 
 
@@ -434,6 +464,8 @@ def verify_zip(zip_path: Path) -> List[str]:
                 problems.append(f"ścieżka użytkownika w nazwie: {name}")
             if "site-packages/" in lowered or "site-packages\\" in lowered:
                 continue                     # kod firm trzecich - nie nasz wyciek
+            if name.endswith("/_launcher/"):
+                continue                     # biblioteki launchera (PyInstaller)
             if not (info.file_size and info.file_size < 2_000_000
                     and name.endswith(text_suffixes)):
                 continue

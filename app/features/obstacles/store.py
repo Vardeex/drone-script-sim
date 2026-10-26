@@ -27,12 +27,13 @@ _NAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.\- ]{0,79}$")
 
 
 def scenes_root() -> Path:
-    """Katalog ze scenami (nadpisywalny w testach)."""
+    """Katalog ze scenami przykładowymi (nadpisywalny w testach)."""
     return SCENES_DIR
 
 
 def user_dir() -> Path:
-    return scenes_root() / USER_DIR_NAME
+    """Katalog własnych scen użytkownika (w katalogu danych, nie w programie)."""
+    return paths.SCENES_USER_DIR
 
 
 def ensure_dirs() -> None:

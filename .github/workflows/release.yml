@@ -50,11 +50,42 @@ jobs:
             throw "Tag ${{ github.ref_name }} nie odpowiada wersji w app/__init__.py ($version). Podnieś wersję albo popraw tag."
           }
 
-      - name: Zbuduj paczkę (embeddable Python + zależności)
+      - name: Zbuduj launcher DroneSim.exe (PyInstaller)
+        # PyInstaller instaluje się do osobnego środowiska w tools/ (wersja
+        # przypięta w build_exe.py). Tryb onedir + katalog _launcher, bez UPX
+        # i bez konsoli - uzasadnienie w nagłówku build_exe.py.
+        shell: pwsh
+        run: python release_tools/build_exe.py
+
+      - name: Zbuduj paczkę przenośną (z DroneSim.exe w środku)
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}".TrimStart('v')
           python release_tools/build_portable.py --version $version --out dist
+
+      - name: Zainstaluj Inno Setup (oficjalne wydanie, wersja przypięta)
+        # windows-latest nie ma Inno Setup. Bierzemy oficjalny instalator
+        # z repo jrsoftware/issrc (wersja 6.7.3) i instalujemy TYLKO do
+        # katalogu tymczasowego runnera (/PORTABLE=1 = bez wpisów w systemie).
+        shell: pwsh
+        run: |
+          $url = "https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe"
+          $setup = Join-Path $env:RUNNER_TEMP "innosetup-6.7.3.exe"
+          Invoke-WebRequest -Uri $url -OutFile $setup -UseBasicParsing
+          $dir = Join-Path $env:RUNNER_TEMP "innosetup"
+          Start-Process -FilePath $setup -Wait -ArgumentList @(
+            "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/NOICONS",
+            "/PORTABLE=1", "/DIR=$dir")
+          if (-not (Test-Path (Join-Path $dir "ISCC.exe"))) {
+            throw "Inno Setup nie zainstalowal sie w $dir"
+          }
+          Write-Host "ISCC: $dir\ISCC.exe"
+
+      - name: Zbuduj instalator (Inno Setup)
+        shell: pwsh
+        env:
+          ISCC: ${{ runner.temp }}\innosetup\ISCC.exe
+        run: python release_tools/build_installer.py --out dist
 
       - name: Test dymny paczki (start, /api/health, dwa przykłady)
         shell: pwsh
@@ -63,30 +94,61 @@ jobs:
           Write-Host "test dymny: $zip"
           python release_tools/smoke_portable.py --zip $zip
 
+      - name: Test dymny instalatora (cicha instalacja, API, deinstalacja)
+        # instaluje w katalogu tymczasowym runnera i z osobnym katalogiem danych,
+        # więc nie rusza prawdziwych danych użytkownika
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem dist/DroneSim-Setup-*.exe | Select-Object -First 1).FullName
+          Write-Host "test dymny: $setup"
+          python release_tools/smoke_installer.py --installer $setup
+
       - name: Notatki wydania z CHANGELOG (UTF-8, polskie znaki)
         # Skrypt zapisuje plik jako UTF-8 bez BOM i sam sprawdza, że czyta się
         # z powrotem bez zmian; `gh release create --notes-file` czyta taki plik
         # poprawnie. Nagłówek wydania trzymamy w ASCII (nazwa + tag).
         run: python release_tools/changelog_notes.py --version ${{ github.ref_name }} --out release_notes.md
 
-      - name: Zachowaj paczkę jako artefakt (diagnostyka)
+      - name: Sumy SHA256 plików wydania
+        # Plik niepodpisany certyfikatem, więc użytkownik może zweryfikować
+        # pobrany instalator/paczkę: certutil -hashfile <plik> SHA256
+        shell: pwsh
+        run: |
+          $files = @()
+          $files += Get-ChildItem dist/DroneSim-Setup-*.exe
+          $files += Get-ChildItem dist/DroneSim-portable-*-win64.zip
+          $lines = foreach ($file in $files) {
+            $hash = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($file.Name)"
+          }
+          $path = Join-Path (Resolve-Path dist) "SHA256SUMS.txt"
+          # UTF-8 bez BOM - czyta się w każdym edytorze i w `sha256sum -c`
+          [System.IO.File]::WriteAllText($path, ($lines -join "`n") + "`n",
+            (New-Object System.Text.UTF8Encoding($false)))
+          Get-Content $path
+
+      - name: Zachowaj pliki wydania jako artefakt (diagnostyka)
         uses: actions/upload-artifact@v4
         with:
-          name: portable-${{ github.ref_name }}
+          name: release-${{ github.ref_name }}
           path: |
             dist/*.zip
+            dist/DroneSim-Setup-*.exe
+            dist/SHA256SUMS.txt
             release_notes.md
           if-no-files-found: error
           retention-days: 14
 
-      - name: Utwórz GitHub Release z paczką
+      - name: Utwórz GitHub Release (instalator, paczka, sumy SHA256)
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $tag = "${{ github.ref_name }}"
           $zip = (Get-ChildItem dist/DroneSim-portable-*-win64.zip | Select-Object -First 1).FullName
-          gh release create $tag $zip `
+          $setup = (Get-ChildItem dist/DroneSim-Setup-*.exe | Select-Object -First 1).FullName
+          $sums = (Resolve-Path dist/SHA256SUMS.txt).Path
+          gh release create $tag $setup $zip $sums `
             --title "Drone Script Simulator $tag" `
             --notes-file release_notes.md `
             --verify-tag

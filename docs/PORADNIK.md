@@ -29,21 +29,60 @@ Potrzebujesz: Windows 10/11, ok. 1 GB miejsca na dysku, przeglądarki
 (Edge, Chrome, Opera albo Firefox). **Nie** potrzebujesz konta, internetu po
 instalacji, ani prawdziwego drona.
 
-### 1.0. Najprościej: gotowa paczka (bez instalowania Pythona)
+### 1.0. Instalacja: pobierz `DroneSim-Setup.exe` (zalecane)
 
-Jeśli nie chcesz instalować Pythona ani niczego ustawiać w systemie:
+Najprostsza droga - bez instalowania Pythona i bez uprawnień administratora:
 
 1. Wejdź na [github.com/Vardeex/drone-script-sim/releases](https://github.com/Vardeex/drone-script-sim/releases).
-2. Pobierz `DroneSim-portable-<wersja>-win64.zip`.
-3. **Rozpakuj cały ZIP** do dowolnego katalogu (np. `D:\DroneSim`). Nie kopiuj
+2. Pobierz `DroneSim-Setup-<wersja>.exe`.
+3. Uruchom instalator. Instaluje **tylko dla Ciebie** (bez pytania o hasło
+   administratora) do `%LOCALAPPDATA%\Programs\DroneSim`, dodaje skrót w menu
+   Start (opcjonalnie na pulpicie) i - jeśli zostawisz zaznaczoną opcję - od razu
+   uruchamia program.
+4. Od tej pory uruchamiasz program skrótem **Drone Script Simulator**. Pojawia
+   się ikona w zasobniku (obok zegara) z menu **Otwórz** i **Zakończ**;
+   „Zakończ” zatrzymuje serwer (żadnych procesów w tle).
+
+**Ostrzeżenie SmartScreen.** Plik nie jest podpisany certyfikatem komercyjnym,
+więc Windows może pokazać niebieskie okno „Windows chronił Twój komputer”.
+Kliknij **Więcej informacji → Uruchom mimo to**. To normalne dla małych,
+darmowych projektów; podpisanie certyfikatem kosztuje kilkaset złotych rocznie.
+
+**Fałszywe alarmy antywirusa.** Niepodpisane pliki `.exe` (instalator i launcher)
+bywają oznaczane jako „podejrzane” - to reakcja na brak reputacji pliku, a nie na
+jego zawartość. Jeśli chcesz sprawdzić pobrany plik, porównaj jego sumę SHA-256
+z plikiem `SHA256SUMS.txt` z tego samego wydania:
+
+```bat
+certutil -hashfile DroneSim-Setup-0.4.0.exe SHA256
+type SHA256SUMS.txt
+```
+
+**Gdzie są moje dane?** Loty, własne sceny i `config.json` leżą w
+`%LOCALAPPDATA%\DroneSim` - **poza** katalogiem programu. Dzięki temu instalacja
+nowszej wersji ich nie nadpisuje, a deinstalacja ich nie kasuje (usuwa je tylko
+wtedy, gdy w kreatorze deinstalacji wybierzesz „Tak”).
+
+**Odinstalowanie.** Ustawienia → Aplikacje → Zainstalowane aplikacje →
+„Drone Script Simulator” → Odinstaluj. Kreator zapyta, czy usunąć także dane.
+
+### 1.0a. Wersja przenośna (ZIP, bez instalatora)
+
+Jeśli wolisz nie instalować niczego:
+
+1. Na stronie [Releases](https://github.com/Vardeex/drone-script-sim/releases)
+   pobierz `DroneSim-portable-<wersja>-win64.zip`.
+2. **Rozpakuj cały ZIP** do dowolnego katalogu (np. `D:\DroneSim`). Nie kopiuj
    pojedynczych plików z podglądu archiwum - program potrzebuje całego katalogu
    `python\`.
-4. Kliknij dwa razy `start.bat`. Przeglądarka otworzy się na
-   `http://127.0.0.1:8765/`.
+3. Kliknij dwa razy `DroneSim.exe` (launcher: serwer + przeglądarka + ikona
+   w zasobniku) albo `start.bat` (wersja klasyczna, z oknem konsoli).
+   Przeglądarka otworzy się na `http://127.0.0.1:8765/`.
 
 Nic nie jest instalowane w systemie: Python 3.11 i biblioteki są w katalogu
-`python\` w rozpakowanej paczce. Usunięcie programu = skasowanie katalogu.
-Jeśli port 8765 jest zajęty, ustaw inny przed uruchomieniem:
+`python\` w rozpakowanej paczce, a dane (loty, sceny) w katalogu programu.
+Usunięcie programu = skasowanie katalogu. Jeśli port 8765 jest zajęty, ustaw
+inny przed uruchomieniem:
 
 ```bat
 set PORT=9000
