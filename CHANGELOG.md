@@ -3,6 +3,44 @@
 Format: [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/); wersjonowanie
 zgodne z [SemVer](https://semver.org/lang/pl/).
 
+## [0.4.0-for_potatoes] - 2026-10-26
+
+Wydanie **tego samego kodu 0.4.0** przygotowane dla słabych komputerów
+(bez nowego numeru wersji). Ten sam plik `edition.json` w paczce decyduje
+o edycji - bez niego działa edycja standardowa.
+
+### Dodane
+
+* **Edycja `for_potatoes`**: startuje od razu w trybie lekkim (bez pytania i bez
+  pomiaru FPS), domyślnie wyłącza wtyczkę `example_hello`, kamerę FPV, tryb
+  realistyczny i przerywaną linię planu (wszystko włączalne w „Wtyczkach”,
+  ustawieniach i planerze), a w nagłówku/stopce pokazuje
+  „Drone Script Simulator 0.4.0 for_potatoes”,
+* osobne pliki wydania: `DroneSim-Setup-0.4.0-for_potatoes.exe`,
+  `DroneSim-portable-0.4.0-for_potatoes-win64.zip` i
+  `SHA256SUMS-for_potatoes.txt`; instalator instaluje się **obok** wersji
+  standardowej (inny `AppId`, katalog i nazwa w „Aplikacjach i funkcje”),
+  ale korzysta z tych samych danych w `%LOCALAPPDATA%\DroneSim`,
+* workflow wydania obsługuje tag `v<wersja>-for_potatoes` (tylko ta edycja,
+  osobny Release) obok `v<wersja>` (edycja standardowa).
+
+### Wydajność (profil „ziemniak”: CPU 6x wolniej, SwiftShader, 1280x720)
+
+| Scenariusz | Przed | Tryb pełny | **Tryb lekki** |
+|---|---|---|---|
+| bezczynna scena | 31,1 FPS / JS 9,09 ms | 33,7 / 8,16 | **60,0 / 0,50** |
+| odtwarzanie 1x | 18,4 / 14,92 | 22,6 / 12,27 | **60,0 (30 klatek rysowanych/s) / 2,96** |
+| długi lot + przewijanie | 20,4 / 15,38 | 22,6 / 13,35 | **59,5 / 2,54** |
+| tor przeszkód + odtwarzanie | 16,3 / 19,14 | 17,6 / 16,04 | **60,0 / 3,31** |
+| lot ręczny | 24,4 / 10,27 | 24,5 / 8,99 | **60,0 / 2,08** |
+| planer - przeciąganie punktu | 14,8 / 21,88 | 15,3 / 21,64 | **57,9 / 3,40** |
+
+* start do pierwszego obrazu: **918-1060 ms → 423-478 ms**,
+* draw calls: 56-127 → **16-31**, trójkąty: 12-321-15-903 → **405-1-153**,
+* dane lotu `basic_square.py`: 46,6 kB → **4,95 kB** (gzip w HTTP).
+
+Pełne tabele, metodyka i opis wąskich gardeł: `docs/wydajnosc.md`.
+
 ## [0.4.0] - 2026-10-26
 
 ### Dodane
@@ -35,6 +73,14 @@ zgodne z [SemVer](https://semver.org/lang/pl/).
   `common.py` - budowa plików wydania bez ręcznych kroków,
 * **`isTypingTarget`** (`app/static/js/keys.js`) - jedna wspólna reguła dla
   wszystkich skrótów klawiaturowych,
+* **Tryb lekki sceny 3D** (ustawienie „Wydajność: Automatycznie / Pełna /
+  Lekka”, parametr `?lite=1`): renderowanie tylko przy zmianach z limitem 30 FPS,
+  bez cieni/mgły/świateł, prostszy model drona, trasa uproszczona RDP, panele
+  10 razy na sekundę, bez etykiet-sprite'ów. Szczegóły i pomiary:
+  `docs/wydajnosc.md`,
+* **`release_tools/perf_bench.py`**: powtarzalny pomiar wydajności (Playwright,
+  profile „normalny” i „ziemniak”, 6 scenariuszy, FPS/1% low/JS/pamięć/draw
+  calls/rozmiar danych lotu) + test `perf` (marker, CI tylko z przycisku),
 * **Sterowanie aktywne tylko po kliknięciu sceny 3D** w locie ręcznym: ramka
   wokół sceny i plakietka „Sterowanie aktywne - kliknij poza sceną, by wyłączyć
   (Esc też kończy)”; Esc lub kliknięcie poza sceną wyłącza sterowanie.
@@ -46,6 +92,8 @@ zgodne z [SemVer](https://semver.org/lang/pl/).
   a ostatnio wybrana jest pamiętana w `localStorage` („✚ Nowa” czyści pamięć).
   Lot z historii nadal wczytuje własną scenę,
 * zakładka **Lot ręczny** opisuje nowy sposób aktywacji sterowania,
+* **dane lotu są kompresowane gzipem** w HTTP (46,6 kB → 4,95 kB dla
+  `basic_square.py`); wynik, pliki na dysku i format JSON bez zmian,
 * `start.bat` zostaje w paczce przenośnej jako wersja „klasyczna”,
 * README i PORADNIK: instalator jako pierwsza opcja, ostrzeżenie SmartScreen,
   fałszywe alarmy antywirusa i weryfikacja SHA-256, gdzie są dane, deinstalacja.
@@ -64,7 +112,11 @@ zgodne z [SemVer](https://semver.org/lang/pl/).
   paczki (brak interpretera = czytelny komunikat, nie rekurencja),
 * ścieżka katalogu danych w `launcher.json` jest poprawnie escapowana,
 * deinstalator zna katalog danych z instalacji (plik `data-dir.txt`), więc
-  potrafi go usunąć na żądanie; w trybie cichym nie zawiesza się na pytaniu.
+  potrafi go usunąć na żądanie; w trybie cichym nie zawiesza się na pytaniu,
+* **znaczniki kolizji na trasie** były przebudowywane w każdej klatce (nowe
+  siatki i tekstury etykiet), co obniżało FPS w scenariuszu z przeszkodami
+  (16,3 → 17,6 FPS w trybie pełnym i 60 FPS w lekkim). Teraz przebudowa następuje
+  tylko wtedy, gdy zmieni się liczba „miniętych” znaczników - wygląd bez zmian.
 
 ## [0.3.0] - 2026-10-25
 
