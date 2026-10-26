@@ -3,6 +3,18 @@
 Format: [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/); wersjonowanie
 zgodne z [SemVer](https://semver.org/lang/pl/).
 
+## [0.4.1] - 2026-10-26
+
+### Dodane
+
+* **Przycisk „Zakończ program”** w nagłówku (z potwierdzeniem „Zamknąć
+  DroneSim?”) i endpoint **`POST /api/shutdown`**: zatrzymuje uruchomione
+  skrypty oraz serwer, a launcher `DroneSim.exe` kończy się razem z nim
+  (mechanizm `--stop-file`). Po zamknięciu strona pokazuje „Program zakończony –
+  możesz zamknąć tę kartę”. Endpoint przyjmuje **tylko** połączenia z tego
+  komputera (`127.0.0.1`/`::1`), więc żadna strona w przeglądarce nie zamknie
+  programu zdalnie.
+
 ## [0.4.0-for_potatoes] - 2026-10-26
 
 Wydanie **tego samego kodu 0.4.0** przygotowane dla słabych komputerów

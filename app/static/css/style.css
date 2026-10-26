@@ -47,6 +47,10 @@ header {
   display: flex;
   align-items: center;
   gap: 12px;
+  /* przy wąskim oknie (np. 1280 px) przyciski przechodzą do drugiej linii
+     zamiast wychodzić poza krawędź - m.in. „Zakończ program” */
+  flex-wrap: wrap;
+  row-gap: 6px;
   padding: 8px 14px;
   background: linear-gradient(180deg, #16202c, #121922);
   border-bottom: 1px solid var(--border);
@@ -501,6 +505,39 @@ table.data tr.status-ok td:first-child { border-left: 3px solid transparent; }
 
 .compare-result li {
   margin-bottom: 4px;
+}
+
+#btn-shutdown {
+  white-space: nowrap;
+  /* po zawinięciu (wąskie okno) przycisk trzyma się prawej krawędzi */
+  margin-left: auto;
+}
+
+/* Ekran po zamknięciu programu (nagłówek: „Zakończ program”) - przykrywa
+   interfejs, żeby było jasne, że serwer już nie działa i kartę można zamknąć. */
+.shutdown-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 12, 18, .94);
+}
+
+.shutdown-card {
+  padding: 28px 36px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #121922;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, .45);
+  text-align: center;
+}
+
+.shutdown-text {
+  margin: 0;
+  font-size: 16px;
+  color: #e8f0fa;
 }
 
 

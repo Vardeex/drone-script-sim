@@ -329,7 +329,7 @@ aplikacji w wydaniu dla słabych komputerów:
 * domyślnie wyłączone są mało przydatne dodatki: wtyczka `example_hello`,
   kamera FPV, tryb realistyczny i przerywana linia planu - każdy z nich można
   włączyć w zakładce **Wtyczki** / w ustawieniach,
-* w nagłówku i stopce widać „Drone Script Simulator 0.4.0 for_potatoes”,
+* w nagłówku i stopce widać „Drone Script Simulator <wersja> for_potatoes”,
 * instaluje się **obok** wersji standardowej (inny katalog, inna nazwa
   w „Aplikacjach i funkcje”, skrót „DroneSim for_potatoes”), ale **korzysta
   z tych samych danych** w `%LOCALAPPDATA%\DroneSim`,

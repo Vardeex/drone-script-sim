@@ -56,6 +56,10 @@ APP_TITLE = "Drone Script Simulator"
 DEFAULT_PORT = 8765
 HEALTH_TIMEOUT_S = 90.0
 DATA_DIR_ENV = "DRONESIM_DATA_DIR"
+#: ścieżka pliku ``--stop-file`` przekazywana serwerowi - przycisk „Zakończ
+#: program” (POST /api/shutdown) zapisuje ten plik, a launcher kończy się tak,
+#: jak przy normalnym zamknięciu (chowa zasobnik i zatrzymuje procesy potomne)
+STOP_FILE_ENV = "DRONESIM_STOP_FILE"
 #: plik obok ``DroneSim.exe`` z ustawieniami instalatora (m.in. katalog danych)
 LAUNCHER_CONFIG = "launcher.json"
 #: ``python.exe`` nie pokazuje okna konsoli
@@ -416,7 +420,8 @@ def python_executable(root: Path) -> Optional[Path]:
     return None
 
 
-def start_server(root: Path, data_dir: Path, port: int, log: Log):
+def start_server(root: Path, data_dir: Path, port: int, log: Log,
+                 stop_file: Optional[str] = None):
     """Uruchom serwer wbudowanym Pythonem (bez okna konsoli) w obiekcie zadania."""
     python = python_executable(root)
     if python is None:
@@ -428,6 +433,9 @@ def start_server(root: Path, data_dir: Path, port: int, log: Log):
     env[DATA_DIR_ENV] = str(data_dir)
     env["PYTHONUTF8"] = "1"                    # polskie znaki w logach serwera
     env["PYTHONIOENCODING"] = "utf-8"
+    if stop_file:
+        # serwer zapisze ten plik na żądanie POST /api/shutdown
+        env[STOP_FILE_ENV] = str(Path(stop_file).resolve())
     env.pop("PYTHONPATH", None)                # serwer ma używać kodu z paczki
     server_log = (data_dir / "logs" / f"server-{datetime.now():%Y%m%d}.log")
     server_log.parent.mkdir(parents=True, exist_ok=True)
@@ -572,7 +580,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         show_error(message)
         return 4
 
-    process, job, handle, server_log = start_server(root, data_dir, args.port, log)
+    process, job, handle, server_log = start_server(root, data_dir, args.port, log,
+                                                    args.stop_file)
     stop_event = threading.Event()
     tray: Optional[TrayIcon] = None
     code = 0

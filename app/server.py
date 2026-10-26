@@ -27,6 +27,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import os
 import sys
 import threading
 import time
@@ -44,7 +45,7 @@ from . import edition, paths, runner, storage
 from .adapters.base import detect_adapter, get_adapter, list_adapters
 from .features import plugin_model, registry
 
-app = FastAPI(title="Drone Script Simulator", version="0.4.0")
+app = FastAPI(title="Drone Script Simulator", version="0.4.1")
 # Lot z tysiącami próbek to kilka MB JSON-a. Gzip zmniejsza transfer ~10x
 # (dane, wyniki i pliki na dysku pozostają bez zmian - to tylko transport).
 app.add_middleware(GZipMiddleware, minimum_size=1024)
@@ -517,3 +518,57 @@ def api_check(request: CheckRequest) -> Dict[str, Any]:
     from . import staticcheck
 
     return staticcheck.check(request.source)
+
+
+# ------------------------------------------------------ zakończenie programu
+#: zmienna środowiska z ścieżką pliku ``--stop-file`` launchera
+STOP_FILE_ENV = "DRONESIM_STOP_FILE"
+
+
+def _is_loopback(host: Optional[str]) -> bool:
+    """Czy adres klienta jest lokalny (tylko wtedy wolno zamknąć program)."""
+    if not host:
+        return False
+    if host in {"::1", "localhost"}:
+        return True
+    return host.startswith("127.")
+
+
+def _exit_process(code: int = 0) -> None:
+    """Zakończ proces serwera (osobna funkcja - w testach jest podmieniana)."""
+    os._exit(code)
+
+
+@app.post("/api/shutdown")
+def api_shutdown(request: Request) -> Dict[str, Any]:
+    """Zakończ program (przycisk „Zakończ program” w nagłówku).
+
+    Dozwolone **tylko** z tego komputera: aplikacja nasłuchuje wyłącznie na
+    127.0.0.1, ale adres klienta sprawdzamy niezależnie, żeby żadna strona
+    otwarta w przeglądarce nie mogła zamknąć programu (ani przez podmieniony
+    nagłówek ``Host``, bo patrzymy na adres gniazda).
+
+    Kolejność: zatrzymaj uruchomione skrypty (procesy potomne) -> zapisz plik
+    ``--stop-file``, jeśli launcher go wskazał (launcher wtedy kończy się jak
+    przy normalnym zamknięciu, chowając zasobnik) -> zakończ proces serwera
+    chwilę po wysłaniu odpowiedzi, żeby przeglądarka zdążyła ją odebrać.
+    """
+    client = request.client.host if request.client else None
+    if not _is_loopback(client):
+        raise HTTPException(
+            403, "Zamknięcie programu jest dozwolone tylko z tego komputera.")
+
+    stopped = runner.stop_all()
+    stop_file = os.environ.get(STOP_FILE_ENV)
+    written: Optional[str] = None
+    if stop_file:
+        try:
+            path = Path(stop_file)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("shutdown\n", encoding="utf-8")
+            written = str(path)
+        except OSError as exc:                  # brak praw - i tak zakończymy
+            print(f"[shutdown] nie mogę zapisać {stop_file}: {exc}", file=sys.stderr)
+
+    threading.Timer(0.4, _exit_process, args=(0,)).start()
+    return {"stopping": True, "stopped_runs": stopped, "stop_file": written}

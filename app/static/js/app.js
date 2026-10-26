@@ -15,7 +15,7 @@ import {
 } from './perf.js';
 
 //: wersja modułów funkcji (cache-busting lokalnego serwera statyków)
-export const ASSET_VERSION = 'v27';
+export const ASSET_VERSION = 'v28';
 
 //: edycja wydania - „for_potatoes” startuje w trybie lekkim (patrz edition.json)
 export const edition = await fetchEdition();
@@ -377,6 +377,39 @@ function loadFlight(data, meta = {}) {
   onFrame(0);
 }
 
+/**
+ * Zakończ program: potwierdzenie → ``POST /api/shutdown`` → ekran końcowy.
+ *
+ * Endpoint przyjmuje żądania tylko z tego komputera (127.0.0.1), zatrzymuje
+ * uruchomione skrypty i kończy serwer; launcher ``DroneSim.exe`` kończy się
+ * razem z nim (dostaje plik ``--stop-file``). Gdy serwer zdąży się zamknąć
+ * przed odpowiedzią, ``fetch`` rzuci błąd - to normalne, pokazujemy ekran.
+ */
+async function shutdownApp() {
+  if (!window.confirm('Zamknąć DroneSim?')) return;
+  const button = $('#btn-shutdown');
+  if (button) button.disabled = true;
+  try {
+    await fetch('/api/shutdown', { method: 'POST' });
+  } catch (err) {
+    console.warn('shutdown: brak odpowiedzi serwera (to oczekiwane)', err);
+  }
+  showShutdownScreen();
+}
+
+/** Ekran „Program zakończony” - przykrywa interfejs po zamknięciu serwera. */
+function showShutdownScreen() {
+  player.pause();
+  if ($('#shutdown-screen')) return;
+  const box = el('div', { id: 'shutdown-screen', class: 'shutdown-screen' }, [
+    el('div', { class: 'shutdown-card' }, [
+      el('p', { class: 'shutdown-text',
+        text: 'Program zakończony – możesz zamknąć tę kartę.' }),
+    ]),
+  ]);
+  document.body.append(box);
+}
+
 async function runSimulation() {
   const source = $('#editor-area').value;
   if (!source.trim()) {
@@ -734,6 +767,7 @@ function bindUi() {
   if (refreshPlugins) refreshPlugins.addEventListener('click', () => renderPlugins());
 
   $('#btn-run').addEventListener('click', runSimulation);
+  $('#btn-shutdown').addEventListener('click', shutdownApp);
   $('#btn-stop').addEventListener('click', async () => {
     if (!state.runId || !state.running) return;
     $('#btn-stop').disabled = true;

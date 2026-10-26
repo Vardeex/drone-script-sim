@@ -830,8 +830,8 @@ zmienia tylko sposób rysowania.
 To **to samo wydanie aplikacji** (ta sama wersja, ten sam kod) przygotowane dla
 słabych komputerów. Pobierz z
 [Releases](https://github.com/Vardeex/drone-script-sim/releases) plik
-`DroneSim-Setup-0.4.0-for_potatoes.exe` albo paczkę
-`DroneSim-portable-0.4.0-for_potatoes-win64.zip`.
+`DroneSim-Setup-<wersja>-for_potatoes.exe` albo paczkę
+`DroneSim-portable-<wersja>-for_potatoes-win64.zip`.
 
 Co jest inne:
 
@@ -839,7 +839,7 @@ Co jest inne:
 * domyślnie wyłączone są dodatki, które na słabym sprzęcie tylko przeszkadzają:
   przykładowa wtyczka `example_hello`, kamera **FPV**, **tryb realistyczny**
   i przerywana **linia planu** w planerze,
-* w nagłówku i stopce widać „Drone Script Simulator 0.4.0 for_potatoes”,
+* w nagłówku i stopce widać „Drone Script Simulator <wersja> for_potatoes”,
 * instaluje się **obok** wersji standardowej - inny katalog programu, inna nazwa
   w „Aplikacjach i funkcje” i skrót „DroneSim for_potatoes”. **Dane użytkownika
   są wspólne** (`%LOCALAPPDATA%\DroneSim`): loty i sceny z jednej edycji widać

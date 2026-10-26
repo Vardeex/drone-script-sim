@@ -29,6 +29,7 @@
       <select id="adapter-select" title="Adapter drona"></select>
       <button id="btn-run" class="primary" title="Uruchom skrypt (Ctrl+Enter)">▶ Uruchom symulację</button>
       <button id="btn-stop" class="ghost" disabled title="Przerwij symulację">■ Stop</button>
+      <button id="btn-shutdown" class="ghost" title="Zakończ program (zatrzymaj serwer DroneSim)">⏻ Zakończ program</button>
     </header>
 
     <div id="viewport">
@@ -322,7 +323,7 @@ opóźnienie RC i niedokładność ruchów (założenia modelu)">Realizm:
     console.error('[dronesim] błąd UI:', event.message, event.filename, event.lineno);
   });
 </script>
-<script type="module" src="/static/js/app.js?v=27"></script>
+<script type="module" src="/static/js/app.js?v=28"></script>
 </body>
 </html>
 
