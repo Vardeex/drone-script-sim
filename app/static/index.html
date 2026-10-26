@@ -29,6 +29,14 @@
       <select id="adapter-select" title="Adapter drona"></select>
       <button id="btn-run" class="primary" title="Uruchom skrypt (Ctrl+Enter)">▶ Uruchom symulację</button>
       <button id="btn-stop" class="ghost" disabled title="Przerwij symulację">■ Stop</button>
+      <div class="menu-wrap" id="app-menu-wrap">
+        <button id="btn-menu" class="ghost" title="Menu programu"
+                aria-haspopup="true" aria-expanded="false">☰</button>
+        <div class="menu-popup" id="app-menu" role="menu" hidden>
+          <button class="menu-item" id="menu-shutdown" role="menuitem"
+                  title="Zatrzymaj serwer i zamknij launcher">⏻ Zakończ DroneSim</button>
+        </div>
+      </div>
       <button id="btn-shutdown" class="ghost" title="Zakończ program (zatrzymaj serwer DroneSim)">⏻ Zakończ program</button>
     </header>
 

@@ -234,6 +234,32 @@ wyłączone).
 **Co by pomogło.** Ponowne utworzenie `WebGLRenderer` przy zmianie trybu
 (nowa kanwa, utrata kontekstu) - zmiana większa niż zysk, więc odłożona.
 
+---
+
+## KI-9: Windows 11 trzyma ikonę w „ukrytych ikonach” (schowek „^”)
+
+**Objaw.** Po instalacji ikona DroneSim nie leży bezpośrednio na pasku zadań,
+tylko w schowku ukrytych ikon („^” obok zegara). Widać ją dopiero po rozwinięciu
+schowka; do 0.4.0 nie było jej też wcale po restarcie Eksploratora.
+
+**Co naprawiono w 0.4.1** (patrz `CHANGELOG.md`): prototypy Win32 (wcześniej
+`TrackPopupMenu` dostawał obcięty uchwyt i **menu się nie pokazywało**),
+`NOTIFYICON_VERSION_4`, `SetForegroundWindow` + `PostMessage(WM_NULL)` wokół
+menu, stały GUID (`NIF_GUID`) i obsługa `TaskbarCreated`. Dzięki GUID system
+pamięta wybór użytkownika między uruchomieniami, a aplikacja prosi o pokazanie
+ikony (`dwStateMask = NIS_HIDDEN`, `dwState = 0`).
+
+**Czego nadal nie da się zrobić.** Windows 11 nie udostępnia API, które kazałoby
+systemowi **przypiąć** ikonę do paska zadań - o miejscu decyduje użytkownik
+(przeciągnięcie ikony albo Ustawienia → Personalizacja → Pasek zadań → Inne
+ikony zasobnika). Dlatego zamknięcie programu nie zależy od ikony: jest menu
+**☰** w nagłówku, przycisk **⏻ Zakończ program** i skrót **Zamknij DroneSim**
+w menu Start (`DroneSim.exe --shutdown`).
+
+**Diagnostyka.** `DroneSim.exe --tray-selftest` wypisuje, gdzie system położył
+ikonę (`Shell_NotifyIconGetRect`: `on_screen`) i czy menu rzeczywiście się
+pojawiło (`menu_shown`, `menu_rect`).
+
 jest grupa `route-planner` z markerami.
 
 ---

@@ -385,9 +385,26 @@ uruchomić program.
 
 Program uruchamia się jako `DroneSim.exe` (launcher): startuje serwer bez okna
 konsoli, czeka na `/api/health`, otwiera przeglądarkę i pokazuje ikonę
-w zasobniku z menu **Otwórz** / **Zakończ** („Zakończ” zatrzymuje serwer razem
-z procesami potomnymi). Jeśli serwer już działa, launcher tylko otwiera
-przeglądarkę.
+w zasobniku z menu **Otwórz DroneSim** / **Zakończ DroneSim** (lewy przycisk
+ikonny otwiera aplikację, prawy pokazuje menu; „Zakończ DroneSim” zatrzymuje
+serwer razem z procesami potomnymi). Jeśli serwer już działa, launcher tylko
+otwiera przeglądarkę.
+
+Jak zamknąć program (trzy niezależne sposoby - na wypadek, gdyby ikona była
+schowana):
+
+* menu **☰** w nagłówku aplikacji → **Zakończ DroneSim**,
+* przycisk **⏻ Zakończ program** w nagłówku (z potwierdzeniem),
+* **Menu Start → Zamknij DroneSim** (skrót instalatora uruchamia
+  `DroneSim.exe --shutdown`); działa też `DroneSim.exe --shutdown` z wiersza
+  poleceń.
+
+> **Windows 11 i „ukryte ikony”:** nowe ikony w zasobniku trafiają domyślnie do
+> schowka („^” obok zegara). Aplikacja używa stałego GUID i prosi system
+> o pokazanie ikony, ale o przypięciu decyduje Windows - jeśli ikony nie widać,
+> przeciągnij ją na pasek zadań (albo: Ustawienia → Personalizacja → Pasek
+> zadań → Inne ikony zasobnika). Zamknięcie programu nie zależy od ikony:
+> użyj menu **☰** w nagłówku albo skrótu **Zamknij DroneSim** w menu Start.
 
 > **SmartScreen:** plik nie jest podpisany certyfikatem, więc Windows może
 > pokazać „Windows chronił Twój komputer” → **Więcej informacji → Uruchom mimo

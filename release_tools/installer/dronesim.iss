@@ -98,6 +98,8 @@ Type: files; Name: "{app}\data-dir.txt"
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"
+Name: "{group}\Zamknij DroneSim"; Filename: "{app}\{#AppExeName}"; Parameters: "--shutdown"; \
+  Comment: "Zamyka działającą instancję DroneSim (serwer i launcher)"
 Name: "{group}\Odinstaluj {#AppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
 

@@ -513,6 +513,45 @@ table.data tr.status-ok td:first-child { border-left: 3px solid transparent; }
   margin-left: auto;
 }
 
+/* Menu w nagłówku („☰” → „Zakończ DroneSim”). Ikona w zasobniku bywa
+   niewidoczna w Windows 11 (schowek „ukrytych ikon”), więc zamknięcie programu
+   musi być dostępne także tutaj. */
+.menu-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.menu-popup {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 200px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #121922;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, .45);
+  z-index: 1500;
+}
+
+.menu-popup .menu-item {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #e8f0fa;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu-popup .menu-item:hover,
+.menu-popup .menu-item:focus-visible {
+  background: #1d2a3a;
+}
+
 /* Ekran po zamknięciu programu (nagłówek: „Zakończ program”) - przykrywa
    interfejs, żeby było jasne, że serwer już nie działa i kartę można zamknąć. */
 .shutdown-screen {

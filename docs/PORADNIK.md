@@ -41,8 +41,26 @@ Najprostsza droga - bez instalowania Pythona i bez uprawnień administratora:
    Start (opcjonalnie na pulpicie) i - jeśli zostawisz zaznaczoną opcję - od razu
    uruchamia program.
 4. Od tej pory uruchamiasz program skrótem **Drone Script Simulator**. Pojawia
-   się ikona w zasobniku (obok zegara) z menu **Otwórz** i **Zakończ**;
-   „Zakończ” zatrzymuje serwer (żadnych procesów w tle).
+   się ikona w zasobniku (obok zegara) z menu **Otwórz DroneSim** i
+   **Zakończ DroneSim**; lewy przycisk ikony otwiera aplikację, a „Zakończ
+   DroneSim” zatrzymuje serwer (żadnych procesów w tle).
+
+### Jak zamknąć program
+
+Na Windows 11 nowe ikony w zasobniku są domyślnie schowane w schowku „^” obok
+zegara - dlatego program można zamknąć **trzema** sposobami, niezależnie od
+ikony:
+
+| Sposób | Gdzie |
+|---|---|
+| menu **☰ → Zakończ DroneSim** | nagłówek aplikacji w przeglądarce |
+| przycisk **⏻ Zakończ program** | nagłówek aplikacji (pyta „Zamknąć DroneSim?”) |
+| skrót **Zamknij DroneSim** | menu Start (uruchamia `DroneSim.exe --shutdown`) |
+| menu ikony → **Zakończ DroneSim** | zasobnik (jeśli ikona jest widoczna) |
+
+Jeśli ikony nie widać: przeciągnij ją na pasek zadań albo wejdź w
+**Ustawienia → Personalizacja → Pasek zadań → Inne ikony zasobnika** i włącz
+DroneSim. Aplikacja zapamiętuje to ustawienie (stały GUID ikony).
 
 **Ostrzeżenie SmartScreen.** Plik nie jest podpisany certyfikatem komercyjnym,
 więc Windows może pokazać niebieskie okno „Windows chronił Twój komputer”.

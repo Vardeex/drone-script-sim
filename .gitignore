@@ -4,6 +4,8 @@ tools/
 cache/
 tmp/
 dist/
+# logi launchera/serwera (powstają w katalogu danych; przy uruchomieniu z repo tutaj)
+logs/
 
 # Wyniki lotów (dane runtime, w tym wgrane skrypty i katalogi robocze _work)
 flights/

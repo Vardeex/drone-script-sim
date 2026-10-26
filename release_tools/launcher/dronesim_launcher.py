@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import itertools
 import json
 import os
 import subprocess
@@ -46,11 +47,12 @@ import threading
 import time
 import urllib.error
 import urllib.request
+import uuid
 import webbrowser
 from ctypes import wintypes
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 APP_TITLE = "Drone Script Simulator"
 DEFAULT_PORT = 8765
@@ -215,6 +217,13 @@ class _NotifyIconData(ctypes.Structure):
                 ("hBalloonIcon", wintypes.HICON)]
 
 
+class _NotifyIconIdentifier(ctypes.Structure):
+    """``NOTIFYICONIDENTIFIER`` - identyfikacja ikony dla ``Shell_NotifyIconGetRect``."""
+
+    _fields_ = [("cbSize", wintypes.DWORD), ("hWnd", wintypes.HWND),
+                ("uID", wintypes.UINT), ("guidItem", _Guid)]
+
+
 _WNDPROC = ctypes.WINFUNCTYPE(ctypes.c_ssize_t, wintypes.HWND, wintypes.UINT,
                               wintypes.WPARAM, wintypes.LPARAM)
 
@@ -228,18 +237,82 @@ class _WndClass(ctypes.Structure):
                 ("lpszClassName", wintypes.LPCWSTR)]
 
 
+#: Stały GUID ikony. Bez niego system rozpoznaje ikonę po parze (hwnd, uID),
+#: a hwnd jest inny przy każdym uruchomieniu - Windows traktuje wtedy ikonę jak
+#: nową i wrzuca ją do „ukrytych ikon”, zapominając wyboru użytkownika.
+TRAY_GUID_TEXT = "{A3D6C1E2-4B7F-4C58-9E1A-2F0B6D8C7A31}"
+
+
+def guid_from_text(text: str) -> _Guid:
+    """Zamień GUID w postaci tekstowej na strukturę Win32 (kolejność little-endian)."""
+    raw = uuid.UUID(text).bytes_le
+    data4 = (ctypes.c_ubyte * 8)(*raw[8:16])
+    return _Guid(int.from_bytes(raw[0:4], "little"),
+                 int.from_bytes(raw[4:6], "little"),
+                 int.from_bytes(raw[6:8], "little"), data4)
+
+
+def tray_action(event: int) -> Optional[str]:
+    """Co zrobić po zdarzeniu ikony: ``"open"``, ``"menu"`` albo ``None``.
+
+    Wersja 4 powiadomień (``NOTIFYICON_VERSION_4``) przysyła w ``lParam`` zdarzenia
+    ``NIN_SELECT`` / ``NIN_KEYSELECT`` / ``WM_CONTEXTMENU``; starsze wersje
+    przysyłają komunikaty myszy (``WM_LBUTTONUP`` itd.). Obsługujemy oba warianty:
+    lewy przycisk otwiera aplikację, prawy (i menu z klawiatury) pokazuje menu.
+    """
+    if event in (TrayIcon.NIN_SELECT, TrayIcon.WM_LBUTTONUP,
+                 TrayIcon.WM_LBUTTONDBLCLK):
+        return "open"
+    if event in (TrayIcon.NIN_KEYSELECT, TrayIcon.WM_CONTEXTMENU,
+                 TrayIcon.WM_RBUTTONUP):
+        return "menu"
+    return None
+
+
+def tray_menu_items() -> List[Tuple[int, Optional[str]]]:
+    """Pozycje menu ikony: ``(id, tekst)``; ``None`` = separator."""
+    return [(TrayIcon.ID_OPEN, "Otwórz DroneSim"),
+            (0, None),
+            (TrayIcon.ID_QUIT, "Zakończ DroneSim")]
+
+
+#: licznik instancji ikony - każda potrzebuje własnej nazwy klasy okna
+_TRAY_CLASS_COUNTER = itertools.count(1)
+
+
 class TrayIcon:
-    """Ikona w zasobniku z menu „Otwórz” / „Zakończ” (czyste Win32, bez zależności)."""
+    """Ikona w zasobniku z menu „Otwórz DroneSim” / „Zakończ DroneSim”.
+
+    Czyste Win32 (ctypes), bez zależności. Ważne szczegóły, bez których menu
+    bywa niewidoczne na Windows 11:
+
+    * **prototypy funkcji** - bez ``argtypes`` ctypes obcina uchwyty (HMENU/HWND)
+      do 32 bitów, więc ``TrackPopupMenu`` dostawał nieprawidłowy uchwyt menu;
+    * **``NOTIFYICON_VERSION_4``** (``NIM_SETVERSION``) - poprawne kotwiczenie
+      menu, zdarzenia ``NIN_SELECT``/``WM_CONTEXTMENU``;
+    * **``SetForegroundWindow`` + ``PostMessage(WM_NULL)``** przed/po
+      ``TrackPopupMenu`` - inaczej menu nie pojawia się albo nie znika;
+    * **``NIF_GUID``** ze stałym GUID - system pamięta ustawienie „pokaż ikonę”;
+    * **``TaskbarCreated``** - po restarcie Eksploratora ikona jest dodawana
+      ponownie (wcześniej znikała na zawsze).
+    """
 
     WM_TRAY = 0x8000 + 1
     WM_COMMAND = 0x0111
     WM_CLOSE = 0x0010
     WM_DESTROY = 0x0002
+    WM_NULL = 0x0000
+    WM_CONTEXTMENU = 0x007B
     WM_LBUTTONUP = 0x0202
+    WM_LBUTTONDBLCLK = 0x0203
     WM_RBUTTONUP = 0x0205
-    NIM_ADD, NIM_MODIFY, NIM_DELETE = 0, 1, 2
-    NIF_MESSAGE, NIF_ICON, NIF_TIP = 0x01, 0x02, 0x04
-    MF_STRING = 0x0000
+    NIN_SELECT, NIN_KEYSELECT = 0x0400, 0x0401
+    NIM_ADD, NIM_MODIFY, NIM_DELETE, NIM_SETVERSION = 0, 1, 2, 4
+    NIF_MESSAGE, NIF_ICON, NIF_TIP, NIF_STATE = 0x01, 0x02, 0x04, 0x08
+    NIF_GUID = 0x20
+    NIS_HIDDEN = 0x01
+    NOTIFYICON_VERSION_4 = 4
+    MF_STRING, MF_SEPARATOR = 0x0000, 0x0800
     TPM_RIGHTBUTTON, TPM_RETURNCMD, TPM_NONOTIFY = 0x0002, 0x0100, 0x0080
     ID_OPEN, ID_QUIT = 1001, 1002
 
@@ -247,6 +320,7 @@ class TrayIcon:
         self.user32 = ctypes.WinDLL("user32", use_last_error=True)
         self.shell32 = ctypes.WinDLL("shell32", use_last_error=True)
         self.kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        self._declare_prototypes()
         self.tooltip = tooltip[:127]
         self.on_open = None
         self.on_quit = None
@@ -254,23 +328,108 @@ class TrayIcon:
         self._icon_path = icon_path
         self._hicon = None
         self._data = None
+        self._guid = guid_from_text(TRAY_GUID_TEXT)
+        self._use_guid = True
+        self._version4 = False
+        self.taskbar_created = 0
         self._proc = _WNDPROC(self._wndproc)      # trzymamy referencję (GC!)
-        self.class_name = f"DroneSimLauncher{os.getpid()}"
+        # nazwa klasy musi być unikalna w procesie (testy tworzą kilka ikon)
+        self.class_name = (f"DroneSimLauncher{os.getpid()}"
+                           f"_{next(_TRAY_CLASS_COUNTER)}")
+
+    def _declare_prototypes(self) -> None:
+        """Ustaw typy argumentów i wyników - inaczej ctypes obcina uchwyty.
+
+        Bez ``argtypes`` ctypes traktuje każdy argument jako 32-bitowy ``int``,
+        więc 64-bitowe uchwyty (HMENU, HWND) są obcinane. Skutek: ``TrackPopupMenu``
+        dostawał nieprawidłowy uchwyt menu i menu ikony **w ogóle się nie pokazywało**.
+        """
+        u, s, k = self.user32, self.shell32, self.kernel32
+        u.RegisterClassW.argtypes = [ctypes.c_void_p]
+        u.CreateWindowExW.argtypes = [wintypes.DWORD, wintypes.LPCWSTR, wintypes.LPCWSTR,
+                                      wintypes.DWORD, ctypes.c_int, ctypes.c_int,
+                                      ctypes.c_int, ctypes.c_int, wintypes.HWND,
+                                      wintypes.HMENU, wintypes.HINSTANCE,
+                                      ctypes.c_void_p]
+        u.CreateWindowExW.restype = wintypes.HWND
+        u.DestroyWindow.argtypes = [wintypes.HWND]
+        u.DestroyWindow.restype = wintypes.BOOL
+        u.DefWindowProcW.argtypes = [wintypes.HWND, wintypes.UINT,
+                                     wintypes.WPARAM, wintypes.LPARAM]
+        u.DefWindowProcW.restype = ctypes.c_ssize_t
+        u.GetMessageW.argtypes = [ctypes.POINTER(wintypes.MSG), wintypes.HWND,
+                                  wintypes.UINT, wintypes.UINT]
+        u.GetMessageW.restype = ctypes.c_int
+        u.TranslateMessage.argtypes = [ctypes.POINTER(wintypes.MSG)]
+        u.DispatchMessageW.argtypes = [ctypes.POINTER(wintypes.MSG)]
+        u.DispatchMessageW.restype = ctypes.c_ssize_t
+        u.PostQuitMessage.argtypes = [ctypes.c_int]
+        u.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT,
+                                   wintypes.WPARAM, wintypes.LPARAM]
+        u.PostMessageW.restype = wintypes.BOOL
+        u.SetForegroundWindow.argtypes = [wintypes.HWND]
+        u.SetForegroundWindow.restype = wintypes.BOOL
+        u.CreatePopupMenu.restype = wintypes.HMENU
+        u.AppendMenuW.argtypes = [wintypes.HMENU, wintypes.UINT, ctypes.c_size_t,
+                                  wintypes.LPCWSTR]
+        u.AppendMenuW.restype = wintypes.BOOL
+        u.DestroyMenu.argtypes = [wintypes.HMENU]
+        u.DestroyMenu.restype = wintypes.BOOL
+        u.TrackPopupMenu.argtypes = [wintypes.HMENU, wintypes.UINT, ctypes.c_int,
+                                     ctypes.c_int, ctypes.c_int, wintypes.HWND,
+                                     ctypes.c_void_p]
+        u.TrackPopupMenu.restype = wintypes.BOOL
+        u.GetCursorPos.argtypes = [ctypes.POINTER(wintypes.POINT)]
+        u.GetCursorPos.restype = wintypes.BOOL
+        u.LoadImageW.argtypes = [wintypes.HINSTANCE, wintypes.LPCWSTR, wintypes.UINT,
+                                 ctypes.c_int, ctypes.c_int, wintypes.UINT]
+        u.LoadImageW.restype = wintypes.HANDLE
+        u.LoadIconW.argtypes = [wintypes.HINSTANCE, wintypes.LPCWSTR]
+        u.LoadIconW.restype = wintypes.HICON
+        u.RegisterWindowMessageW.argtypes = [wintypes.LPCWSTR]
+        u.RegisterWindowMessageW.restype = wintypes.UINT
+        u.PeekMessageW.argtypes = [ctypes.POINTER(wintypes.MSG), wintypes.HWND,
+                                   wintypes.UINT, wintypes.UINT, wintypes.UINT]
+        u.PeekMessageW.restype = wintypes.BOOL
+        u.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
+        u.FindWindowW.restype = wintypes.HWND
+        u.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+        u.GetWindowRect.restype = wintypes.BOOL
+        u.GetSystemMetrics.argtypes = [ctypes.c_int]
+        u.GetSystemMetrics.restype = ctypes.c_int
+        s.Shell_NotifyIconW.argtypes = [wintypes.DWORD,
+                                        ctypes.POINTER(_NotifyIconData)]
+        s.Shell_NotifyIconW.restype = wintypes.BOOL
+        s.Shell_NotifyIconGetRect.argtypes = [ctypes.POINTER(_NotifyIconIdentifier),
+                                              ctypes.POINTER(wintypes.RECT)]
+        s.Shell_NotifyIconGetRect.restype = ctypes.c_long        # HRESULT
+        k.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
+        k.GetModuleHandleW.restype = wintypes.HMODULE
 
     def create(self) -> None:
-        """Zarejestruj klasę okna i utwórz ukryte okno (bez pokazywania)."""
+        """Zarejestruj klasę okna, utwórz ukryte okno i dodaj ikonę do zasobnika."""
         instance = self.kernel32.GetModuleHandleW(None)
         wnd_class = _WndClass()
         wnd_class.lpfnWndProc = self._proc
         wnd_class.hInstance = instance
         wnd_class.lpszClassName = self.class_name
         if not self.user32.RegisterClassW(ctypes.byref(wnd_class)):
-            raise OSError(ctypes.get_last_error(), "RegisterClassW nie powiódł się")
+            error = ctypes.get_last_error()
+            # 1410 = ERROR_CLASS_ALREADY_EXISTS - klasa o tej nazwie już jest
+            # (ta sama nazwa w procesie), można jej użyć
+            if error != 1410:
+                raise OSError(error, "RegisterClassW nie powiódł się")
         self.hwnd = self.user32.CreateWindowExW(
             0, self.class_name, APP_TITLE, 0, 0, 0, 0, 0, None, None, instance, None)
         if not self.hwnd:
             raise OSError(ctypes.get_last_error(), "CreateWindowExW nie powiódł się")
         self._hicon = self._load_icon()
+        # komunikat wysyłany przez Eksplorator po restarcie paska zadań
+        self.taskbar_created = self.user32.RegisterWindowMessageW("TaskbarCreated")
+        self.add_icon()
+
+    def add_icon(self) -> None:
+        """Dodaj ikonę (z GUID, a gdy shell odmówi - bez GUID) i ustaw wersję 4."""
         data = _NotifyIconData()
         data.cbSize = ctypes.sizeof(_NotifyIconData)
         data.hWnd = self.hwnd
@@ -279,10 +438,65 @@ class TrayIcon:
         data.uCallbackMessage = self.WM_TRAY
         data.hIcon = self._hicon
         data.szTip = self.tooltip
+        if self._use_guid:
+            data.uFlags |= self.NIF_GUID
+            data.guidItem = self._guid
         if not self.shell32.Shell_NotifyIconW(self.NIM_ADD, ctypes.byref(data)):
+            if self._use_guid:
+                # starszy shell albo ikona już zarejestrowana bez GUID
+                self._use_guid = False
+                self.add_icon()
+                return
             raise OSError(ctypes.get_last_error(),
                           "Shell_NotifyIconW(NIM_ADD) nie powiódł się")
         self._data = data
+        # Wersja 4: zdarzenia NIN_SELECT/NIN_KEYSELECT/WM_CONTEXTMENU i punkt
+        # zakotwiczenia menu w wParam (bez tego menu bywa w złym miejscu).
+        version = _NotifyIconData()
+        version.cbSize = ctypes.sizeof(_NotifyIconData)
+        version.hWnd = self.hwnd
+        version.uID = 1
+        version.uFlags = self.NIF_GUID if self._use_guid else 0
+        if self._use_guid:
+            version.guidItem = self._guid
+        version.uVersion = self.NOTIFYICON_VERSION_4
+        self._version4 = bool(
+            self.shell32.Shell_NotifyIconW(self.NIM_SETVERSION, ctypes.byref(version)))
+        self.show_icon()
+
+    def show_icon(self) -> None:
+        """Poproś shell, żeby ikona była widoczna (nie w „ukrytych ikonach”).
+
+        Windows 11 domyślnie wrzuca nowe ikony do schowka; nie ma API, które
+        wymusi ich przypięcie, ale wyzerowanie ``NIS_HIDDEN`` jest prośbą, którą
+        shell zwykle spełnia. Stały GUID sprawia, że wybór użytkownika zostaje
+        zapamiętany przy kolejnych uruchomieniach.
+        """
+        data = _NotifyIconData()
+        data.cbSize = ctypes.sizeof(_NotifyIconData)
+        data.hWnd = self.hwnd
+        data.uID = 1
+        data.uFlags = self.NIF_STATE | (self.NIF_GUID if self._use_guid else 0)
+        if self._use_guid:
+            data.guidItem = self._guid
+        data.dwState = 0                    # 0 = widoczna
+        data.dwStateMask = self.NIS_HIDDEN
+        self.shell32.Shell_NotifyIconW(self.NIM_MODIFY, ctypes.byref(data))
+
+    def icon_rect(self) -> Dict[str, object]:
+        """Gdzie jest ikona (``Shell_NotifyIconGetRect``) - diagnostyka widoczności."""
+        identify = _NotifyIconIdentifier()
+        identify.cbSize = ctypes.sizeof(_NotifyIconIdentifier)
+        identify.hWnd = self.hwnd
+        identify.uID = 1
+        if self._use_guid:
+            identify.guidItem = self._guid
+        rect = wintypes.RECT()
+        result = self.shell32.Shell_NotifyIconGetRect(ctypes.byref(identify),
+                                                      ctypes.byref(rect))
+        return {"hresult": int(result), "found": int(result) == 0,
+                "rect": [int(rect.left), int(rect.top),
+                         int(rect.right), int(rect.bottom)]}
 
     def run(self, on_open, on_quit) -> None:
         """Pętla komunikatów - blokuje, dopóki użytkownik nie wybierze „Zakończ”."""
@@ -319,18 +533,42 @@ class TrayIcon:
                 return icon
         return self.user32.LoadIconW(None, ctypes.c_wchar_p(32512))   # IDI_APPLICATION
 
-    def _show_menu(self) -> None:
+    def _anchor(self, wparam: int) -> tuple:
+        """Punkt zakotwiczenia menu: z ``wParam`` (wersja 4) albo kursor."""
+        if self._version4:
+            x = ctypes.c_short(wparam & 0xFFFF).value
+            y = ctypes.c_short((wparam >> 16) & 0xFFFF).value
+            if x or y:
+                return x, y
         point = wintypes.POINT()
         self.user32.GetCursorPos(ctypes.byref(point))
+        return point.x, point.y
+
+    def _show_menu(self, x: Optional[int] = None, y: Optional[int] = None) -> None:
+        """Pokaż menu ikony (prawy przycisk myszy albo klawiatura)."""
+        if x is None or y is None:
+            x, y = self._anchor(0)
         menu = self.user32.CreatePopupMenu()
-        self.user32.AppendMenuW(menu, self.MF_STRING, self.ID_OPEN, "Otwórz")
-        self.user32.AppendMenuW(menu, self.MF_STRING, self.ID_QUIT, "Zakończ")
-        self.user32.SetForegroundWindow(self.hwnd)
-        chosen = self.user32.TrackPopupMenu(
-            menu, self.TPM_RIGHTBUTTON | self.TPM_RETURNCMD | self.TPM_NONOTIFY,
-            point.x, point.y, 0, self.hwnd, None)
-        self.user32.DestroyMenu(menu)
-        self._command(chosen)
+        if not menu:
+            return
+        chosen = 0
+        try:
+            for item_id, label in tray_menu_items():
+                if label is None:
+                    self.user32.AppendMenuW(menu, self.MF_SEPARATOR, 0, None)
+                else:
+                    self.user32.AppendMenuW(menu, self.MF_STRING, item_id, label)
+            # Bez SetForegroundWindow menu nie dostaje fokusu i potrafi w ogóle
+            # się nie pokazać; PostMessage(WM_NULL) po zamknięciu jest wymagane,
+            # żeby menu zamykało się po kliknięciu poza nim (klasyczna pułapka).
+            self.user32.SetForegroundWindow(self.hwnd)
+            chosen = self.user32.TrackPopupMenu(
+                menu, self.TPM_RIGHTBUTTON | self.TPM_RETURNCMD | self.TPM_NONOTIFY,
+                int(x), int(y), 0, self.hwnd, None)
+        finally:
+            self.user32.DestroyMenu(menu)
+            self.user32.PostMessageW(self.hwnd, self.WM_NULL, 0, 0)
+        self._command(int(chosen))
 
     def _command(self, command: int) -> None:
         if command == self.ID_OPEN and self.on_open:
@@ -340,12 +578,20 @@ class TrayIcon:
 
     def _wndproc(self, hwnd, message, wparam, lparam):
         if message == self.WM_TRAY:
-            event = lparam & 0xFFFF
-            if event in (self.WM_LBUTTONUP, self.WM_RBUTTONUP):
-                self._show_menu()
+            action = tray_action(lparam & 0xFFFF)
+            if action == "open":
+                if self.on_open:
+                    self.on_open()
+            elif action == "menu":
+                self._show_menu(*self._anchor(wparam))
             return 0
         if message == self.WM_COMMAND:
             self._command(wparam & 0xFFFF)
+            return 0
+        if self.taskbar_created and message == self.taskbar_created:
+            # Eksplorator został zrestartowany - ikona zniknęła z paska, dodaj ją
+            self._data = None
+            self.add_icon()
             return 0
         if message == self.WM_CLOSE:
             self.user32.DestroyWindow(hwnd)
@@ -481,6 +727,119 @@ def stop_server(process, job, log: Log) -> None:
         process.wait(timeout=10)
 
 
+def shutdown_running(port: int, log: Log) -> int:
+    """Zamknij działającą instancję (``--shutdown``, skrót „Zamknij DroneSim”).
+
+    Wysyła ``POST /api/shutdown`` do lokalnego serwera i czeka, aż port zwolni
+    się (serwer kończy proces chwilę po odpowiedzi). Gdy program nie działa,
+    kończymy się spokojnie kodem 0 - skrót w menu Start nie może wtedy
+    pokazywać błędu.
+    """
+    if not port_open(port):
+        log(f"--shutdown: nic nie działa na porcie {port} - nie ma czego zamykać")
+        return 0
+    url = f"http://127.0.0.1:{port}/api/shutdown"
+    request = urllib.request.Request(url, method="POST", data=b"")
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:
+            body = response.read().decode("utf-8", "replace")
+        log(f"--shutdown: {url} -> {response.status} {body}")
+    except urllib.error.URLError as exc:
+        log(f"--shutdown: nie udało się wysłać żądania: {exc}")
+        return 3
+    except OSError as exc:
+        log(f"--shutdown: błąd połączenia: {exc}")
+        return 3
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        if not port_open(port):
+            log("--shutdown: program zamknięty")
+            return 0
+        time.sleep(0.2)
+    log("--shutdown: port nadal zajęty po 15 s")
+    return 3
+
+
+def probe_menu(tray: TrayIcon, timeout: float = 3.0) -> Dict[str, object]:
+    """Pokaż menu ikony i sprawdź, czy naprawdę się pojawiło (diagnostyka).
+
+    ``TrackPopupMenu`` blokuje do wyboru pozycji albo ESC, więc menu otwieramy
+    w wątku okna, a osobny wątek szuka okna klasy ``#32768`` (menu podręczne),
+    mierzy je i zamyka klawiszem ESC. Zwraca ``menu_shown`` i prostokąt menu.
+    """
+    found: Dict[str, object] = {"menu_shown": False, "rect": None}
+    stop = threading.Event()
+    user32 = tray.user32
+
+    def watcher() -> None:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            menu = user32.FindWindowW("#32768", None)
+            if menu:
+                rect = wintypes.RECT()
+                if user32.GetWindowRect(menu, ctypes.byref(rect)):
+                    found["rect"] = [rect.left, rect.top, rect.right, rect.bottom]
+                found["menu_shown"] = True
+                time.sleep(0.2)
+                user32.PostMessageW(menu, 0x0100, 0x1B, 0)      # WM_KEYDOWN/ESC
+                return
+            time.sleep(0.05)
+        stop.set()
+
+    thread = threading.Thread(target=watcher, name="tray-menu-probe", daemon=True)
+    thread.start()
+    tray._show_menu(300, 300)                  # blokuje do ESC
+    thread.join(timeout=timeout)
+    return found
+
+
+def run_tray_selftest(icon_path: Optional[Path]) -> int:
+    """``--tray-selftest``: dodaj ikonę i wypisz, gdzie trafiła (diagnostyka).
+
+    Odpowiada na pytanie „czy ikona jest widoczna na pasku, czy w ukrytych
+    ikonach”: ``Shell_NotifyIconGetRect`` zwraca prostokąt ikony, a my
+    porównujemy go z obszarem ekranu. Dodatkowo otwiera menu i potwierdza, że
+    okno menu rzeczywiście się pojawiło. Wynik trafia na ``stdout`` (UTF-8).
+    """
+    tray = TrayIcon(f"{APP_TITLE} - test zasobnika", icon_path)
+    try:
+        tray.create()
+        # shell potrzebuje chwili na zarejestrowanie ikony w pasku - pompkujemy
+        # komunikaty i pytamy o prostokąt kilka razy
+        rect = {"found": False, "hresult": -1, "rect": [0, 0, 0, 0]}
+        deadline = time.time() + 2.0
+        while time.time() < deadline:
+            message = wintypes.MSG()
+            while tray.user32.PeekMessageW(ctypes.byref(message), None, 0, 0, 1):
+                tray.user32.TranslateMessage(ctypes.byref(message))
+                tray.user32.DispatchMessageW(ctypes.byref(message))
+            rect = tray.icon_rect()
+            if rect["found"]:
+                break
+            time.sleep(0.1)
+        user32 = tray.user32
+        screen = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+        inside = False
+        if rect["found"]:
+            left, top, right, bottom = rect["rect"]
+            inside = (right > 0 and bottom > 0 and left < screen[0] and top < screen[1])
+        menu = probe_menu(tray)
+        print(json.dumps({
+            "added": True,
+            "use_guid": tray._use_guid,
+            "version4": tray._version4,
+            "menu_items": [label for _, label in tray_menu_items() if label],
+            "screen": list(screen),
+            **rect,
+            "on_screen": inside,
+            "menu_shown": menu["menu_shown"],
+            "menu_rect": menu["rect"],
+        }, ensure_ascii=False))
+        return 0 if rect["found"] and menu["menu_shown"] else 1
+    finally:
+        tray.destroy()
+
+
 def parse_args(argv: Optional[List[str]]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="DroneSim", description=f"{APP_TITLE} - launcher")
@@ -496,6 +855,10 @@ def parse_args(argv: Optional[List[str]]) -> argparse.Namespace:
     parser.add_argument("--stop-file", default=None,
                         help="grzeczne zamknięcie po pojawieniu się pliku (testy)")
     parser.add_argument("--health-timeout", type=float, default=HEALTH_TIMEOUT_S)
+    parser.add_argument("--shutdown", action="store_true",
+                        help="zamknij działającą instancję i wyjdź (skrót „Zamknij DroneSim”)")
+    parser.add_argument("--tray-selftest", action="store_true",
+                        help="dodaj ikonę do zasobnika, wypisz jej położenie i wyjdź")
     parser.add_argument("--version", action="store_true",
                         help="wypisz wersję i zakończ")
     return parser.parse_args(argv)
@@ -542,6 +905,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     root = Path(args.package).resolve() if args.package else package_root()
+    if args.tray_selftest:
+        # diagnostyka ikony nie potrzebuje katalogu danych ani logu
+        return run_tray_selftest(_icon_path(root))
     data_dir = resolve_data_dir(args.data_dir, root)
     try:
         data_dir.mkdir(parents=True, exist_ok=True)
@@ -550,6 +916,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 4
     log = Log(data_dir / "logs")
     log(f"--- start launchera: paczka={root}, dane={data_dir}, port={args.port}")
+
+    if args.shutdown:
+        # skrót „Zamknij DroneSim” w menu Start (oraz ręczne ``DroneSim.exe --shutdown``)
+        return shutdown_running(args.port, log)
 
     server_py = root / "app" / "server.py"
     if not server_py.exists():

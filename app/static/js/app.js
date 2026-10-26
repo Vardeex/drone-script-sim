@@ -377,6 +377,36 @@ function loadFlight(data, meta = {}) {
   onFrame(0);
 }
 
+/** Menu w nagłówku („☰”) - otwórz/zamknij, zamknij po kliknięciu poza menu. */
+function bindAppMenu() {
+  const button = $('#btn-menu');
+  const menu = $('#app-menu');
+  if (!button || !menu) return;
+  const setOpen = (open) => {
+    menu.hidden = !open;
+    button.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) menu.querySelector('.menu-item')?.focus();
+  };
+  button.addEventListener('click', (event) => {
+    event.stopPropagation();
+    setOpen(menu.hidden);
+  });
+  document.addEventListener('click', (event) => {
+    if (menu.hidden) return;
+    if (!$('#app-menu-wrap').contains(event.target)) setOpen(false);
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !menu.hidden) {
+      setOpen(false);
+      button.focus();
+    }
+  });
+  $('#menu-shutdown').addEventListener('click', () => {
+    setOpen(false);
+    shutdownApp();
+  });
+}
+
 /**
  * Zakończ program: potwierdzenie → ``POST /api/shutdown`` → ekran końcowy.
  *
@@ -768,6 +798,7 @@ function bindUi() {
 
   $('#btn-run').addEventListener('click', runSimulation);
   $('#btn-shutdown').addEventListener('click', shutdownApp);
+  bindAppMenu();
   $('#btn-stop').addEventListener('click', async () => {
     if (!state.runId || !state.running) return;
     $('#btn-stop').disabled = true;

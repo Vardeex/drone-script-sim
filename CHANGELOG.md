@@ -14,6 +14,36 @@ zgodne z [SemVer](https://semver.org/lang/pl/).
   możesz zamknąć tę kartę”. Endpoint przyjmuje **tylko** połączenia z tego
   komputera (`127.0.0.1`/`::1`), więc żadna strona w przeglądarce nie zamknie
   programu zdalnie.
+* **Menu „☰” w nagłówku** z pozycją **„Zakończ DroneSim”** (to samo działanie:
+  potwierdzenie, `POST /api/shutdown`, koniec serwera i launchera) - dla
+  Windows 11, gdzie ikona w zasobniku bywa schowana w „ukrytych ikonach”.
+* **Skrót „Zamknij DroneSim”** w menu Start (instalator) - uruchamia
+  `DroneSim.exe --shutdown`, czyli zamyka działającą instancję i kończy launcher.
+* Nowe flagi launchera: `--shutdown` (zamknij działającą instancję) i
+  `--tray-selftest` (diagnostyka ikony: pozycja w zasobniku i sprawdzenie, czy
+  menu się pokazuje).
+
+### Naprawione
+
+* **Ikona w zasobniku na Windows 11 nie pokazywała menu** (nie było więc jak
+  zamknąć programu). Przyczyny i poprawki:
+  * brak prototypów funkcji Win32 w `ctypes` obcinał uchwyty (HMENU/HWND) do
+    32 bitów, więc `TrackPopupMenu` dostawał nieprawidłowy uchwyt i **menu się
+    nie pokazywało** (błąd 87, `ERROR_INVALID_PARAMETER`),
+  * `SetForegroundWindow` + `PostMessage(WM_NULL)` wokół `TrackPopupMenu`
+    (bez tego menu nie pojawia się albo nie znika),
+  * `NIM_SETVERSION` = **`NOTIFYICON_VERSION_4`**: zdarzenia `NIN_SELECT`,
+    `NIN_KEYSELECT` i `WM_CONTEXTMENU` oraz punkt zakotwiczenia menu w `wParam`,
+  * **lewy przycisk** ikony otwiera aplikację (`NIN_SELECT`/`WM_LBUTTONUP`),
+    **prawy** (i menu z klawiatury) pokazuje menu - wcześniej oba otwierały menu,
+  * **`NIF_GUID`** ze stałym GUID - system rozpoznaje ikonę przy kolejnych
+    uruchomieniach i pamięta ustawienie „pokaż na pasku” (wcześniej ikona była
+    identyfikowana przez `(hwnd, uID)`, więc lądowała w „ukrytych ikonach”),
+    dodatkowo prośba `NIS_HIDDEN = 0` po dodaniu ikony,
+  * obsługa `TaskbarCreated` - po restarcie Eksploratora ikona jest dodawana
+    ponownie (wcześniej znikała na zawsze).
+* Menu ikony ma czytelne pozycje **„Otwórz DroneSim”** i **„Zakończ DroneSim”**
+  (było „Otwórz” / „Zakończ”).
 
 ## [0.4.0-for_potatoes] - 2026-10-26
 
