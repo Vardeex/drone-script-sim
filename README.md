@@ -377,26 +377,32 @@ wypchnięciu tagu `v*` i publikuje trzy pliki: instalator, paczkę i
 ```bash
 # 1. podnieś wersję w app/__init__.py i opisz zmiany w CHANGELOG.md
 # 2. commit + push
-git commit -am "Wersja 0.3.0"
+git commit -am "Wersja 0.4.0"
 git push
 
 # 3. tag musi odpowiadać wersji z app/__init__.py (workflow to sprawdza)
-git tag v0.3.0
-git push origin v0.3.0
+git tag v0.4.0
+git push origin v0.4.0
 ```
 
-Po wypchnięciu tagu GitHub Actions (`release.yml`) buduje paczkę na
-`windows-latest`, robi **test dymny** (start serwera z rozpakowanej paczki,
-`/api/health`, `basic_square.py`, skrypt `dronemoves`) i tworzy GitHub Release
-z plikiem ZIP i notatkami wyciągniętymi z `CHANGELOG.md`. Jeśli tag nie
+Po wypchnięciu tagu GitHub Actions (`release.yml`) buduje na `windows-latest`
+launcher (`build_exe.py`), paczkę (`build_portable.py`) i instalator
+(`build_installer.py`), robi **testy dymne** (start serwera z rozpakowanej
+paczki i z instalatora, `/api/health`, `basic_square.py`, skrypt `dronemoves`,
+zamknięcie bez sierot) i tworzy GitHub Release z **trzema plikami**:
+`DroneSim-Setup-<wersja>.exe`, `DroneSim-portable-<wersja>-win64.zip` oraz
+`SHA256SUMS.txt`, plus notatki wyciągnięte z `CHANGELOG.md`. Jeśli tag nie
 odpowiada wersji aplikacji, workflow **przerywa** pracę - nie da się
-opublikować paczki z niespójnym numerem.
+opublikować plików z niespójnym numerem.
 
 Lokalnie, bez publikowania:
 
 ```bash
+python release_tools/build_exe.py                 # -> dist/launcher/DroneSim.exe
 python release_tools/build_portable.py            # -> dist/DroneSim-portable-<wersja>-win64.zip
-python release_tools/smoke_portable.py --zip dist/DroneSim-portable-0.3.0-win64.zip
+python release_tools/build_installer.py           # -> dist/DroneSim-Setup-<wersja>.exe
+python release_tools/smoke_portable.py --zip dist/DroneSim-portable-0.4.0-win64.zip
+python release_tools/smoke_installer.py
 ```
 
 ## Edytor skryptów (CodeMirror 6)

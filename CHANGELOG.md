@@ -3,6 +3,69 @@
 Format: [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/); wersjonowanie
 zgodne z [SemVer](https://semver.org/lang/pl/).
 
+## [0.4.0] - 2026-10-26
+
+### Dodane
+
+* **Instalator `DroneSim-Setup-<wersja>.exe`** (Inno Setup 6,
+  `release_tools/installer/dronesim.iss`): instalacja **dla bieżącego
+  użytkownika bez uprawnień administratora** do
+  `%LOCALAPPDATA%\Programs\DroneSim`, skrót w menu Start i opcjonalnie na
+  pulpicie, uruchomienie po instalacji, wpis w „Aplikacje i funkcje”.
+  Instalacja nowszej wersji na starszą działa bez deinstalacji (stały `AppId`),
+* **Launcher `DroneSim.exe`** (PyInstaller, tryb *onedir* z katalogiem
+  `_launcher`, bez UPX): uruchamia wbudowanego Pythona z paczki bez okna
+  konsoli, czeka na `/api/health`, otwiera przeglądarkę i pokazuje ikonę
+  w zasobniku z menu **Otwórz** / **Zakończ**. „Zakończ” zatrzymuje serwer razem
+  z procesami potomnymi (obiekt zadania z `KILL_ON_JOB_CLOSE`) - bez sierot.
+  Błędy startu: okienko + log w `<dane>\logs\launcher-RRRRMMDD.log`.
+  Ikona aplikacji jest własna (geometryczny quadcopter, bez logo DJI/Tello),
+  a plik ma metadane wersji (produkt, wersja, autor Vardeex),
+* **Katalog danych użytkownika** (`DRONESIM_DATA_DIR`): wersja instalowana trzyma
+  loty, własne sceny i `config.json` w `%LOCALAPPDATA%\DroneSim`, więc
+  aktualizacja i deinstalacja ich nie kasują. Wersja z git i `start.bat` działa
+  jak dotąd (dane w katalogu projektu), a sceny przykładowe zostają w `scenes/`,
+* **`SHA256SUMS.txt`** w wydaniu - sumy instalatora i paczki do weryfikacji
+  (`certutil -hashfile <plik> SHA256`),
+* **`release_tools/smoke_installer.py`**: test dymny instalatora - cicha
+  instalacja, start `DroneSim.exe`, `/api/health`, `basic_square.py` i skrypt
+  `dronemoves` przez API, zamknięcie bez sierot, deinstalacja zachowująca dane
+  (`/DELETEUSERDATA=1` usuwa je na żądanie),
+* **`release_tools/make_icon.py`** i `build_exe.py`, `build_installer.py`,
+  `common.py` - budowa plików wydania bez ręcznych kroków,
+* **`isTypingTarget`** (`app/static/js/keys.js`) - jedna wspólna reguła dla
+  wszystkich skrótów klawiaturowych,
+* **Sterowanie aktywne tylko po kliknięciu sceny 3D** w locie ręcznym: ramka
+  wokół sceny i plakietka „Sterowanie aktywne - kliknij poza sceną, by wyłączyć
+  (Esc też kończy)”; Esc lub kliknięcie poza sceną wyłącza sterowanie.
+
+### Zmienione
+
+* **Pierwsze uruchomienie daje pustą scenę roboczą** (tylko podłoże, osie i punkt
+  startu) - bez bramek i przeszkód. Przykładowe sceny wybiera się z listy,
+  a ostatnio wybrana jest pamiętana w `localStorage` („✚ Nowa” czyści pamięć).
+  Lot z historii nadal wczytuje własną scenę,
+* zakładka **Lot ręczny** opisuje nowy sposób aktywacji sterowania,
+* `start.bat` zostaje w paczce przenośnej jako wersja „klasyczna”,
+* README i PORADNIK: instalator jako pierwsza opcja, ostrzeżenie SmartScreen,
+  fałszywe alarmy antywirusa i weryfikacja SHA-256, gdzie są dane, deinstalacja.
+
+### Naprawione
+
+* **Spacja i strzałki nie działają już podczas pisania**: skróty (play/pauza,
+  przewijanie) sprawdzają jedno miejsce (input, textarea, select,
+  `contenteditable`, edytor CodeMirror, otwarte okna dialogowe) i nie wołają
+  `preventDefault`, więc klawisz trafia do pola. Wcześniej `document.activeElement`
+  w edytorze to `div[contenteditable]`, a nie `textarea` - nie dało się wpisać
+  spacji,
+* litery W/A/S/D w edytorze nie sterują już dronem w locie ręcznym,
+* launcher nie uruchamia sam siebie: w wersji zamrożonej `sys.executable` to
+  `DroneSim.exe`, więc serwer startuje **wyłącznie** z `python\python.exe`
+  paczki (brak interpretera = czytelny komunikat, nie rekurencja),
+* ścieżka katalogu danych w `launcher.json` jest poprawnie escapowana,
+* deinstalator zna katalog danych z instalacji (plik `data-dir.txt`), więc
+  potrafi go usunąć na żądanie; w trybie cichym nie zawiesza się na pytaniu.
+
 ## [0.3.0] - 2026-10-25
 
 > Wszystkie prace z 22-25.10.2026 (wcześniej trzy sekcje „Niewydane”) są częścią wydania 0.3.0.
