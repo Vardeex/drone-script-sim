@@ -3,6 +3,41 @@
 Format: [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/); wersjonowanie
 zgodne z [SemVer](https://semver.org/lang/pl/).
 
+## [Unreleased]
+
+### Naprawione
+
+* **Kamera FPV („Z drona”) jest przytwierdzona do modelu drona.** Wcześniej
+  pozycja kamery była liczona osobno z telemetrii i w metrach sceny (2 cm nad
+  dnem modelu), podczas gdy model jest rysowany w skali ×3/×5/×10 - kamera
+  wypadała raz nad, raz pod dronem, a powiększony model zasłaniał widok.
+  Teraz kamera jest **dzieckiem węzła przy dronie** (`fpvRig` na `droneGroup`,
+  obiektyw 25 mm w przód i 12 mm nad dnem korpusu, w prawdziwej skali), patrzy
+  poziomo w kurs drona i obraca się razem z nim; `OrbitControls` nie rusza
+  kamerą w FPV, a model jest ukrywany, żeby nie zasłaniał obiektywu. Działa przy
+  odtwarzaniu, przewijaniu, locie ręcznym, w trybie pełnym i lekkim.
+* **Tryb lekki działa też z kamerą FPV** - opcja FPV nie jest już wyłączana
+  w trybie lekkim (wyłącza ją tylko edycja `for_potatoes`).
+* **„Wydajność: Automatycznie” tylko proponuje tryb lekki** - nie włącza go
+  samoczynnie (wcześniej po „Nie pytaj więcej” albo po powrocie z „Lekka” na
+  „Automatycznie” scena mogła przejść na tryb lekki bez decyzji użytkownika).
+* **Launcher: dwie edycje na jednym porcie.** Gdy działa serwer innej edycji
+  (`/api/edition`), launcher pyta, czy zamknąć tamtą instancję i uruchomić
+  swoją (dotąd otwierał przeglądarkę z **niewłaściwą** edycją). Nowa flaga
+  `--no-prompt` zostawia działającą edycję bez pytania (testy/CI).
+* **Smoke test instalatora**: `/DELETEUSERDATA=1` ponawia usuwanie katalogu
+  danych z krótkim odczekaniem (Windows potrafi trzymać plik jeszcze chwilę po
+  deinstalacji).
+
+### Zmienione
+
+* Testy ikony w zasobniku mają marker **`desktop`** (wymagają pulpitu Windows)
+  i są pomijane w CI (`-m "not desktop"`); moduł launchera nie importuje się na
+  Linuksie, więc plik testów jest tam automatycznie pomijany.
+* Test `test_lite_mode_from_settings_and_persisted` jawnie ustawia stan
+  początkowy (czyści klucze `localStorage`), więc przechodzi także w przebiegu
+  `DRONESIM_TEST_LITE=1`.
+
 ## [0.4.2] - 2026-10-26
 
 ### Dodane

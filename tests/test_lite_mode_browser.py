@@ -177,6 +177,19 @@ def test_lite_mode_from_settings_and_persisted(server):
         context = browser.new_context(viewport={"width": 1280, "height": 720})
         page = context.new_page()
         errors = open_app(page, server)
+        # Jawny stan początkowy: bez zapisanego ustawienia. Dzięki temu test
+        # przechodzi także w przebiegu DRONESIM_TEST_LITE=1 (conftest wstrzykuje
+        # wtedy tryb lekki do localStorage).
+        page.evaluate("""() => {
+            for (const edition of ['standard', 'for_potatoes']) {
+                localStorage.removeItem('dronesim.perf:' + edition);
+                localStorage.removeItem('dronesim.perf.ask:' + edition);
+            }
+        }""")
+        page.reload(wait_until="domcontentloaded")
+        page.wait_for_function("() => Boolean(window.__scene)", timeout=TIMEOUT_MS)
+        page.wait_for_function("() => window.__scene.lite === false",
+                               timeout=TIMEOUT_MS)
         before = scene_state(page)
         page.select_option("#perf-mode", "lite")
         page.wait_for_function("() => Boolean(window.__scene.lite)", timeout=TIMEOUT_MS)
@@ -192,6 +205,40 @@ def test_lite_mode_from_settings_and_persisted(server):
     assert state["lite"] is True and state["shadows"] is False
     assert stored == "lite", stored
     assert after_reload["lite"] is True
+
+
+def test_auto_mode_only_proposes_lite(server):
+    """„Automatycznie” tylko PROPONUJE tryb lekki - nigdy nie włącza go samo."""
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        context = browser.new_context(viewport={"width": 1280, "height": 720})
+        page = context.new_page()
+        errors = open_app(page, server)
+        page.evaluate("""() => {
+            for (const edition of ['standard', 'for_potatoes']) {
+                localStorage.removeItem('dronesim.perf:' + edition);
+                localStorage.removeItem('dronesim.perf.ask:' + edition);
+            }
+        }""")
+        page.reload(wait_until="domcontentloaded")
+        page.wait_for_function("() => Boolean(window.__scene)", timeout=TIMEOUT_MS)
+        # 1) z trybu lekkiego wybór „Automatycznie” wraca do pełnego
+        page.select_option("#perf-mode", "lite")
+        page.wait_for_function("() => window.__scene.lite === true", timeout=TIMEOUT_MS)
+        page.select_option("#perf-mode", "auto")
+        page.wait_for_function("() => window.__scene.lite === false",
+                               timeout=TIMEOUT_MS)
+        stored = page.evaluate("() => localStorage.getItem('dronesim.perf:standard')")
+        # 2) po odświeżeniu („auto” bez zapisu) nadal tryb pełny, nawet gdy
+        #    pomiar FPS wypadnie słabo - pojawia się tylko propozycja
+        page.reload(wait_until="domcontentloaded")
+        page.wait_for_function("() => Boolean(window.__scene)", timeout=TIMEOUT_MS)
+        time.sleep(2.0)                       # czas na pomiar FPS w tle
+        state = scene_state(page)
+        browser.close()
+    assert errors == [], errors
+    assert stored is None
+    assert state["lite"] is False, "„Automatycznie” nie może samo włączać trybu lekkiego"
 
 
 def test_lite_simplifies_scene_but_keeps_features(server):

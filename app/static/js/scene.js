@@ -9,9 +9,12 @@ const M = 100; // 1 skala sceny = 100 cm (1 m)
 //: pole widzenia kamery drona - Tello: 82,6° (specyfikacja DJI); scena używa 50°
 const FPV_FOV_DEG = 82.6;
 const DEFAULT_FOV_DEG = 50;
-//: kamera drona siedzi w nosie, 2 cm nad środkiem korpusu (model: 45 x 26 x 20 mm)
-const FPV_CAMERA_FORWARD_M = 0.045;
-const FPV_CAMERA_HEIGHT_M = 0.02;
+//: Kamera FPV: obiektyw w nosie drona, w PRAWDZIWEJ skali (metry), niezależnie
+//: od przełącznika „Rozmiar ×3/×5/×10”. Współrzędne są lokalne względem modelu
+//: (origin = dolna krawędź korpusu, +X = przód): Tello ma korpus 45 x 26 x 20 mm,
+//: obiektyw z przodu, ~12 mm nad dolną krawędzią.
+const FPV_LENS_FORWARD_M = 0.025;
+const FPV_LENS_HEIGHT_M = 0.012;
 //: tryb lekki: renderowanie w 75% rozdzielczości i limit 30 FPS
 const LITE_RENDER_SCALE = 0.75;
 //: Limit 30 FPS z zapasem: przy 60 Hz kolejna klatka wypada ~33,3 ms, a jitter
@@ -105,6 +108,7 @@ export class DroneScene {
     this._buildGround();
     this._buildAxes();
     this._buildDrone();
+    this._buildFpvRig();
     this._buildOverlays();
 
     this.trailGroup = new THREE.Group();
@@ -729,6 +733,50 @@ export class DroneScene {
     this.requestRender();
   }
 
+  /**
+   * Kamera FPV jako element modelu drona.
+   *
+   * Węzeł wisi na ``droneGroup`` (który przenosi pozycję i kurs), a **nie** na
+   * ``droneScale`` - dlatego przełącznik „Rozmiar ×3/×5/×10” nie rusza kamery.
+   * Obrót ``-90°`` wokół Y ustawia kamerę tak, że patrzy wzdłuż lokalnego +X
+   * drona (nos), poziomo; razem z dronem obraca się przy ``rotate_*``.
+   *
+   * Kamera jest **dzieckiem** tego węzła, więc jej macierz świata liczy three.js
+   * z tej samej macierzy, z której rysowany jest model w danej klatce - nie ma
+   * osobnej interpolacji telemetrii ani opóźnienia jednej klatki.
+   */
+  _buildFpvRig() {
+    this.fpvRig = new THREE.Object3D();
+    this.fpvRig.name = 'fpv-camera-rig';
+    this.fpvRig.position.set(FPV_LENS_FORWARD_M, FPV_LENS_HEIGHT_M, 0);
+    this.fpvRig.rotation.y = -Math.PI / 2;
+    this.droneGroup.add(this.fpvRig);
+  }
+
+  /** Przypnij kamerę do obiektywu drona (tryb FPV); model nie zasłania widoku. */
+  _mountFpvCamera() {
+    if (!this.fpvRig) return;
+    if (this.camera.parent !== this.fpvRig) {
+      this.camera.position.set(0, 0, 0);
+      this.camera.quaternion.identity();
+      this.fpvRig.add(this.camera);
+    }
+    this.camera.up.set(0, 1, 0);
+    // model drona (także powiększony ×10) nie może zasłaniać obiektywu
+    if (this.droneScale) this.droneScale.visible = false;
+    if (this.frontMarker) this.frontMarker.visible = false;
+    this.camera.updateMatrixWorld(true);
+  }
+
+  /** Odepnij kamerę od drona (powrót do orbity/pościgowej/widoku z góry). */
+  _unmountFpvCamera() {
+    if (this.camera.parent) this.scene.attach(this.camera);
+    if (this.droneScale) this.droneScale.visible = true;
+    if (this.frontMarker) this.frontMarker.visible = true;
+    this.camera.up.set(0, 1, 0);
+    this.camera.quaternion.identity();
+  }
+
   /** Ustaw tryb kamery śledzącej z odległością dopasowaną do skali modelu. */
   setCameraMode(mode) {
     this.cameraMode = mode;
@@ -740,10 +788,10 @@ export class DroneScene {
     }
     this.controls.enabled = mode !== 'fpv';   // w FPV steruje dron, nie mysz
     if (mode === 'fpv') {
-      this.camera.up.set(0, 1, 0);
-      this._updateFpvCamera();
+      this._mountFpvCamera();
       return;
     }
+    this._unmountFpvCamera();
     this.controls.enabled = true;
     if (mode === 'top') {
       const target = this.controls.target;
@@ -762,24 +810,16 @@ export class DroneScene {
     }
   }
 
-  /** Kamera FPV: w nosie drona, patrzy tam, gdzie dziób (yaw 0 = +X). */
+  /**
+   * Kamera FPV trzyma się drona - nie trzeba nic przeliczać.
+   *
+   * Kamera jest dzieckiem ``fpvRig``, więc jej macierz świata wynika z macierzy
+   * drona w danej klatce (ta sama, z której rysowany jest model). Funkcja pilnuje
+   * tylko, żeby kamera była przypięta (np. po zmianie trybu/rozmiaru modelu).
+   */
   _updateFpvCamera() {
-    const sample = this._lastSample;
-    const p = toScene(sample || { x: 0, y: 0, z: 0 });
-    const yaw = THREE.MathUtils.degToRad(sample ? sample.yaw : 0);
-    const base = new THREE.Vector3(p.x / M, Math.max(p.y, 0) / M, p.z / M);
-    this.camera.position.set(
-      base.x + Math.cos(yaw) * FPV_CAMERA_FORWARD_M,
-      base.y + FPV_CAMERA_HEIGHT_M,
-      base.z - Math.sin(yaw) * FPV_CAMERA_FORWARD_M,
-    );
-    // nos w układzie sceny: x = +cos(yaw), z = -sin(yaw); lekko w dół (-6°)
-    const pitch = THREE.MathUtils.degToRad(-6);
-    this.camera.lookAt(
-      this.camera.position.x + Math.cos(yaw) * Math.cos(pitch),
-      this.camera.position.y + Math.sin(pitch),
-      this.camera.position.z - Math.sin(yaw) * Math.cos(pitch),
-    );
+    if (this.cameraMode !== 'fpv') return;
+    if (this.camera.parent !== this.fpvRig) this._mountFpvCamera();
   }
 
   fitView() {
@@ -892,6 +932,8 @@ export class DroneScene {
       ((clientX - rect.left) / rect.width) * 2 - 1,
       -((clientY - rect.top) / rect.height) * 2 + 1,
     );
+    // w FPV kamera jest dzieckiem drona - macierz świata trzeba odświeżyć
+    this.camera.updateMatrixWorld();
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(ndc, this.camera);
     const hits = raycaster.intersectObjects(this.pickables, false);
@@ -936,10 +978,11 @@ export class DroneScene {
       const yaw = THREE.MathUtils.degToRad(this._lastSample.yaw);
       this.camera.up.set(Math.cos(yaw), 0, Math.sin(yaw));
     } else if (this.cameraMode === 'fpv') {
-      // kamera jedzie z dronem w każdej klatce (odtwarzanie i przewijanie)
+      // kamera FPV jest dzieckiem drona - jej macierz świata liczy three.js
+      // (OrbitControls nie może jej ruszać: w FPV jest wyłączony)
       this._updateFpvCamera();
     }
-    this.controls.update();
+    if (this.cameraMode !== 'fpv') this.controls.update();
     // tryb lekki: rysuj tylko gdy coś się zmieniło, maksymalnie 30 FPS.
     // Przy 60 Hz rysujemy co drugą klatkę (stabilne 30 FPS), a gdy pętla zwalnia,
     // decyduje czas - inaczej jitter wypadałby co trzecią klatkę (20 FPS).

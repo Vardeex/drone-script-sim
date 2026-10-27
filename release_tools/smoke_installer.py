@@ -174,6 +174,36 @@ def wait_no_uninstaller(app_dir: Path, timeout: float = 180.0) -> None:
         time.sleep(0.5)
 
 
+def wait_dir_removed(path: Path, timeout: float = 10.0) -> bool:
+    """Poczekaj, aż katalog zniknie (Windows trzyma uchwyty chwilę dłużej).
+
+    Deinstalator zamyka procesy i pliki po zakończeniu - katalog danych potrafi
+    jeszcze przez moment istnieć (plik zablokowany przez chwilę po poprzednim
+    teście). Dlatego nie sprawdzamy „od razu po”, tylko ponawiamy z odczekaniem.
+    """
+    deadline = time.time() + timeout
+    while True:
+        if not path.exists():
+            return True
+        if time.time() >= deadline:
+            return False
+        time.sleep(0.5)
+
+
+def remove_dir_with_retry(path: Path, attempts: int = 3,
+                          delay: float = 1.0) -> bool:
+    """Usuń katalog, ponawiając przy zablokowanym pliku. ``True`` = usunięty."""
+    for attempt in range(1, attempts + 1):
+        if not path.exists():
+            return True
+        try:
+            shutil.rmtree(path)
+        except OSError as exc:
+            say(f"usuwanie {path}: próba {attempt}/{attempts} nieudana ({exc})")
+            time.sleep(delay)
+    return not path.exists()
+
+
 def uninstall(app_dir: Path, delete_data: bool = False) -> None:
     """Cicha deinstalacja (opcjonalnie z usunięciem danych użytkownika)."""
     uninstaller = find_uninstaller(app_dir)
@@ -285,8 +315,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if not list((data_dir / "flights").glob("*.json")):
             raise SystemExit("aktualizacja nadpisała dane użytkownika")
         uninstall(app_dir, delete_data=True)
-        if data_dir.exists():
-            raise SystemExit(f"/DELETEUSERDATA=1 nie usunął {data_dir}")
+        # katalog danych może znikać chwilę po deinstalatorze (zablokowany plik)
+        if not wait_dir_removed(data_dir, timeout=10.0):
+            say("dane nadal istnieją po 10 s - ponawiam usuwanie")
+            if not remove_dir_with_retry(data_dir):
+                raise SystemExit(f"/DELETEUSERDATA=1 nie usunął {data_dir}")
         say("/DELETEUSERDATA=1: dane usunięte")
     finally:
         elapsed = time.perf_counter() - started

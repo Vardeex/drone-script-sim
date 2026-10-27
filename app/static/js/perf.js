@@ -98,7 +98,12 @@ export function initPerf(options = {}) {
   return { mode, forced, key: storageKey() };
 }
 
-/** Zapisz wybór użytkownika i zastosuj tryb (``auto`` = decyzja przy starcie). */
+/** Zapisz wybór użytkownika i zastosuj tryb.
+ *
+ * „Automatycznie” **nie włącza** trybu lekkiego samo - tylko proponuje go po
+ * pomiarze FPS (pytanie Tak/Nie/Nie pytaj więcej). Dopóki użytkownik nie
+ * odpowie „Tak”, scena rysuje w trybie pełnym.
+ */
 export function setMode(next, options = {}) {
   const value = ['auto', 'full', 'lite'].includes(next) ? next : 'auto';
   mode = value;
@@ -106,7 +111,7 @@ export function setMode(next, options = {}) {
   saveToStorage(storageKey(), value === 'auto' ? null : value);
   if (value === 'full') apply(false, options);
   else if (value === 'lite') apply(true, options);
-  else apply(autoDecision(), options);
+  else apply(false, options);          // „auto” = pełny do decyzji użytkownika
 }
 
 /** Czy użytkownik wyłączył pytanie o tryb lekki? */
@@ -127,12 +132,6 @@ export function rememberAnswer(enable, neverAsk = false) {
     mode = 'lite';
     saveToStorage(STORAGE_KEY, 'lite');
   }
-}
-
-let autoAnswer = null;
-
-function autoDecision() {
-  return autoAnswer === null ? false : autoAnswer;
 }
 
 function apply(value, options = {}) {
@@ -216,7 +215,12 @@ export async function fetchEdition(timeoutMs = 1200) {
 }
 
 /**
- * Tryb automatyczny: zmierz FPS i ewentualnie zaproponuj tryb lekki.
+ * Tryb automatyczny: zmierz FPS i **zaproponuj** tryb lekki (nic nie włączaj).
+ *
+ * Propozycja pojawia się tylko raz, gdy klatki są wolniejsze niż ``SLOW_FPS``
+ * i użytkownik nie wybrał wcześniej „Nie pytaj więcej”. Tryb lekki włącza się
+ * dopiero po kliknięciu „Tak” (``rememberAnswer(true)``); „Nie” i „Nie pytaj
+ * więcej” zostawiają tryb pełny.
  *
  * @param {Function} propose funkcja pokazująca pytanie (Tak/Nie/Nie pytaj więcej)
  * @returns {Promise<{fps: number, lite: boolean, asked: boolean}>}
@@ -226,12 +230,11 @@ export async function autoDetect(propose) {
     return { fps: null, lite, asked: false };
   }
   const fps = await measureFps();
-  autoAnswer = fps < SLOW_FPS;
-  if (autoAnswer && !askingDisabled()) {
-    propose({ fps, enable: () => rememberAnswer(true), disable: () => rememberAnswer(false),
-      neverAsk: () => rememberAnswer(false, true) });
-    return { fps, lite, asked: true };
+  const slow = fps < SLOW_FPS;
+  if (!slow || askingDisabled()) {
+    return { fps, lite, asked: false };     // nic nie proponujemy i nic nie zmieniamy
   }
-  if (autoAnswer) apply(true, { reason: 'auto' });
-  return { fps, lite, asked: false };
+  propose({ fps, enable: () => rememberAnswer(true), disable: () => rememberAnswer(false),
+    neverAsk: () => rememberAnswer(false, true) });
+  return { fps, lite, asked: true };
 }

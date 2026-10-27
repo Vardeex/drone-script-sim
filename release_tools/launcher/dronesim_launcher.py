@@ -737,6 +737,50 @@ def stop_server(process, job, log: Log) -> None:
         process.wait(timeout=10)
 
 
+def edition_name(root: Path) -> str:
+    """Edycja tej paczki: ``edition.json`` w katalogu programu (brak = standardowa)."""
+    try:
+        data = json.loads((root / "edition.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "standard"
+    value = str(data.get("edition", "")).strip().lower() if isinstance(data, dict) else ""
+    return "for_potatoes" if value == "for_potatoes" else "standard"
+
+
+def edition_label(edition: Optional[str]) -> str:
+    """Nazwa edycji do komunikatu."""
+    return "for_potatoes" if edition == "for_potatoes" else "standardowa"
+
+
+def edition_conflict(running: Optional[str], own: str) -> bool:
+    """Czy na porcie działa **inna** edycja niż uruchamiana (i warto zapytać)?"""
+    if not running:
+        return False                      # starszy serwer bez /api/edition
+    return running != own
+
+
+def running_edition(port: int, timeout: float = 2.0) -> Optional[str]:
+    """Edycja działającego serwera (``GET /api/edition``) albo ``None``."""
+    url = f"http://127.0.0.1:{port}/api/edition"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            data = json.loads(response.read().decode("utf-8", "replace"))
+    except (OSError, ValueError, urllib.error.URLError):
+        return None
+    value = str(data.get("edition", "")).strip().lower() if isinstance(data, dict) else ""
+    return "for_potatoes" if value == "for_potatoes" else "standard"
+
+
+def show_question(message: str) -> bool:
+    """Pytanie Tak/Nie (``MessageBoxW``); ``True`` = Tak (IDYES = 6)."""
+    try:
+        answer = ctypes.windll.user32.MessageBoxW(
+            None, message, f"{APP_TITLE} - wybór edycji", 0x04 | 0x20)   # YESNO|QUESTION
+        return answer == 6
+    except Exception:                                  # noqa: BLE001 - brak GUI
+        return False
+
+
 def shutdown_running(port: int, log: Log) -> int:
     """Zamknij działającą instancję (``--shutdown``, skrót „Zamknij DroneSim”).
 
@@ -867,6 +911,8 @@ def parse_args(argv: Optional[List[str]]) -> argparse.Namespace:
     parser.add_argument("--health-timeout", type=float, default=HEALTH_TIMEOUT_S)
     parser.add_argument("--shutdown", action="store_true",
                         help="zamknij działającą instancję i wyjdź (skrót „Zamknij DroneSim”)")
+    parser.add_argument("--no-prompt", action="store_true",
+                        help="nie pytaj, gdy działa inna edycja (zostaw ją i otwórz przeglądarkę)")
     parser.add_argument("--tray-selftest", action="store_true",
                         help="dodaj ikonę do zasobnika, wypisz jej położenie i wyjdź")
     parser.add_argument("--version", action="store_true",
@@ -939,18 +985,40 @@ def main(argv: Optional[List[str]] = None) -> int:
         show_error(message)
         return 4
 
-    # 1) Serwer już działa? Wtedy tylko otwieramy przeglądarkę.
+    # 1) Serwer już działa? Sprawdź, czy to TA edycja (obie mogą być zainstalowane).
     if port_open(args.port):
         if health_ok(args.port):
-            log("serwer już działa - otwieram przeglądarkę")
-            if not args.no_browser:
-                open_browser(args.port, log)
-            return 0
-        message = (f"Port {args.port} jest zajęty przez inny program.\n"
-                   "Zamknij go albo uruchom DroneSim.exe z innym portem.")
-        log(message)
-        show_error(message)
-        return 2
+            own = edition_name(root)
+            running = running_edition(args.port)
+            if edition_conflict(running, own) and not args.no_prompt:
+                log(f"na porcie {args.port} działa edycja {running}, "
+                    f"a uruchamiamy {own} - pytam użytkownika")
+                question = (f"DroneSim już działa (edycja {edition_label(running)}).\n\n"
+                            f"Zamknąć go i uruchomić edycję {edition_label(own)}?")
+                if not show_question(question):
+                    log("użytkownik zostawił działającą edycję - otwieram ją")
+                    if not args.no_browser:
+                        open_browser(args.port, log)
+                    return 0
+                log("zamykam działającą edycję i uruchamiam swoją")
+                code = shutdown_running(args.port, log)
+                if code != 0:
+                    show_error("Nie udało się zamknąć działającej instancji DroneSim.\n"
+                               "Zamknij ją ręcznie (menu ikony → „Zakończ DroneSim”) "
+                               "i uruchom ponownie.")
+                    return code
+                # port zwolniony - lecimy dalej i startujemy własny serwer
+            else:
+                log("serwer już działa - otwieram przeglądarkę")
+                if not args.no_browser:
+                    open_browser(args.port, log)
+                return 0
+        else:
+            message = (f"Port {args.port} jest zajęty przez inny program.\n"
+                       "Zamknij go albo uruchom DroneSim.exe z innym portem.")
+            log(message)
+            show_error(message)
+            return 2
 
     if python_executable(root) is None:
         message = ("Paczka jest niekompletna - brak wbudowanego Pythona:\n"

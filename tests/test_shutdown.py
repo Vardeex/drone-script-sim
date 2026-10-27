@@ -132,60 +132,6 @@ def test_start_menu_shortcut_closes_app():
     assert 'Parameters: "--shutdown"' in iss
 
 
-def test_launcher_shutdown_flag_ignores_inactive_app(tmp_path):
-    """``--shutdown`` bez działającej instancji kończy się kodem 0 (bez błędu)."""
-    import socket
-
-    from release_tools.launcher import dronesim_launcher as launcher
-
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        free = sock.getsockname()[1]
-    log = launcher.Log(tmp_path)
-    assert launcher.shutdown_running(free, log) == 0
-
-
-def test_launcher_shutdown_posts_to_running_server(tmp_path):
-    """``--shutdown`` wysyła POST i czeka, aż port się zwolni."""
-    import socket
-    import threading
-
-    from release_tools.launcher import dronesim_launcher as launcher
-
-    server = socket.socket()
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind(("127.0.0.1", 0))
-    server.listen(1)
-    port = server.getsockname()[1]
-    received = []
-
-    def serve_once() -> None:
-        try:
-            while True:
-                conn, _ = server.accept()          # pierwsze połączenie to sonda portu
-                data = b""
-                while b"\r\n\r\n" not in data:
-                    chunk = conn.recv(4096)
-                    if not chunk:
-                        break
-                    data += chunk
-                if not data:                        # sonda „czy port otwarty”
-                    conn.close()
-                    continue
-                with conn:
-                    received.append(data.split(b"\r\n")[0])
-                    conn.sendall(b"HTTP/1.1 200 OK\r\nConnection: close\r\n"
-                                 b"Content-Length: 2\r\n\r\n{}")
-                return
-        finally:
-            server.close()          # po odpowiedzi port znika (jak po zamknięciu)
-
-    threading.Thread(target=serve_once, daemon=True).start()
-    log = launcher.Log(tmp_path)
-    assert launcher.shutdown_running(port, log) == 0
-    assert received and received[0].startswith(b"POST /api/shutdown")
-
-
 def test_launcher_passes_stop_file_to_server():
     """Launcher przekazuje serwerowi ścieżkę ``--stop-file`` (zmienna środowiska)."""
     source = (ROOT / "release_tools" / "launcher" /

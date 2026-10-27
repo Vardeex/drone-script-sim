@@ -21,15 +21,22 @@ from __future__ import annotations
 import ctypes
 import os
 import time
-from ctypes import wintypes
 from pathlib import Path
 
 import pytest
 
-from release_tools.launcher import dronesim_launcher as launcher
+# Moduł launchera używa ``ctypes.wintypes`` (Win32) - na Linuksie nie importuje
+# się w ogóle, więc cały plik jest pomijany. Testy „na żywo” (okno + ikona
+# w zasobniku + pętla komunikatów) wymagają prawdziwego pulpitu Windows, dlatego
+# mają marker ``desktop`` i są wyłączane w CI.
+pytest.importorskip("ctypes.wintypes", reason="Win32: ikona w zasobniku (Windows)")
+
+from ctypes import wintypes                                   # noqa: E402
+from release_tools.launcher import dronesim_launcher as launcher  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 WINDOWS = pytest.mark.skipif(os.name != "nt", reason="Win32 tylko na Windows")
+pytestmark = [pytest.mark.desktop]
 
 
 # --------------------------------------------------------------- części czyste
@@ -219,7 +226,7 @@ def test_stop_closes_message_loop_and_removes_icon():
     thread = threading.Thread(target=run, daemon=True)
     thread.start()
     deadline = time.time() + 3
-    while time.time() < deadline and tray.hwnd is None:
+    while time.time() < deadline and (tray.hwnd is None or tray._data is None):
         time.sleep(0.02)
     assert tray.hwnd, "okno ikony nie powstało"
     assert tray._data is not None, "ikona nie została dodana"
@@ -243,3 +250,118 @@ def test_launcher_watches_server_process_and_stops_tray():
     assert "process.poll() is not None" in source
     assert "tray.stop()" in source
     assert "tray_thread.join(timeout=3)" in source
+
+
+# --------------------------------------------------- launcher: zamknięcie zdalne
+def test_launcher_shutdown_flag_ignores_inactive_app(tmp_path):
+    """``--shutdown`` bez działającej instancji kończy się kodem 0 (bez błędu)."""
+    import socket
+
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        free = sock.getsockname()[1]
+    log = launcher.Log(tmp_path)
+    assert launcher.shutdown_running(free, log) == 0
+
+
+def test_launcher_shutdown_posts_to_running_server(tmp_path):
+    """``--shutdown`` wysyła POST i czeka, aż port się zwolni."""
+    import socket
+    import threading
+
+    server = socket.socket()
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind(("127.0.0.1", 0))
+    server.listen(1)
+    port = server.getsockname()[1]
+    received = []
+
+    def serve_once() -> None:
+        try:
+            while True:
+                conn, _ = server.accept()          # pierwsze połączenie to sonda portu
+                data = b""
+                while b"\r\n\r\n" not in data:
+                    chunk = conn.recv(4096)
+                    if not chunk:
+                        break
+                    data += chunk
+                if not data:                        # sonda „czy port otwarty”
+                    conn.close()
+                    continue
+                with conn:
+                    received.append(data.split(b"\r\n")[0])
+                    conn.sendall(b"HTTP/1.1 200 OK\r\nConnection: close\r\n"
+                                 b"Content-Length: 2\r\n\r\n{}")
+                return
+        finally:
+            server.close()          # po odpowiedzi port znika (jak po zamknięciu)
+
+    threading.Thread(target=serve_once, daemon=True).start()
+    log = launcher.Log(tmp_path)
+    assert launcher.shutdown_running(port, log) == 0
+    assert received and received[0].startswith(b"POST /api/shutdown")
+
+
+# ------------------------------------------- dwie edycje na jednym porcie (0.4.2)
+def test_edition_name_from_package(tmp_path):
+    """Edycja paczki z ``edition.json``; brak pliku = standardowa."""
+    assert launcher.edition_name(tmp_path) == "standard"
+    (tmp_path / "edition.json").write_text('{"edition": "for_potatoes"}',
+                                           encoding="utf-8")
+    assert launcher.edition_name(tmp_path) == "for_potatoes"
+    (tmp_path / "edition.json").write_text("{nie json", encoding="utf-8")
+    assert launcher.edition_name(tmp_path) == "standard"
+
+
+def test_edition_conflict_only_for_different_editions():
+    """Pytamy tylko wtedy, gdy na porcie działa INNA edycja."""
+    assert launcher.edition_conflict("for_potatoes", "standard") is True
+    assert launcher.edition_conflict("standard", "for_potatoes") is True
+    assert launcher.edition_conflict("standard", "standard") is False
+    assert launcher.edition_conflict(None, "standard") is False   # starszy serwer
+
+
+def test_running_edition_reads_api_edition():
+    """``running_edition`` czyta ``/api/edition`` działającego serwera."""
+    import http.server
+    import json
+    import threading
+
+    payload = json.dumps({"edition": "for_potatoes"}).encode("utf-8")
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):                    # noqa: N802 - API http.server
+            if self.path == "/api/edition":
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+            else:
+                self.send_error(404)
+
+        def log_message(self, *args):        # cisza w testach
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    port = server.server_address[1]
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        assert launcher.running_edition(port) == "for_potatoes"
+        assert launcher.running_edition(port + 1, timeout=1.0) is None   # brak serwera
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_launcher_asks_before_taking_over_other_edition():
+    """Launcher pyta i potrafi zamknąć inną edycję (regresja 0.4.2)."""
+    source = (ROOT / "release_tools" / "launcher" /
+              "dronesim_launcher.py").read_text(encoding="utf-8")
+    assert "running_edition(args.port)" in source
+    assert "edition_conflict(running, own)" in source
+    assert "show_question(question)" in source
+    assert "shutdown_running(args.port, log)" in source
+    assert "--no-prompt" in source
+    assert "parser.add_argument(\"--no-prompt\"" in source

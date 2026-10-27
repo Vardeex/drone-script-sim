@@ -47,7 +47,10 @@ jobs:
       - name: Testy aplikacji (bez przeglądarki, bez testów losowych)
         # -v + --durations: w logu widać, który test trwa (bez tego CI milczy
         # do końca). faulthandler_timeout z pytest.ini robi zrzut stosów po 60 s.
-        run: python -m pytest -p no:cacheprovider -v --durations=20 -m "not browser and not slow"
+        # `not desktop`: testy ikony w zasobniku wymagają prawdziwego pulpitu
+        # Windows (okno, Shell_NotifyIcon, pętla komunikatów) - lokalnie tak,
+        # w CI nie ma na czym ich uruchomić.
+        run: python -m pytest -p no:cacheprovider -v --durations=20 -m "not browser and not slow and not desktop"
 
       - name: Testy biblioteki dronemoves
         working-directory: lib/dronemoves

@@ -270,8 +270,12 @@ def test_fpv_camera_follows_drone(server):
             timeout=TIMEOUT_MS)
         second = page.evaluate("""() => {
           const scene = window.__scene;
-          return scene ? {fov: scene.camera.fov, pos: scene.camera.position.toArray(),
-                          sample: scene._lastSample || null} : null;
+          if (!scene) return null;
+          scene.camera.updateMatrixWorld(true);
+          const m = scene.camera.matrixWorld.elements;
+          return {fov: scene.camera.fov, pos: [m[12], m[13], m[14]],
+                  drone: scene.droneGroup.position.toArray(),
+                  sample: scene._lastSample || null};
         }""")
         # ... i wróć na początek: kamera znowu przy ziemi (pozycja zależy od próbki)
         page.evaluate("""() => {
@@ -284,23 +288,27 @@ def test_fpv_camera_follows_drone(server):
             "() => window.__scene && window.__scene._lastSample"
             " && window.__scene._lastSample.t === 0",
             timeout=TIMEOUT_MS)
-        third = page.evaluate("() => window.__scene.camera.position.toArray()")
+        third = page.evaluate("""() => {
+          const scene = window.__scene;
+          scene.camera.updateMatrixWorld(true);
+          const m = scene.camera.matrixWorld.elements;
+          return [m[12], m[13], m[14]];
+        }""")
         browser.close()
     assert errors == [], errors
     assert first and second, (first, second)
     # pole widzenia kamery drona (Tello: 82,6°) zamiast 50° sceny
     assert first["fov"] == pytest.approx(82.6, abs=0.01), first["fov"]
     assert second["fov"] == pytest.approx(82.6, abs=0.01), second["fov"]
-    # kamera jest w miejscu drona (1 skala sceny = 1 m, więc /100 -> metry);
-    # obiektyw siedzi 4,5 cm w nosie, stąd tolerancja 10 cm
+    # kamera jest przytwierdzona do drona: pozycja świata = dno korpusu +
+    # obiektyw (25 mm w przód, 12 mm w górę) w prawdziwej skali
     sample = second["sample"]
     assert sample["state"] == "airborne", sample
     camera = second["pos"]
-    distance = ((camera[0] - sample["x"] / 100) ** 2
-                + (camera[2] + sample["y"] / 100) ** 2) ** 0.5
-    assert distance < 0.10, (camera, sample)
-    # wysokość kamery = wysokość drona + 2 cm (obiektyw nad środkiem korpusu)
-    assert camera[1] == pytest.approx(sample["z"] / 100 + 0.02, abs=0.01), (camera, sample)
+    drone = second["drone"]
+    distance = ((camera[0] - drone[0]) ** 2 + (camera[2] - drone[2]) ** 2) ** 0.5
+    assert distance < 0.10, (camera, drone)
+    assert camera[1] == pytest.approx(drone[1] + 0.012, abs=0.01), (camera, drone)
     # przewinięcie zmieniło pozycję kamery (kamera jedzie razem z dronem)
     moved = sum((a - b) ** 2 for a, b in zip(camera, third)) ** 0.5
     assert moved > 0.3, (camera, third)

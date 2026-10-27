@@ -210,24 +210,29 @@ function applyEditionDefaults() {
 const LITE_UI_INTERVAL_MS = 100;
 let lastUiUpdate = 0;
 
-/** Opcje kamery niedostępne w trybie lekkim (FPV = dodatkowa praca co klatkę). */
-function updateCameraOptions(lite) {
+/** Opcje kamery: FPV działa w obu trybach (pełnym i lekkim).
+
+Kamerę można wyłączyć tylko na poziomie edycji (``for_potatoes`` nie ma FPV
+domyślnie) - lista pokazuje wtedy, że opcja jest niedostępna.
+*/
+function updateCameraOptions() {
   const select = $('#camera-select');
   const fpv = select ? select.querySelector('option[value="fpv"]') : null;
   if (!select || !fpv) return;
-  fpv.disabled = lite;
-  fpv.textContent = lite ? 'FPV (wyłączone w trybie lekkim)' : 'FPV (z drona)';
-  if (lite && select.value === 'fpv') {
+  const allowed = edition.features?.fpv !== false;
+  fpv.disabled = !allowed;
+  fpv.textContent = allowed ? 'FPV (z drona)' : 'FPV (wyłączone w tej edycji)';
+  if (!allowed && select.value === 'fpv') {
     select.value = 'orbit';
     scene.setCameraMode('orbit');
   }
 }
 
-/** Odśwież interfejs po zmianie trybu (select, kamera, panele funkcji). */
+/** Odśwież interfejs po zmianie trybu (select, panele funkcji). */
 export function applyLiteUi(lite) {
   const select = $('#perf-mode');
   if (select) select.value = lite ? 'lite' : (isForced() ? 'lite' : getMode());
-  updateCameraOptions(lite);
+  updateCameraOptions();
   document.body.classList.toggle('lite-mode', Boolean(lite));
   $$('.perf-hint').forEach((node) => { node.hidden = !lite; });
   lastUiUpdate = 0;                 // po zmianie trybu odśwież panele od razu
