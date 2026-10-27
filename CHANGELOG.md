@@ -3,7 +3,7 @@
 Format: [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/); wersjonowanie
 zgodne z [SemVer](https://semver.org/lang/pl/).
 
-## [Unreleased]
+## [0.4.3] - 2026-10-27
 
 ### Naprawione
 
